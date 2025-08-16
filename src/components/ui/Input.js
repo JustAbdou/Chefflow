@@ -24,26 +24,26 @@ const Input = ({
   };
 
   const labelStyle = {
-    fontSize: Typography.base,
+    fontSize: Typography.base, // Reduced from lg
     fontFamily: Typography.fontMedium,
     color: Colors.textPrimary,
-    marginBottom: Spacing.sm, 
+    marginBottom: Spacing.sm, // Reduced from md
   };
 
   const inputContainerStyle = {
     backgroundColor: disabled ? Colors.gray50 : '#F8F9FA',
     borderWidth: 1,
     borderColor: error ? Colors.danger : Colors.borderLight,
-    borderRadius: 12, 
-    paddingHorizontal: Spacing.md, 
-    paddingVertical: Spacing.md, 
-    minHeight: 60,
+    borderRadius: 12, // Reduced from 16
+    paddingHorizontal: Spacing.sm, // Reduced from md
+    paddingVertical: Spacing.sm, // Reduced from md
+    minHeight: 50, // Reduced from 60
     flexDirection: 'row',
     alignItems: 'center',
   };
 
   const inputStyle = {
-    fontSize: Typography.base, 
+    fontSize: Typography.base, // Reduced from lg
     fontFamily: Typography.fontRegular,
     color: disabled ? Colors.gray400 : Colors.textPrimary,
     flex: 1,

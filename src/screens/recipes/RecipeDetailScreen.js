@@ -6,14 +6,17 @@ import { Spacing } from "../../constants/Spacing";
 import { getDoc } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantSubDoc } from "../../utils/firestoreHelpers";
+
 function RecipeDetailScreen({ route, navigation }) {
   const { restaurantId } = useRestaurant();
   const { recipeId, category } = route.params;
   const [recipe, setRecipe] = useState(null);
   const [loading, setLoading] = useState(true);
+
   useEffect(() => {
     const fetchRecipeDetails = async () => {
       if (!restaurantId) return;
+      
       try {
         const recipeDoc = await getDoc(
           getRestaurantSubDoc(restaurantId, "recipes", "categories", category, recipeId)
@@ -25,8 +28,10 @@ function RecipeDetailScreen({ route, navigation }) {
         setLoading(false);
       }
     };
+
     fetchRecipeDetails();
   }, [recipeId, category, restaurantId]);
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -34,6 +39,7 @@ function RecipeDetailScreen({ route, navigation }) {
       </SafeAreaView>
     );
   }
+
   if (!recipe) {
     return (
       <SafeAreaView style={styles.container}>
@@ -41,9 +47,11 @@ function RecipeDetailScreen({ route, navigation }) {
       </SafeAreaView>
     );
   }
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 32 }}>
+        {/* Header */}
         <View style={styles.header}>
           <View style={styles.backHeader}>
             <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()} activeOpacity={0.7}>
@@ -51,12 +59,21 @@ function RecipeDetailScreen({ route, navigation }) {
             </TouchableOpacity>
           </View>
         </View>
+
+      {/* Image */}
       <Image source={{ uri: recipe.image }} style={styles.image} resizeMode="cover" />
+
+      {/* Title */}
       <Text style={styles.title}>{recipe["recipe name"]}</Text>
+
+      {/* Recipe Details Button */}
       <TouchableOpacity style={styles.detailsButton}>
         <Text style={styles.detailsButtonText}>Recipe Details</Text>
       </TouchableOpacity>
+
+      {/* Card */}
       <View style={styles.card}>
+        {/* Ingredients */}
         <Text style={styles.sectionTitle}>Ingredients</Text>
         {recipe.ingredients?.map((ingredient, idx) => (
           <View key={idx} style={styles.ingredientRow}>
@@ -64,6 +81,8 @@ function RecipeDetailScreen({ route, navigation }) {
             <Text style={styles.ingredientText}>{ingredient}</Text>
           </View>
         ))}
+
+        {/* Instructions */}
         <Text style={styles.sectionTitle}>Instructions</Text>
         {recipe.instructions?.map((instruction, idx) => (
           <View key={idx} style={styles.instructionCard}>
@@ -71,6 +90,7 @@ function RecipeDetailScreen({ route, navigation }) {
               <Text style={styles.instructionCircleText}>{idx + 1}</Text>
             </View>
             <View style={{ flex: 1 }}>
+              {/* Try to bold the first sentence as the step title */}
               <Text style={styles.instructionTitle}>
                 {instruction.split(".")[0]}
               </Text>
@@ -80,6 +100,8 @@ function RecipeDetailScreen({ route, navigation }) {
             </View>
           </View>
         ))}
+
+        {/* Notes */}
         {recipe.notes && (
           <>
             <Text style={styles.sectionTitle}>Notes</Text>
@@ -91,6 +113,7 @@ function RecipeDetailScreen({ route, navigation }) {
     </SafeAreaView>
   );
 }
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -221,4 +244,5 @@ const styles = StyleSheet.create({
     marginTop: Spacing.lg,
   },
 });
+
 export default RecipeDetailScreen;

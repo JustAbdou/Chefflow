@@ -14,17 +14,23 @@ import { getFormattedTodayDate } from '../../utils/dateUtils';
 import { getDocs, query, orderBy } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection } from "../../utils/firestoreHelpers";
+
 const TemperatureRecordsScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
   const [fridgeLogs, setFridgeLogs] = useState([]);
   const [deliveryLogs, setDeliveryLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Date for header
   const today = getFormattedTodayDate();
+
   const fetchTemperatureRecords = async () => {
     if (!restaurantId) return;
+    
     setLoading(true);
     try {
+      // Fetch fridge logs
       const fridgeQuery = query(getRestaurantCollection(restaurantId, "fridgelogs"), orderBy("createdAt", "desc"));
       const fridgeSnapshot = await getDocs(fridgeQuery);
       const fridgeItems = fridgeSnapshot.docs.map(doc => ({
@@ -33,6 +39,8 @@ const TemperatureRecordsScreen = ({ navigation }) => {
         ...doc.data(),
       }));
       setFridgeLogs(fridgeItems);
+
+      // Fetch delivery logs
       const deliveryQuery = query(getRestaurantCollection(restaurantId, "deliverylogs"), orderBy("createdAt", "desc"));
       const deliverySnapshot = await getDocs(deliveryQuery);
       const deliveryItems = deliverySnapshot.docs.map(doc => ({
@@ -47,21 +55,25 @@ const TemperatureRecordsScreen = ({ navigation }) => {
       setLoading(false);
     }
   };
+
   useEffect(() => {
     fetchTemperatureRecords();
   }, [restaurantId]);
+
+  // Pull-to-refresh handler
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchTemperatureRecords();
     setRefreshing(false);
   }, []);
+
   const renderFridgeItem = ({ item }) => (
     <View style={styles.recordCard}>
       <View style={styles.recordInfo}>
         <Text style={styles.recordType}>Fridge Temperature</Text>
         <Text style={styles.recordLocation}>{item.fridge || 'Unknown Fridge'}</Text>
         <Text style={styles.recordDate}>
-          {item.createdAt?.seconds
+          {item.createdAt?.seconds 
             ? new Date(item.createdAt.seconds * 1000).toLocaleDateString()
             : 'Unknown Date'
           }
@@ -75,13 +87,14 @@ const TemperatureRecordsScreen = ({ navigation }) => {
       </View>
     </View>
   );
+
   const renderDeliveryItem = ({ item }) => (
     <View style={styles.recordCard}>
       <View style={styles.recordInfo}>
         <Text style={styles.recordType}>Delivery Temperature</Text>
         <Text style={styles.recordLocation}>{item.supplier || 'Unknown Supplier'}</Text>
         <Text style={styles.recordDate}>
-          {item.createdAt?.seconds
+          {item.createdAt?.seconds 
             ? new Date(item.createdAt.seconds * 1000).toLocaleDateString()
             : 'Unknown Date'
           }
@@ -97,6 +110,7 @@ const TemperatureRecordsScreen = ({ navigation }) => {
       </View>
     </View>
   );
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.headerRow}>
@@ -108,32 +122,39 @@ const TemperatureRecordsScreen = ({ navigation }) => {
           <Text style={styles.date}>{today}</Text>
         </View>
       </View>
+
+      {/* Section Headers and Lists */}
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Fridge Temperature Section */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Fridge Temperature Logs</Text>
           <TouchableOpacity onPress={() => navigation.navigate('TemperatureDownloads')}>
             <Text style={styles.download}>Download</Text>
           </TouchableOpacity>
         </View>
+        
         <FlatList
-          data={fridgeLogs}
+          data={fridgeLogs} // Show all fridge logs
           keyExtractor={item => `fridge-${item.id}`}
           renderItem={renderFridgeItem}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
-          scrollEnabled={false}
+          scrollEnabled={false} // Disable internal scrolling since we're using ScrollView
           nestedScrollEnabled={true}
         />
+
+        {/* Delivery Temperature Section */}
         <View style={[styles.sectionHeader, { marginTop: Spacing.xl }]}>
           <Text style={styles.sectionTitle}>Delivery Temperature Logs</Text>
         </View>
+        
         <FlatList
-          data={deliveryLogs}
+          data={deliveryLogs} // Show all delivery logs
           keyExtractor={item => `delivery-${item.id}`}
           renderItem={renderDeliveryItem}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
-          scrollEnabled={false}
+          scrollEnabled={false} // Disable internal scrolling since we're using ScrollView
           nestedScrollEnabled={true}
           refreshing={refreshing}
           onRefresh={handleRefresh}
@@ -142,6 +163,7 @@ const TemperatureRecordsScreen = ({ navigation }) => {
     </SafeAreaView>
   );
 };
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -162,9 +184,11 @@ const styles = StyleSheet.create({
     fontSize: 35,
     color: Colors.textPrimary,
     fontWeight: "300",
+    marginTop: 5,
   },
   titleContainer: {
     flex: 1,
+    marginTop: Spacing.xl,
   },
   title: {
     fontFamily: Typography.fontBold,
@@ -246,4 +270,5 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 });
+
 export default TemperatureRecordsScreen;

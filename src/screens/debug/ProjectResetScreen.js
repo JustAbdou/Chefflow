@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, Alert, StyleSheet } from 'react-native';
 import { resetForNewProject, quickConnectionReset } from '../utils/projectReset';
 import { Colors, Spacing, Typography } from '../constants';
+
 const ProjectResetScreen = () => {
   const [isResetting, setIsResetting] = useState(false);
+
   const handleFullReset = async () => {
     Alert.alert(
       'Full Project Reset',
@@ -17,10 +19,11 @@ const ProjectResetScreen = () => {
             setIsResetting(true);
             const success = await resetForNewProject();
             setIsResetting(false);
+            
             Alert.alert(
               success ? 'Success' : 'Error',
-              success
-                ? 'Project reset complete! Please restart the app.'
+              success 
+                ? 'Project reset complete! Please restart the app.' 
                 : 'Reset failed. Check console for details.'
             );
           }
@@ -28,40 +31,47 @@ const ProjectResetScreen = () => {
       ]
     );
   };
+
   const handleQuickReset = async () => {
     setIsResetting(true);
     const success = await quickConnectionReset();
     setIsResetting(false);
+    
     Alert.alert(
       success ? 'Success' : 'Error',
-      success
-        ? 'Connection reset complete!'
+      success 
+        ? 'Connection reset complete!' 
         : 'Reset failed. Check console for details.'
     );
   };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Firebase Project Reset</Text>
       <Text style={styles.subtitle}>
         Use these tools to resolve connection issues after changing Firebase projects
       </Text>
-      <TouchableOpacity
-        style={[styles.button, styles.quickButton]}
+
+      <TouchableOpacity 
+        style={[styles.button, styles.quickButton]} 
         onPress={handleQuickReset}
         disabled={isResetting}
       >
         <Text style={styles.buttonText}>Quick Connection Reset</Text>
       </TouchableOpacity>
-      <TouchableOpacity
-        style={[styles.button, styles.fullButton]}
+
+      <TouchableOpacity 
+        style={[styles.button, styles.fullButton]} 
         onPress={handleFullReset}
         disabled={isResetting}
       >
         <Text style={styles.buttonText}>Full Project Reset</Text>
       </TouchableOpacity>
+
       {isResetting && (
         <Text style={styles.status}>Resetting...</Text>
       )}
+
       <View style={styles.info}>
         <Text style={styles.infoTitle}>What each button does:</Text>
         <Text style={styles.infoText}>
@@ -74,6 +84,7 @@ const ProjectResetScreen = () => {
     </View>
   );
 };
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -129,4 +140,5 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.small,
   },
 });
+
 export default ProjectResetScreen;

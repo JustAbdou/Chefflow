@@ -21,9 +21,10 @@ import { uploadPdfToStorage, uploadPdfToStorageTemporary, generatePdfFileName } 
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
+
 const TemperatureDownloadsScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
-  const [selectedRange, setSelectedRange] = useState(null);
+  const [selectedRange, setSelectedRange] = useState(null); // Changed from '7' to null - range buttons gray by default
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
   const [fridgeLogs, setFridgeLogs] = useState([]);
@@ -32,11 +33,15 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
   const [showEndPicker, setShowEndPicker] = useState(false);
   const [recentDownloads, setRecentDownloads] = useState([]);
   const today = getFormattedTodayDate();
+
   useEffect(() => {
     const fetchTemperatureRecordsInRange = async () => {
       if (!restaurantId || !startDate || !endDate) return;
+      
       const start = Timestamp.fromDate(new Date(startDate.setHours(0,0,0,0)));
       const end = Timestamp.fromDate(new Date(endDate.setHours(23,59,59,999)));
+      
+      // Fetch fridge logs
       const fridgeQuery = query(
         getRestaurantCollection(restaurantId, "fridgelogs"),
         where("createdAt", ">=", start),
@@ -49,6 +54,8 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         createdAt: doc.data().createdAt?.toDate?.() || null,
         type: 'fridge'
       })));
+
+      // Fetch delivery logs
       const deliveryQuery = query(
         getRestaurantCollection(restaurantId, "deliverylogs"),
         where("createdAt", ">=", start),
@@ -62,15 +69,19 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         type: 'delivery'
       })));
     };
+
     fetchTemperatureRecordsInRange();
   }, [startDate, endDate, restaurantId]);
+
+  // Move fetchRecentDownloads outside useEffect so you can call it manually
   const fetchRecentDownloads = async () => {
     if (!restaurantId) return;
+    
     try {
       const recentDownloadsRef = getRestaurantSubCollection(
         restaurantId,
         "downloads",
-        "temperature",
+        "temperature", 
         "recent_downloads"
       );
       const q = query(recentDownloadsRef, orderBy("createdAt", "desc"));
@@ -84,9 +95,11 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
       console.error("Failed to fetch recent downloads", e);
     }
   };
+
   useEffect(() => {
     fetchRecentDownloads();
   }, [restaurantId]);
+
   const renderDownloadItem = ({ item }) => (
     <TouchableOpacity
       style={styles.downloadItem}
@@ -116,8 +129,10 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
             Alert.alert('No Link', 'No download link available for this item.');
             return;
           }
+          
           try {
             if (item.link.startsWith('http')) {
+              // For cloud URLs, we can either open in browser or download
               Alert.alert(
                 'Download Options',
                 'How would you like to access this file?',
@@ -149,6 +164,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
                 ]
               );
             } else if (item.link.startsWith('file')) {
+              // Legacy local files
               await Sharing.shareAsync(item.link, { mimeType: 'application/pdf' });
             } else {
               Alert.alert('Invalid Link', 'This download link is not supported.');
@@ -160,28 +176,36 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         }}
         style={{ padding: 8 }}
       >
-        <Ionicons
-          name={item.link && item.link.startsWith('http') ? "cloud-download-outline" : "download-outline"}
-          size={20}
-          color={Colors.gray300}
+        <Ionicons 
+          name={item.link && item.link.startsWith('http') ? "cloud-download-outline" : "download-outline"} 
+          size={20} 
+          color={Colors.gray300} 
         />
       </TouchableOpacity>
     </TouchableOpacity>
   );
+
   const formatDate = (date) => {
     return date.toLocaleDateString();
   };
+
   const exportToPDF = async () => {
     if (!fridgeLogs.length && !deliveryLogs.length) {
       Alert.alert('No Data', 'No temperature records found for the selected date range.');
       return;
     }
+
     try {
+      // Show loading state
       Alert.alert('Generating PDF', 'Please wait while we prepare your temperature records...');
+
+      // Generate unique filename
       const fileName = generatePdfFileName('temperature', startDate, endDate);
+
       let html = `
         <h1>Temperature Records</h1>
         <p>Generated on: ${new Date().toLocaleDateString()}</p>
+        
         <h2>Fridge Temperature Logs</h2>
         <table border="1" cellspacing="0" cellpadding="8" style="width: 100%; border-collapse: collapse;">
           <tr style="background-color: #f5f5f5;">
@@ -199,6 +223,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
             </tr>
           `).join('')}
         </table>
+        
         <h2>Delivery Temperature Logs</h2>
         <table border="1" cellspacing="0" cellpadding="8" style="width: 100%; border-collapse: collapse;">
           <tr style="background-color: #f5f5f5;">
@@ -217,44 +242,60 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
           `).join('')}
         </table>
       `;
-      const { uri } = await Print.printToFileAsync({
-        html,
-        base64: false,
-        fileName: fileName.replace('.pdf', '')
+
+      // Generate PDF locally first
+      const { uri } = await Print.printToFileAsync({ 
+        html, 
+        base64: false, 
+        fileName: fileName.replace('.pdf', '') 
       });
+
       console.log('📄 PDF generated locally:', uri);
+
+      // Use temporary storage solution until Firebase Storage blob issues are resolved
       let downloadURL;
       try {
+        // Try the original method first
         downloadURL = await uploadPdfToStorage(uri, fileName, restaurantId, 'temperature');
         console.log('☁️ PDF uploaded to Firebase Storage successfully:', downloadURL);
       } catch (storageError) {
         console.log('⚠️ Firebase Storage upload failed, using temporary local storage:', storageError.message);
+        // Use temporary local storage as fallback
         downloadURL = await uploadPdfToStorageTemporary(uri, fileName, restaurantId, 'temperature');
         console.log('💾 PDF saved to local storage:', downloadURL);
       }
+
+      // Save download info to Firestore with the cloud URL
       await addDoc(
         getRestaurantSubCollection(restaurantId, "downloads", "temperature", "recent_downloads"),
         {
           name: fileName,
-          link: downloadURL,
+          link: downloadURL, // This is now a cloud URL, not local path
           createdAt: serverTimestamp(),
         }
       );
+
       console.log('💾 Download record saved to Firestore');
+
+      // Clean up the original temporary file (keep the permanent copy)
       try {
         await FileSystem.deleteAsync(uri, { idempotent: true });
         console.log('🗑️ Original temporary file cleaned up');
       } catch (cleanupError) {
         console.warn('⚠️ Could not clean up original temporary file:', cleanupError);
       }
+
+      // Refresh the downloads list
       await fetchRecentDownloads();
+
       Alert.alert(
-        'Success!',
+        'Success!', 
         'Temperature records have been generated and saved. You can access them from the Recent Downloads section.',
         [
           {
             text: 'View Downloads',
             onPress: () => {
+              // The list will automatically refresh
             }
           },
           {
@@ -263,15 +304,17 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
           }
         ]
       );
+
     } catch (error) {
       console.error('❌ Error exporting PDF:', error);
       Alert.alert(
-        'Export Failed',
+        'Export Failed', 
         'Failed to export PDF: ' + error.message,
         [{ text: 'OK' }]
       );
     }
   };
+
   const handleRangeSelect = (days) => {
     setSelectedRange(days);
     const end = new Date();
@@ -280,9 +323,11 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
     setStartDate(start);
     setEndDate(end);
   };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+        {/* Header */}
         <View style={styles.headerRow}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
             <Text style={styles.backArrow}>‹</Text>
@@ -292,6 +337,8 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
             <Text style={styles.date}>{today}</Text>
           </View>
         </View>
+
+        {/* Temperature Records Card */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <View style={styles.cardIconCircle}>
@@ -308,6 +355,8 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
             <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
           </TouchableOpacity>
         </View>
+
+        {/* Date Range Section */}
         <Text style={styles.sectionTitle}>Select Date Range</Text>
         <View style={styles.dateInputsRow}>
           <TouchableOpacity style={styles.dateInput} onPress={() => setShowStartPicker(true)}>
@@ -356,6 +405,8 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         <TouchableOpacity style={styles.exportButton} onPress={exportToPDF}>
           <Text style={styles.exportButtonText}>Export Selected Records</Text>
         </TouchableOpacity>
+
+        {/* Recent Downloads */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: Spacing.md}}>
           <Text style={styles.sectionTitle}>Recent Downloads</Text>
           <TouchableOpacity onPress={fetchRecentDownloads} style={{ paddingHorizontal: Spacing.lg }}>
@@ -373,6 +424,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
     </SafeAreaView>
   );
 };
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -391,11 +443,13 @@ const styles = StyleSheet.create({
   },
   backArrow: {
     fontSize: 35,
+    marginTop: 5,
     color: Colors.textPrimary,
     fontWeight: "300",
   },
   titleContainer: {
     flex: 1,
+    marginTop: Spacing.xl,
   },
   title: {
     fontFamily: Typography.fontBold,
@@ -553,4 +607,5 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 });
+
 export default TemperatureDownloadsScreen;

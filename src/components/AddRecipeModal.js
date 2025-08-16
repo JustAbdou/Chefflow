@@ -19,13 +19,16 @@ import { getRestaurantSubCollection } from "../utils/firestoreHelpers";
 import { Colors } from "../constants/Colors";
 import { Typography } from "../constants/Typography";
 import { Spacing } from "../constants/Spacing";
+
 const today = new Date();
 const dateString = today.toLocaleDateString("en-US", {
   weekday: "long",
   month: "long",
   day: "numeric",
 });
+
 const categories = ["Main", "Desserts", "Starters"];
+
 export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
   const { restaurantId } = useRestaurant();
   const [image, setImage] = useState(null);
@@ -38,6 +41,7 @@ export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
   const [instructionTitle, setInstructionTitle] = useState("");
   const [instructionDesc, setInstructionDesc] = useState("");
   const [loading, setLoading] = useState(false);
+
   const pickImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -49,15 +53,18 @@ export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
       setImage(result.assets[0].uri);
     }
   };
+
   const addIngredient = () => {
     if (ingredientInput.trim()) {
       setIngredients([...ingredients, ingredientInput.trim()]);
       setIngredientInput("");
     }
   };
+
   const removeIngredient = idx => {
     setIngredients(ingredients.filter((_, i) => i !== idx));
   };
+
   const addInstruction = () => {
     if (instructionTitle.trim()) {
       setInstructions([
@@ -68,9 +75,11 @@ export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
       setInstructionDesc("");
     }
   };
+
   const removeInstruction = idx => {
     setInstructions(instructions.filter((_, i) => i !== idx));
   };
+
   const handleAddRecipe = async () => {
     if (!restaurantId || !name.trim() || !category || ingredients.length === 0 || instructions.length === 0) {
       Alert.alert("Please fill all required fields.");
@@ -103,9 +112,11 @@ export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
     }
     setLoading(false);
   };
+
   return (
     <Modal visible={visible} animationType="slide">
       <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 32 }}>
+        {/* Header */}
         <View style={styles.headerRow}>
           <TouchableOpacity onPress={onClose} style={styles.headerIcon}>
             <Text style={styles.headerIconText}>←</Text>
@@ -113,6 +124,8 @@ export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
           <Text style={styles.headerTitle}>Add Recipe</Text>
         </View>
         <Text style={styles.dateText}>{dateString}</Text>
+
+        {/* Image Picker */}
         <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
           {image ? (
             <Image source={{ uri: image }} style={styles.image} />
@@ -123,6 +136,8 @@ export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
             </View>
           )}
         </TouchableOpacity>
+
+        {/* Recipe Details */}
         <Text style={styles.sectionTitle}>Recipe Details</Text>
         <View style={styles.inputCard}>
           <Picker
@@ -145,6 +160,8 @@ export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
             placeholderTextColor={Colors.gray400}
           />
         </View>
+
+        {/* Ingredients */}
         <Text style={styles.sectionTitle}>Ingredients</Text>
         {ingredients.map((ing, idx) => (
           <View key={idx} style={styles.listItem}>
@@ -167,6 +184,8 @@ export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
             <Text style={styles.addBtnText}>Add Ingredient</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Instructions */}
         <Text style={styles.sectionTitle}>Instructions</Text>
         {instructions.map((ins, idx) => (
           <View key={idx} style={styles.instructionCard}>
@@ -199,6 +218,8 @@ export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
             <Text style={styles.addBtnText}>Add Instruction</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Notes */}
         <Text style={styles.sectionTitle}>Notes</Text>
         <View style={styles.notesCard}>
           <TextInput
@@ -210,6 +231,8 @@ export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
             multiline
           />
         </View>
+
+        {/* Add Recipe Button */}
         <TouchableOpacity
           style={styles.addRecipeBtn}
           onPress={handleAddRecipe}
@@ -224,6 +247,7 @@ export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
     </Modal>
   );
 }
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,

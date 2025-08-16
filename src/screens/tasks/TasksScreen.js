@@ -3,33 +3,57 @@ import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ScrollView } fr
 import { Colors } from "../../constants/Colors"
 import { Typography } from "../../constants/Typography"
 import { Spacing } from "../../constants/Spacing"
+import { getAndroidTitleMargin } from "../../utils/responsive"
+import useNavigationBar from "../../hooks/useNavigationBar"
 import { ClipboardIcon, ChevronRightIcon } from "../../components/icons/NavigationIcons"
 
 function TasksScreen({ navigation }) {
+  // Hide Android navigation bar
+  const navigationBar = useNavigationBar();
+  navigationBar.useHidden(); // Use hidden mode for complete immersion
+
   const menuItems = [
     {
       title: "Prep List",
       subtitle: "View and manage today's prep tasks",
       icon: ClipboardIcon,
       iconColor: Colors.primary,
+      screen: "PrepLists",
     },
     {
       title: "Order List",
       subtitle: "Check and update order items",
       icon: ClipboardIcon,
       iconColor: Colors.primary,
+      screen: "OrderLists",
     },
     {
       title: "Fridge Temperature",
       subtitle: "Log and monitor fridge temps",
       icon: ClipboardIcon,
       iconColor: Colors.primary,
+      screen: "FridgeTempLogs", 
     },
     {
       title: "Delivery Temperature",
       subtitle: "Record delivery temperature",
       icon: ClipboardIcon,
       iconColor: Colors.primary,
+      screen: "DeliveryTempLogs", 
+    },
+    {
+      title: "Cleaning Checklist",
+      subtitle: "Today's cleaning tasks",
+      icon: ClipboardIcon,
+      iconColor: Colors.primary,
+      screen: "CleaningChecklist",
+    },
+    {
+      title: "Shift Handover",
+      subtitle: "Complete shift handover notes",
+      icon: ClipboardIcon,
+      iconColor: Colors.primary,
+      screen: "Handover",
     },
   ]
 
@@ -38,6 +62,11 @@ function TasksScreen({ navigation }) {
       key={item.title}
       style={styles.menuItem}
       activeOpacity={0.7}
+      onPress={() => {
+        if (item.screen) {
+          navigation.navigate(item.screen)
+        }
+      }}
     >
       <View style={styles.menuItemLeft}>
         <View style={styles.menuItemIcon}>
@@ -76,11 +105,11 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xl,
+    paddingTop: Spacing.xl + getAndroidTitleMargin(),
     paddingBottom: Spacing.lg,
   },
   title: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: "bold",
     color: Colors.textPrimary,
     marginBottom: Spacing.xs,

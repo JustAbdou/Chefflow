@@ -15,16 +15,23 @@ import { getFormattedTodayDate } from '../../utils/dateUtils';
 import { getDocs, query, orderBy } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection } from "../../utils/firestoreHelpers";
+
 const InvoicesScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false); // <-- Add this
+
+  // Hide Android navigation bar
   const navigationBar = useNavigationBar();
-  navigationBar.useHidden();
+  navigationBar.useHidden(); // Use hidden mode for complete immersion
+
+  // Date for header
   const today = getFormattedTodayDate();
+
   const fetchInvoices = async () => {
     if (!restaurantId) return;
+    
     setLoading(true);
     try {
       const q = query(getRestaurantCollection(restaurantId, "invoices"), orderBy("createdAt", "desc"));
@@ -40,24 +47,31 @@ const InvoicesScreen = ({ navigation }) => {
       setLoading(false);
     }
   };
+
   useEffect(() => {
     fetchInvoices();
   }, [restaurantId]);
+
+  // Pull-to-refresh handler
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchInvoices();
     setRefreshing(false);
   }, []);
+
   const renderItem = ({ item }) => (
     <View style={styles.invoiceCard}>
       <View>
         <Text style={styles.invoiceNumber}>{item.invoiceNumber}</Text>
+        {/* Optionally, add a subtitle or date here */}
       </View>
       <Text style={styles.amount}>£{item.amount}</Text>
     </View>
   );
+
   return (
     <SafeAreaView style={styles.container}>
+    
       <View style={styles.headerRow}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Text style={styles.backArrow}>‹</Text>
@@ -67,12 +81,14 @@ const InvoicesScreen = ({ navigation }) => {
           <Text style={styles.date}>{today}</Text>
         </View>
       </View>
+      {/* Section Title */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Recent Invoices</Text>
         <TouchableOpacity onPress={() => navigation.navigate('InvoicesDownloads')}>
           <Text style={styles.download}>Download</Text>
         </TouchableOpacity>
       </View>
+      {/* Invoice List */}
       <FlatList
         data={invoices}
         keyExtractor={item => item.id}
@@ -82,6 +98,7 @@ const InvoicesScreen = ({ navigation }) => {
         refreshing={refreshing}
         onRefresh={handleRefresh}
       />
+      {/* Floating Action Button */}
       <TouchableOpacity
         style={styles.fab}
         onPress={() => navigation.navigate('InvoiceUpload')}
@@ -91,11 +108,14 @@ const InvoicesScreen = ({ navigation }) => {
     </SafeAreaView>
   );
 };
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.backgroundPrimary,
   },
+
+
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -203,4 +223,5 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
 });
+
 export default InvoicesScreen;

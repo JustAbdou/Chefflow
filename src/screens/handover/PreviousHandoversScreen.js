@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  TouchableOpacity,
-  ScrollView,
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  SafeAreaView, 
+  TouchableOpacity, 
+  ScrollView, 
   ActivityIndicator,
   RefreshControl,
   Alert,
-  Linking
+  Linking 
 } from 'react-native';
 import { Colors } from '../../constants/Colors';
 import { Typography } from '../../constants/Typography';
@@ -23,27 +23,41 @@ import { getRestaurantCollection } from '../../utils/firestoreHelpers';
 import { auth } from '../../../firebase';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
+
 function PreviousHandoversScreen() {
   const navigation = useNavigation();
   const { restaurantId } = useRestaurant();
   const [handovers, setHandovers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Initialize navigation bar for immersive experience
   const navigationBar = useNavigationBar();
-  navigationBar.useHidden();
+  
+  // Use lean-back mode (hides navigation bar but shows on interaction)
+  navigationBar.useHidden(); // Use hidden mode for complete immersion
+
+  // Get current date
   const getCurrentDate = () => {
     const date = new Date();
     const options = { weekday: 'long', month: 'long', day: 'numeric' };
     return date.toLocaleDateString('en-US', options);
   };
+
+  // Format date for display
   const formatDate = (timestamp) => {
     if (!timestamp) return 'Unknown Date';
+    
     try {
+      // Handle Firestore Timestamp objects
       const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+      
+      // Check if date is valid
       if (isNaN(date.getTime())) {
         console.warn('Invalid date:', timestamp);
         return 'Invalid Date';
       }
+      
       const options = { weekday: 'long', month: 'long', day: 'numeric' };
       return date.toLocaleDateString('en-US', options);
     } catch (error) {
@@ -51,25 +65,33 @@ function PreviousHandoversScreen() {
       return 'Date Error';
     }
   };
+
+  // Fetch handovers from Firestore
   const fetchHandovers = async () => {
     if (!restaurantId || !auth.currentUser) {
       console.log('No restaurant ID or user available');
       setLoading(false);
       return;
     }
+
     try {
       console.log('🔍 Fetching handovers for user:', auth.currentUser.uid);
       console.log('🏪 Restaurant ID:', restaurantId);
+      
       const handoversRef = getRestaurantCollection(restaurantId, 'handovers');
+      
+      // Create query to get handovers by current user, sorted by creation date
       const q = query(
         handoversRef,
         where('createdBy', '==', auth.currentUser.uid),
         orderBy('createdAt', 'desc'),
-        limit(50)
+        limit(50) // Limit to last 50 handovers for performance
       );
+      
       console.log('📋 Executing Firestore query...');
       const querySnapshot = await getDocs(q);
       const handoversList = [];
+      
       querySnapshot.forEach((doc) => {
         const data = doc.data();
         console.log('📄 Found handover:', doc.id, data);
@@ -78,10 +100,14 @@ function PreviousHandoversScreen() {
           ...data
         });
       });
+      
       console.log(`✅ Successfully fetched ${handoversList.length} handovers for user`);
       setHandovers(handoversList);
+      
     } catch (error) {
       console.error('❌ Error fetching handovers:', error);
+      
+      // If the composite index error occurs, fall back to a simpler query
       if (error.code === 'failed-precondition' || error.message.includes('index')) {
         console.log('🔄 Trying fallback query without orderBy...');
         try {
@@ -90,8 +116,10 @@ function PreviousHandoversScreen() {
             handoversRef,
             where('createdBy', '==', auth.currentUser.uid)
           );
+          
           const querySnapshot = await getDocs(fallbackQuery);
           const handoversList = [];
+          
           querySnapshot.forEach((doc) => {
             const data = doc.data();
             handoversList.push({
@@ -99,13 +127,17 @@ function PreviousHandoversScreen() {
               ...data
             });
           });
+          
+          // Sort manually by createdAt
           handoversList.sort((a, b) => {
             const dateA = a.createdAt?.toDate() || new Date(0);
             const dateB = b.createdAt?.toDate() || new Date(0);
-            return dateB - dateA;
+            return dateB - dateA; // Descending order (newest first)
           });
+          
           console.log(`✅ Fallback query successful: ${handoversList.length} handovers`);
           setHandovers(handoversList);
+          
         } catch (fallbackError) {
           console.error('❌ Fallback query also failed:', fallbackError);
           Alert.alert('Error', 'Failed to load previous handovers. Please try again.');
@@ -118,14 +150,17 @@ function PreviousHandoversScreen() {
       setRefreshing(false);
     }
   };
+
   useEffect(() => {
     console.log('🔄 PreviousHandoversScreen mounted, checking dependencies...');
     console.log('Restaurant ID:', restaurantId);
     console.log('User:', auth.currentUser?.uid);
+    
     if (restaurantId && auth.currentUser) {
       fetchHandovers();
     } else {
       console.log('⏳ Waiting for restaurant ID and user authentication...');
+      // Set a timeout to retry if dependencies are not available
       const timeout = setTimeout(() => {
         if (restaurantId && auth.currentUser) {
           fetchHandovers();
@@ -134,25 +169,32 @@ function PreviousHandoversScreen() {
           console.log('⚠️ Dependencies not available after timeout');
         }
       }, 2000);
+      
       return () => clearTimeout(timeout);
     }
   }, [restaurantId, auth.currentUser]);
+
+  // Handle refresh
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchHandovers();
   };
+
+  // Handle PDF download
   const handleDownloadPDF = async (handover) => {
     try {
       console.log('📄 Attempting to download PDF for handover:', handover.id);
+      
       if (handover.pdf && handover.pdf.trim() !== '') {
+        // If PDF link exists, provide download options
         console.log('Opening PDF:', handover.pdf);
         Alert.alert(
           'Download PDF',
           `Download handover from ${formatDate(handover.createdAt)}?`,
           [
             { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Open in Browser',
+            { 
+              text: 'Open in Browser', 
               onPress: () => {
                 if (handover.pdf.startsWith('http')) {
                   Linking.openURL(handover.pdf);
@@ -161,8 +203,8 @@ function PreviousHandoversScreen() {
                 }
               }
             },
-            {
-              text: 'Download to Device',
+            { 
+              text: 'Download to Device', 
               onPress: async () => {
                 try {
                   if (handover.pdf.startsWith('http')) {
@@ -184,6 +226,7 @@ function PreviousHandoversScreen() {
           ]
         );
       } else {
+        // No PDF available
         Alert.alert(
           'PDF Not Available',
           'PDF is not available for this handover. This might be an older handover created before PDF generation was implemented.',
@@ -197,9 +240,12 @@ function PreviousHandoversScreen() {
       Alert.alert('Error', 'Failed to process PDF request');
     }
   };
+
+  // Render handover item
   const renderHandoverItem = (handover) => {
     const hasIssues = handover.problems || handover.stockIssues;
     const hasNotes = handover.serviceNotes;
+    
     return (
       <TouchableOpacity
         key={handover.id}
@@ -209,6 +255,8 @@ function PreviousHandoversScreen() {
       >
         <View style={styles.handoverInfo}>
           <Text style={styles.handoverDate}>{formatDate(handover.createdAt)}</Text>
+          
+          {/* Status indicators */}
           <View style={styles.statusContainer}>
             {hasNotes && (
               <View style={[styles.statusBadge, styles.notesBadge]}>
@@ -232,21 +280,25 @@ function PreviousHandoversScreen() {
             )}
           </View>
         </View>
+        
         <View style={styles.downloadIcon}>
           <Text style={styles.downloadIconText}>↓</Text>
         </View>
       </TouchableOpacity>
     );
   };
+
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView
-        style={styles.scrollView}
+      <ScrollView 
+        style={styles.scrollView} 
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
+
+        {/* Title and Date */}
         <View style={styles.titleContainer}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
             <Text style={styles.backButtonText}>‹</Text>
@@ -256,6 +308,8 @@ function PreviousHandoversScreen() {
             <Text style={styles.date}>{getCurrentDate()}</Text>
           </View>
         </View>
+
+        {/* Handovers List */}
         <View style={styles.handoversContainer}>
           {loading ? (
             <View style={styles.loadingContainer}>
@@ -280,6 +334,7 @@ function PreviousHandoversScreen() {
     </SafeAreaView>
   );
 }
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -442,4 +497,5 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 });
+
 export default PreviousHandoversScreen;

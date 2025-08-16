@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../constants/Colors";
 import { Typography } from "../../constants/Typography";
 import { Spacing } from "../../constants/Spacing";
+
 export default function AddFridgeTempModal({
   visible,
   onClose,
@@ -25,45 +26,62 @@ export default function AddFridgeTempModal({
   const [dropdownVisible, setDropdownVisible] = useState(false);
   const [tempValue, setTempValue] = useState("");
   const [saving, setSaving] = useState(false);
+
   React.useEffect(() => {
     if (visible) {
+      // Set the first available fridge as default, or empty string if no fridges
       setSelectedFridge(fridgeNames.length > 0 ? fridgeNames[0] : "");
       setTempValue("");
       setDropdownVisible(false);
       setSaving(false);
     }
   }, [visible, fridgeNames]);
+
   const handleSave = async () => {
     if (!selectedFridge || !tempValue.trim()) {
-      console.log('Missing fridge selection or temperature value');
+      console.log('⚠️ Missing fridge selection or temperature value');
       return;
     }
-    const cleanTempValue = tempValue.replace(',', '.');
+    
+    // Validate that it's a valid number string
+    const cleanTempValue = tempValue.replace(',', '.'); // Convert comma to dot
     const tempNumber = parseFloat(cleanTempValue);
+    
     if (isNaN(tempNumber)) {
-      console.log('Invalid temperature value');
+      console.log('⚠️ Invalid temperature value');
       return;
     }
-    console.log('Temperature string being saved:', cleanTempValue);
+    
+    console.log('🌡️ Temperature string being saved:', cleanTempValue);
+    
     setSaving(true);
     try {
-      await onSave(selectedFridge, cleanTempValue);
-      console.log('Temperature saved successfully');
+      await onSave(selectedFridge, cleanTempValue); // Pass the clean string
+      console.log('✅ Temperature saved successfully');
     } catch (error) {
-      console.error('Error saving temperature:', error);
+      console.error('❌ Error saving temperature:', error);
     } finally {
       setSaving(false);
     }
   };
+
+  // Format temperature input - only allow numbers, dots, and commas
   const handleTempChange = (text) => {
+    // Remove any non-numeric characters except dots and commas
     let cleanText = text.replace(/[^0-9.,]/g, '');
+    
+    // Replace comma with dot for display
     cleanText = cleanText.replace(',', '.');
+    
+    // Ensure only one decimal point
     const parts = cleanText.split('.');
     if (parts.length > 2) {
       cleanText = parts[0] + '.' + parts.slice(1).join('');
     }
+    
     setTempValue(cleanText);
   };
+
   return (
     <Modal
       visible={visible}
@@ -76,6 +94,7 @@ export default function AddFridgeTempModal({
         style={styles.modalContainer}
       >
         <View style={styles.modalContent}>
+          {/* Modal Header */}
           <View style={styles.modalHeaderRow}>
             <Text style={styles.modalTitle}>Set Fridge Temp</Text>
             <TouchableOpacity onPress={onClose}>
@@ -86,7 +105,11 @@ export default function AddFridgeTempModal({
             Today, {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </Text>
           <View style={styles.modalDivider} />
+
+          {/* Set Temperature */}
           <Text style={styles.modalSectionTitle}>Set Temperature</Text>
+
+          {/* Dropdown for fridge name under Set Temperature */}
           <TouchableOpacity
             style={styles.dropdown}
             onPress={() => setDropdownVisible(!dropdownVisible)}
@@ -130,7 +153,9 @@ export default function AddFridgeTempModal({
               />
             </View>
           )}
+
           <View style={{ height: 8 }} />
+
           <View style={styles.tempInputCard}>
             <View style={{ flex: 1 }}>
               <Text style={styles.tempInputLabel}>Temperature</Text>
@@ -145,6 +170,8 @@ export default function AddFridgeTempModal({
             </View>
             <Text style={styles.tempUnit}>℃</Text>
           </View>
+
+          {/* Save */}
           <View style={styles.modalActions}>
             <TouchableOpacity
               style={[
@@ -167,6 +194,7 @@ export default function AddFridgeTempModal({
     </Modal>
   );
 }
+
 const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,

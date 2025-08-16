@@ -12,8 +12,10 @@ import {
 import { Colors } from "../../constants/Colors";
 import { Typography } from "../../constants/Typography";
 import { Spacing } from "../../constants/Spacing";
+
 export default function AddCleaningTaskModal({ visible, onClose, onAdd, date }) {
   const [taskName, setTaskName] = useState("");
+
   const handleAdd = () => {
     if (taskName.trim()) {
       onAdd(taskName.trim());
@@ -21,9 +23,11 @@ export default function AddCleaningTaskModal({ visible, onClose, onAdd, date }) 
       onClose();
     }
   };
+
   React.useEffect(() => {
     if (!visible) setTaskName("");
   }, [visible]);
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
@@ -33,6 +37,7 @@ export default function AddCleaningTaskModal({ visible, onClose, onAdd, date }) 
         <View style={styles.overlay}>
           <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} />
           <View style={styles.modal}>
+            {/* Header */}
             <View style={styles.header}>
               <View style={styles.titleContainer}>
                 <Text style={styles.title}>Add Checklist Task</Text>
@@ -42,6 +47,8 @@ export default function AddCleaningTaskModal({ visible, onClose, onAdd, date }) 
                 <Text style={styles.closeText}>×</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Form */}
             <View style={styles.form}>
               <Text style={styles.label}>Item Name</Text>
               <TextInput
@@ -53,6 +60,8 @@ export default function AddCleaningTaskModal({ visible, onClose, onAdd, date }) 
                 autoFocus
               />
             </View>
+
+            {/* Add Button */}
             <View style={styles.buttonContainer}>
               <TouchableOpacity
                 style={[
@@ -71,6 +80,7 @@ export default function AddCleaningTaskModal({ visible, onClose, onAdd, date }) 
     </Modal>
   );
 }
+
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,

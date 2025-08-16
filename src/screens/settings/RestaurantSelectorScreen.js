@@ -2,17 +2,19 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { useRestaurant } from '../../contexts/RestaurantContext';
 import { Colors, Typography, Spacing } from '../../constants';
+
 const RestaurantSelectorScreen = () => {
   const { restaurantId, restaurantDisplayName, setRestaurantId, availableRestaurants, normalizeRestaurantName } = useRestaurant();
   const [customName, setCustomName] = useState('');
+
   const handleSelectRestaurant = (selectedId) => {
     Alert.alert(
       'Change Restaurant',
       `Switch to ${selectedId.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}?`,
       [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Switch',
+        { 
+          text: 'Switch', 
           onPress: () => {
             setRestaurantId(selectedId);
             Alert.alert('Success', 'Restaurant changed successfully!');
@@ -21,11 +23,13 @@ const RestaurantSelectorScreen = () => {
       ]
     );
   };
+
   const handleCustomName = () => {
     if (!customName.trim()) {
       Alert.alert('Error', 'Please enter a restaurant name');
       return;
     }
+
     const normalizedName = normalizeRestaurantName(customName);
     Alert.alert(
       'Create Custom Restaurant',
@@ -43,9 +47,11 @@ const RestaurantSelectorScreen = () => {
       ]
     );
   };
+
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.title}>Restaurant Selector</Text>
+      
       <View style={styles.currentSection}>
         <Text style={styles.sectionTitle}>Current Restaurant</Text>
         <View style={styles.currentRestaurant}>
@@ -53,6 +59,7 @@ const RestaurantSelectorScreen = () => {
           <Text style={styles.currentId}>ID: {restaurantId}</Text>
         </View>
       </View>
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Predefined Restaurants</Text>
         {Object.entries(availableRestaurants).map(([key, id]) => (
@@ -74,6 +81,7 @@ const RestaurantSelectorScreen = () => {
           </TouchableOpacity>
         ))}
       </View>
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Create Custom Restaurant</Text>
         <TextInput
@@ -89,6 +97,7 @@ const RestaurantSelectorScreen = () => {
           <Text style={styles.createButtonText}>Create Custom Restaurant</Text>
         </TouchableOpacity>
       </View>
+
       <View style={styles.infoSection}>
         <Text style={styles.infoTitle}>How it works:</Text>
         <Text style={styles.infoText}>
@@ -101,6 +110,7 @@ const RestaurantSelectorScreen = () => {
     </ScrollView>
   );
 };
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -205,4 +215,5 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 });
+
 export default RestaurantSelectorScreen;

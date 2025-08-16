@@ -10,18 +10,22 @@ import {
 } from 'react-native';
 import { Colors, Typography, Spacing } from '../../constants';
 import { useRestaurant } from '../../contexts/RestaurantContext';
+
 const RestaurantSelectionScreen = ({ navigation }) => {
   const { setRestaurantId } = useRestaurant();
   const [customId, setCustomId] = useState('');
+
   const predefinedRestaurants = [
     { id: 'restaurant-1', name: 'Main Branch' },
     { id: 'restaurant-2', name: 'Downtown Location' },
     { id: 'restaurant-3', name: 'Airport Branch' },
   ];
+
   const handleSelectRestaurant = (restaurantId) => {
     setRestaurantId(restaurantId);
     navigation.navigate('Main');
   };
+
   const handleCustomId = () => {
     if (customId.trim()) {
       setRestaurantId(customId.trim());
@@ -30,13 +34,16 @@ const RestaurantSelectionScreen = ({ navigation }) => {
       Alert.alert('Please enter a restaurant ID');
     }
   };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Select Restaurant</Text>
         <Text style={styles.subtitle}>Choose your restaurant location</Text>
       </View>
+
       <View style={styles.content}>
+        {/* Predefined Restaurants */}
         <Text style={styles.sectionTitle}>Quick Select</Text>
         {predefinedRestaurants.map((restaurant) => (
           <TouchableOpacity
@@ -48,6 +55,8 @@ const RestaurantSelectionScreen = ({ navigation }) => {
             <Text style={styles.restaurantId}>{restaurant.id}</Text>
           </TouchableOpacity>
         ))}
+
+        {/* Custom Restaurant ID */}
         <Text style={styles.sectionTitle}>Custom Restaurant ID</Text>
         <TextInput
           style={styles.input}
@@ -56,6 +65,7 @@ const RestaurantSelectionScreen = ({ navigation }) => {
           onChangeText={setCustomId}
           autoCapitalize="none"
         />
+        
         <TouchableOpacity style={styles.customButton} onPress={handleCustomId}>
           <Text style={styles.customButtonText}>Use Custom ID</Text>
         </TouchableOpacity>
@@ -63,6 +73,7 @@ const RestaurantSelectionScreen = ({ navigation }) => {
     </SafeAreaView>
   );
 };
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -134,4 +145,5 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontSemiBold,
   },
 });
+
 export default RestaurantSelectionScreen;

@@ -23,25 +23,32 @@ import { addDoc, serverTimestamp, getDocs, getDoc } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
+
 const InvoiceUploadScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
   const [image, setImage] = useState(null);
   const [uploading, setUploading] = useState(false);
+
+  // Invoice details state
   const [invoiceNumber, setInvoiceNumber] = useState('#INV-2025-0421');
   const [date, setDate] = useState(new Date());
-  const [amount, setAmount] = useState('0');
+  const [amount, setAmount] = useState('0'); // <-- Set default amount to 0
   const [supplier, setSupplier] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
+
   const [editField, setEditField] = useState(null);
   const [supplierModalVisible, setSupplierModalVisible] = useState(false);
+
   const [supplierList, setSupplierList] = useState([]);
+
   const animatedListHeight = useRef(new Animated.Value(0)).current;
   const animatedOpacity = useRef(new Animated.Value(0)).current;
+
   useEffect(() => {
     if (supplierModalVisible) {
       Animated.parallel([
         Animated.timing(animatedListHeight, {
-          toValue: 160,
+          toValue: 160, // adjust to fit your list
           duration: 200,
           useNativeDriver: false,
         }),
@@ -66,44 +73,53 @@ const InvoiceUploadScreen = ({ navigation }) => {
       ]).start();
     }
   }, [supplierModalVisible]);
+
   useEffect(() => {
     const fetchSuppliers = async () => {
       if (!restaurantId) return;
+      
       try {
-        console.log('Fetching suppliers for restaurant:', restaurantId);
+        console.log('🔍 Fetching suppliers for restaurant:', restaurantId);
+        
         const suppliersDocRef = getRestaurantDoc(restaurantId, 'suppliers', 'suppliers');
         const suppliersDoc = await getDoc(suppliersDocRef);
+        
         if (suppliersDoc.exists()) {
           const data = suppliersDoc.data();
           const suppliersArray = data.names || [];
-          console.log('Fetched suppliers:', suppliersArray);
+          console.log('✅ Fetched suppliers:', suppliersArray);
           setSupplierList(suppliersArray);
+          // Set first supplier as default if supplier is empty and there are suppliers
           if (!supplier && suppliersArray.length > 0) {
             setSupplier(suppliersArray[0]);
           }
         } else {
-          console.log('Suppliers document not found, no suppliers available');
+          console.log('⚠️ Suppliers document not found, no suppliers available');
           setSupplierList([]);
         }
       } catch (error) {
-        console.error('Error fetching suppliers:', error);
+        console.error('❌ Error fetching suppliers:', error);
         setSupplierList([]);
       }
     };
     fetchSuppliers();
   }, [restaurantId]);
+
   const pickImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaType.IMAGE,
+      mediaTypes: ImagePicker.MediaType.IMAGE, // <-- updated line
       allowsEditing: true,
       quality: 0.7,
     });
+
     if (!result.canceled) {
       setImage(result.assets[0].uri);
     }
   };
+
   const handleUpload = async () => {
     if (!restaurantId) return;
+    
     setUploading(true);
     try {
       await addDoc(getRestaurantCollection(restaurantId, "invoices"), {
@@ -121,27 +137,35 @@ const InvoiceUploadScreen = ({ navigation }) => {
       console.error(error);
     }
   };
+
   const handleRetake = () => {
     setImage(null);
   };
+
+  // Helper to format date as YYYY-MM-DD
   const formatDate = (dateObj) => {
     const month = String(dateObj.getMonth() + 1).padStart(2, '0');
     const day = String(dateObj.getDate()).padStart(2, '0');
     const year = dateObj.getFullYear();
     return `${year}-${month}-${day}`;
   };
+
+  // Update invoice number when date changes
   useEffect(() => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     setInvoiceNumber(`#INV-${year}-${month}${day}`);
   }, [date]);
+
+  // Date picker handler
   const handleDateConfirm = (selectedDate) => {
     setShowDatePicker(false);
     if (selectedDate) {
       setDate(selectedDate);
     }
   };
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
@@ -149,6 +173,7 @@ const InvoiceUploadScreen = ({ navigation }) => {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView contentContainerStyle={styles.scrollContent}>
+          {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
               <Text style={styles.backArrow}>‹</Text>
@@ -159,19 +184,35 @@ const InvoiceUploadScreen = ({ navigation }) => {
             </View>
             <View style={{ width: 28 }} />
           </View>
+
+          {/* Upload Box */}
+          {/* <TouchableOpacity style={styles.uploadBox} onPress={pickImage}>
+            {image ? (
+              <Image source={{ uri: image }} style={styles.preview} />
+            ) : (
+              <View style={styles.uploadPlaceholder}>
+                <Ionicons name="camera-outline" size={48} color={Colors.gray300} />
+                <Text style={styles.uploadText}>Tap to scan or upload invoice</Text>
+              </View>
+            )}
+          </TouchableOpacity> */}
+
+          {/* Invoice Details */}
           <Text style={styles.sectionTitle}>Invoice Details</Text>
           <View style={styles.form}>
+            {/* Invoice Number */}
             <View style={styles.inputRow}>
               <Text style={styles.inputLabel}>Invoice Number</Text>
               <View style={styles.inputWithIcon}>
                 <TextInput
                   style={styles.input}
                   value={invoiceNumber}
-                  editable={false}
+                  editable={false} // Make it read-only
                   selectTextOnFocus={false}
                 />
               </View>
             </View>
+            {/* Date */}
             <View style={styles.inputRow}>
               <Text style={styles.inputLabel}>Date</Text>
               <TouchableOpacity
@@ -195,6 +236,7 @@ const InvoiceUploadScreen = ({ navigation }) => {
                 themeVariant="light"
               />
             </View>
+            {/* Amount */}
             <View style={styles.inputRow}>
               <Text style={styles.inputLabel}>Amount</Text>
               <View style={styles.inputWithIcon}>
@@ -210,6 +252,7 @@ const InvoiceUploadScreen = ({ navigation }) => {
                 />
               </View>
             </View>
+            {/* Supplier */}
             <View style={styles.inputRow}>
               <Text style={styles.inputLabel}>Supplier</Text>
               <TouchableOpacity
@@ -239,6 +282,8 @@ const InvoiceUploadScreen = ({ navigation }) => {
               </Animated.View>
             </View>
           </View>
+
+          {/* Buttons */}
           <Button
             onPress={handleUpload}
             style={styles.saveButton}
@@ -257,6 +302,7 @@ const InvoiceUploadScreen = ({ navigation }) => {
     </SafeAreaView>
   );
 };
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -426,4 +472,5 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
 });
+
 export default InvoiceUploadScreen;

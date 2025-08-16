@@ -1,6 +1,7 @@
 import React from 'react';
 import { TouchableOpacity, Text, ActivityIndicator } from 'react-native';
 import { Colors, Spacing, Typography } from '../../constants';
+import { scaleWidth, scaleHeight, scaleFont } from '../../utils/responsive';
 
 const Button = ({
   children,
@@ -14,7 +15,7 @@ const Button = ({
 }) => {
   const getButtonStyle = () => {
     const baseStyle = {
-      borderRadius: 12,
+      borderRadius: scaleWidth(12),
       alignItems: 'center',
       justifyContent: 'center',
       flexDirection: 'row',
@@ -38,17 +39,17 @@ const Button = ({
       sm: {
         paddingVertical: Spacing.sm,
         paddingHorizontal: Spacing.md,
-        minHeight: 36,
+        minHeight: scaleHeight(36),
       },
       md: {
         paddingVertical: Spacing.md,
         paddingHorizontal: Spacing.lg,
-        minHeight: 48,
+        minHeight: scaleHeight(48),
       },
       lg: {
         paddingVertical: Spacing.lg,
         paddingHorizontal: Spacing.xl,
-        minHeight: 56,
+        minHeight: scaleHeight(56),
       },
     };
 

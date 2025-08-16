@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { getFormattedTodayDate } from '../../utils/dateUtils';
+import React, { useEffect, useState, useCallback } from 'react';
+import { getFormattedTodayDate, groupPrepItemsByDay } from '../../utils/dateUtils';
 import {
   View,
   Text,
@@ -8,80 +8,217 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { Colors, Spacing, Typography } from '../../constants';
-import { HomeIcon, TasksIcon, RecipesIcon, SettingsIcon } from "../../components/icons/NavigationIcons";
-import { db, auth } from '../../../firebase'; 
+import { getAndroidTitleMargin } from '../../utils/responsive';
+import useNavigationBar from '../../hooks/useNavigationBar';
+import { onSnapshot, query, orderBy, limit, where, doc, getDoc, getDocs } from "firebase/firestore";
+import { useRestaurant } from "../../contexts/RestaurantContext";
+import { getRestaurantCollection } from "../../utils/firestoreHelpers";
+import { auth, db } from "../../../firebase";
 
 const DashboardScreen = ({ navigation }) => {
+  const { restaurantId } = useRestaurant();
   const [currentDate, setCurrentDate] = useState('');
-  const [chefName, setChefName] = useState('Chef Marux'); 
+  const [chefName, setChefName] = useState('Chef');
+  const [prepCount, setPrepCount] = useState(0);
+  const [orderCount, setOrderCount] = useState(0);
+  const [recipeCount, setRecipeCount] = useState(0);
+  const [latestFridgeTemp, setLatestFridgeTemp] = useState('--°C');
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Hide Android navigation bar
+  const navigationBar = useNavigationBar();
+  navigationBar.useHidden(); // Use hidden mode for complete immersion
 
   useEffect(() => {
+    if (!restaurantId) return;
+    
     setCurrentDate(getFormattedTodayDate());
+    
+    // Fetch user's name from their profile
+    const fetchUserName = async () => {
+      try {
+        const user = auth.currentUser;
+        if (user) {
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            const fullName = userData.fullName || userData.name || 'Chef';
+            // Extract first name (everything before the first space)
+            const firstName = fullName.split(' ')[0];
+            // Capitalize only the first letter, preserve the rest
+            const capitalizedFirstName = firstName.charAt(0).toUpperCase() + firstName.slice(1);
+            setChefName(capitalizedFirstName);
+          }
+        }
+      } catch (error) {
+        console.warn('Error fetching user name:', error);
+        setChefName('Chef'); // Fallback
+      }
+    };
 
-  }, []);
+    fetchUserName();
+    
+    // Real-time listener for prep list with error handling (count items that are not done within 48-hour window)
+    const unsubPrep = onSnapshot(
+      getRestaurantCollection(restaurantId, "preplist"),
+      (snapshot) => {
+        // Get all prep items
+        const allPrepItems = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        // Filter items within 48-hour window using the same logic as PrepListsScreen
+        const { todayItems, yesterdayItems } = groupPrepItemsByDay(allPrepItems);
+        const visibleItems = [...todayItems, ...yesterdayItems];
+        
+        // Count incomplete items from visible items only
+        const incompleteCount = visibleItems.filter(item => !item.done).length;
+        setPrepCount(incompleteCount);
+      },
+      (error) => {
+        console.warn('Prep list listener error:', error);
+        setPrepCount(0);
+      }
+    );
+    
+    // Real-time listener for order list with error handling (only count incomplete items)
+    const unsubOrder = onSnapshot(
+      query(
+        getRestaurantCollection(restaurantId, "orderlist"),
+        where("done", "==", false)
+      ),
+      (snapshot) => {
+        setOrderCount(snapshot.size);
+      },
+      (error) => {
+        console.warn('Order list listener error:', error);
+        setOrderCount(0);
+      }
+    );
+    
+    // Real-time listener for recipes with error handling (recipes are stored in category subcollections)
+    const fetchRecipeCount = async () => {
+      try {
+        // First get category names
+        const categoryNamesDoc = await getDoc(doc(db, 'restaurants', restaurantId, 'recipes', 'categories'));
+        let categoryNames = [];
+        
+        if (categoryNamesDoc.exists()) {
+          const data = categoryNamesDoc.data();
+          categoryNames = data?.names || [];
+        } else {
+          categoryNames = ['Desserts', 'Main', 'Starters']; // Fallback categories
+        }
+        
+        // Count recipes across all categories
+        let totalRecipes = 0;
+        for (const categoryName of categoryNames) {
+          const categoryCollection = getRestaurantCollection(restaurantId, `recipes/categories/${categoryName}`);
+          const categorySnapshot = await getDocs(categoryCollection);
+          totalRecipes += categorySnapshot.size;
+        }
+        
+        setRecipeCount(totalRecipes);
+      } catch (error) {
+        console.warn('Error fetching recipe count:', error);
+        setRecipeCount(0);
+      }
+    };
+    
+    // Initial fetch
+    fetchRecipeCount();
+    
+    // Set up periodic refresh for recipe count (since recipes don't change frequently)
+    const recipeCountInterval = setInterval(fetchRecipeCount, 30000); // Refresh every 30 seconds
+    
+    // Real-time listener for latest fridge temperature
+    const unsubFridgeTemp = onSnapshot(
+      query(
+        getRestaurantCollection(restaurantId, "fridgelogs"), 
+        orderBy("createdAt", "desc"), 
+        limit(1)
+      ),
+      (snapshot) => {
+        if (!snapshot.empty) {
+          const latestLog = snapshot.docs[0].data();
+          const temp = latestLog.temperature;
+          if (temp && temp !== '') {
+            setLatestFridgeTemp(`${temp}°C`);
+          } else {
+            setLatestFridgeTemp('--°C');
+          }
+        } else {
+          setLatestFridgeTemp('--°C');
+        }
+      },
+      (error) => {
+        console.warn('Fridge temperature listener error:', error);
+        setLatestFridgeTemp('--°C');
+      }
+    );
+    
+    return () => {
+      unsubPrep();
+      unsubOrder();
+      clearInterval(recipeCountInterval);
+      unsubFridgeTemp();
+    };
+  }, [restaurantId]);
 
+  // Update stats array to use real-time counts
   const stats = [
     { 
       title: 'Prep List', 
-      value: '4', 
-      subtitle: 'Items pending',
-      iconUri: 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/prep-list-icon-7OGiBj3xTb4oUzsdkEHvYfd6U6uST2.png', 
+      value: prepCount.toString(), 
+      subtitle: prepCount === 1 ? 'Item pending' : 'Items pending',
+      iconUri: 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/prep-list-icon-7OGiBj3xTb4oUzsdkEHvYfd6U6uST2.png',
     },
     { 
       title: 'Order List', 
-      value: '6', 
-      subtitle: 'Active orders',
-      iconUri: 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/order-list-icon-Z5JTOiHoj7KslxsJDGqVam7GH6o46F.png', 
-    },
-    { 
-      title: 'No', 
-      value: '5', 
-      subtitle: 'Items out of stock',
-      iconUri: 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/no-icon-9zxU9sOjqWRMb9cgGz3VATbjlf16ju.png', 
-    },
-    { 
-      title: 'Low', 
-      value: '12', 
-      subtitle: 'Items running low',
-      iconUri: 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/low-icon-e749TPuEdLD4QjbWBeK8Yr5mlSRfAl.png', 
+      value: orderCount.toString(), 
+      subtitle: orderCount === 1 ? 'Active order' : 'Active orders',
+      iconUri: 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/order-list-icon-Z5JTOiHoj7KslxsJDGqVam7GH6o46F.png',
     },
   ];
 
   const kitchenManagement = [
     {
       title: 'Prep Lists',
-      subtitle: '4 items pending',
+      subtitle: `${prepCount} item${prepCount === 1 ? '' : 's'} pending`,
       icon: 'clipboard-outline',
       iconColor: Colors.primary,
       iconType: 'ionicon'
     },
     {
       title: 'Order Lists',
-      subtitle: '6 active orders',
+      subtitle: `${orderCount} active order${orderCount === 1 ? '' : 's'}`,
       icon: 'fast-food-outline',
       iconColor: Colors.primary,
       iconType: 'ionicon'
     },
     {
       title: 'Fridge Temperature',
-      subtitle: '3.3°C',
+      subtitle: 'Log fridge temps',
       icon: 'thermometer-outline',
       iconColor: Colors.primary,
       iconType: 'ionicon'
     },
     {
       title: 'Delivery Temperature',
-      subtitle: 'Chilled | Frozen',
+      subtitle: 'Log and monitor delivery temps',
       icon: 'thermometer-outline',
       iconColor: Colors.primary,
-      iconType: 'ionicon'
+      iconType: 'ionicon',
+      screen: 'DeliveryTempLogs', // This should match the Stack.Screen name in App.js
     },
     {
       title: 'Recipe Library',
-      subtitle: '156 recipes',
+      subtitle: `${recipeCount} recipe${recipeCount === 1 ? '' : 's'}`,
       icon: 'restaurant-outline',
       iconColor: Colors.primary,
       iconType: 'ionicon'
@@ -109,6 +246,7 @@ const DashboardScreen = ({ navigation }) => {
     },
   ];
 
+  // Render icon based on type
   const renderIcon = (icon, color, type, size = 24) => {
     if (type === 'ionicon') {
       return <Ionicons name={icon} size={size} color={color} />;
@@ -118,9 +256,24 @@ const DashboardScreen = ({ navigation }) => {
     return <Feather name={icon} size={size} color={color} />;
   };
 
+  // Add a manual refresh function
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    // You can re-run your listeners or just set refreshing to false after a short delay
+    setTimeout(() => {
+      setRefreshing(false);
+    }, 500); // Adjust delay as needed
+  }, []);
+
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollView}>
+      <ScrollView
+        style={styles.scrollView}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
+        {/* Header */}
         <View style={styles.header}>
           <Text style={styles.appTitle}>ChefFlow</Text>
           <View style={styles.greetingContainer}>
@@ -129,9 +282,20 @@ const DashboardScreen = ({ navigation }) => {
           </View>
         </View>
 
+        {/* Stats Grid */}
         <View style={styles.statsGrid}>
           {stats.map((stat, index) => (
-            <TouchableOpacity key={index} style={styles.statCard}>
+            <TouchableOpacity
+              key={index}
+              style={styles.statCard}
+              onPress={() => {
+                if (stat.title === 'Prep List') {
+                  navigation.navigate('PrepLists');
+                } else if (stat.title === 'Order List') {
+                  navigation.navigate('OrderLists');
+                }
+              }}
+            >
               <View style={styles.statHeader}>
                 <Image 
                   source={{ uri: stat.iconUri }} 
@@ -146,6 +310,7 @@ const DashboardScreen = ({ navigation }) => {
           ))}
         </View>
 
+        {/* Kitchen Management */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Kitchen Management</Text>
           <View style={styles.menuContainer}>
@@ -156,6 +321,18 @@ const DashboardScreen = ({ navigation }) => {
                 onPress={() => {
                   if (item.title === 'Order Lists') {
                     navigation.navigate('OrderLists');
+                  } else if (item.title === 'Prep Lists') {
+                    navigation.navigate('PrepLists');
+                  } else if (item.title === 'Recipe Library') {
+                    navigation.navigate('Recipes');
+                  } else if (item.title === 'Fridge Temperature') {
+                    navigation.navigate('FridgeTempLogs');
+                  } else if (item.title === 'Cleaning Checklist') {
+                    navigation.navigate('CleaningChecklist');
+                  } else if (item.title === 'Delivery Temperature') {
+                    navigation.navigate('DeliveryTempLogs');
+                  } else if (item.screen) {
+                    navigation.navigate(item.screen);
                   }
                 }}
               >
@@ -174,16 +351,31 @@ const DashboardScreen = ({ navigation }) => {
           </View>
         </View>
 
+        {/* Downloadables */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Downloadables</Text>
           <View style={styles.menuContainer}>
             {downloadables.map((item, index) => (
-              <TouchableOpacity key={index} style={styles.menuItem}>
+              <TouchableOpacity
+                key={index}
+                style={styles.menuItem}
+                onPress={() => {
+                  if (item.title === 'Invoices') {
+                    navigation.navigate('Invoices');
+                  } else if (item.title === 'Shift Handovers') {
+                    navigation.navigate('PreviousHandovers');
+                  } else if (item.title === 'Temperature Records') {
+                    navigation.navigate('TemperatureRecords');
+                  }
+                }}
+              >
                 <View style={styles.menuItemLeft}>
                   <View style={styles.menuItemIcon}>
                     {renderIcon(item.icon, item.iconColor, item.iconType)}
                   </View>
-                  <Text style={styles.menuItemTitle}>{item.title}</Text>
+                  <View>
+                    <Text style={styles.menuItemTitle}>{item.title}</Text>
+                  </View>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
               </TouchableOpacity>
@@ -191,9 +383,9 @@ const DashboardScreen = ({ navigation }) => {
           </View>
         </View>
 
+        {/* Add bottom padding to account for bottom navigation */}
         <View style={{ height: 80 }} />
       </ScrollView>
-
     </SafeAreaView>
   );
 };
@@ -208,7 +400,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.lg,
+    paddingTop: Spacing.lg + getAndroidTitleMargin(),
     paddingBottom: Spacing.md,
   },
   appTitle: {
@@ -322,8 +514,7 @@ const styles = StyleSheet.create({
     fontSize: Typography.sm,
     fontFamily: Typography.fontRegular,
     color: Colors.textSecondary,
-    opacity: 0.7,  
-    marginTop: 4,
+    opacity: 0.7,
   },
 });
 

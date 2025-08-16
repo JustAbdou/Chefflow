@@ -1,9 +1,13 @@
 export const Colors = {
   primary: "#007AFF",
   primaryDark: "#0056CC",
-  activeBlue: "#2563EB", 
+  activeBlue: "#2563EB",
+  secondary: "#34C759",
+  success: "#00C896",
   warning: "#FF9500",
   danger: "#FF3B30",
+  error: "#FF3B30",
+  white: "#FFFFFF",
 
   gray50: "#F9FAFB",
   gray100: "#F3F4F6",

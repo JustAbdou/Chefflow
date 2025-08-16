@@ -1,3 +1,5 @@
+import { responsiveTypography, scaleFont } from '../utils/responsive';
+
 export const Typography = {
   fontRegular: 'Inter_400Regular',
   fontMedium: 'Inter_500Medium',
@@ -6,16 +8,18 @@ export const Typography = {
   fontExtraBold: 'Inter_800ExtraBold',
   fontBlack: 'Inter_900Black',
 
-  xs: 12,
-  sm: 14,
-  base: 16,
-  lg: 18,
-  xl: 20,
-  xxl: 24,
-  '3xl': 30,
-  '4xl': 36,
+  xs: responsiveTypography.xs,
+  sm: responsiveTypography.sm,
+  base: responsiveTypography.base,
+  lg: responsiveTypography.lg,
+  xl: responsiveTypography.xl,
+  xxl: responsiveTypography.xxl,
+  '3xl': responsiveTypography['3xl'],
+  '4xl': responsiveTypography['4xl'],
 
   tight: 1.25,
   normal: 1.5,
   relaxed: 1.75,
+
+  scale: scaleFont,
 };

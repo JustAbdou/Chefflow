@@ -1,4 +1,5 @@
 import React from 'react';
+import { TouchableOpacity } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import DashboardScreen from '../screens/dashboard/DashboardScreen';
 import ProfileScreen from '../screens/settings/ProfileScreen';
@@ -7,6 +8,13 @@ import TasksScreen from '../screens/tasks/TasksScreen';
 import { HomeIcon, RecipesIcon, SettingsIcon, TasksIcon } from '../components/icons/NavigationIcons'; // <-- Import icons
 
 const Tab = createBottomTabNavigator();
+
+// Custom tab button to remove press opacity
+const CustomTabButton = (props) => {
+  return (
+    <TouchableOpacity {...props} activeOpacity={1} />
+  );
+};
 
 export default function TabNavigator() {
   return (
@@ -20,7 +28,8 @@ export default function TabNavigator() {
         tabBarItemStyle: {
           marginVertical: 10,
         },
-        animationEnabled: false, 
+        tabBarButton: CustomTabButton, // Remove press opacity
+        animationEnabled: false, // <-- Disable tab switching animation
       }}
     >
       <Tab.Screen
@@ -55,6 +64,7 @@ export default function TabNavigator() {
           tabBarLabel: 'Settings',
         }}
       />
+      {/* Add other screens here */}
     </Tab.Navigator>
   );
 }

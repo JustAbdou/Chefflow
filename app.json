@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "chefflow_local",
-    "slug": "chefflow_local",
+    "name": "ChefFlow",
+    "slug": "chefflow",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -13,20 +13,51 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.marux.chefflow",
+      "buildNumber": "2",
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app uses the camera to capture photos of recipes and invoices.",
+        "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select images for recipes and invoices.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "navigationBar": {
+        "visible": "leanback"
+      },
+      "package": "com.marux.chefflow",
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "softwareKeyboardLayoutMode": "pan"
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    },
-    "plugins": [
-      "expo-font"
-    ]
+    },      "plugins": [
+      "expo-font",
+      "expo-navigation-bar",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "This app uses photos to add images to recipes and invoices.",
+          "cameraPermission": "This app uses the camera to take photos for recipes and invoices."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "4ef4ea36-7977-4889-9645-bd7cdbb937bd"
+      }
+    }
   }
 }

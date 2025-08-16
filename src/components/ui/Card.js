@@ -25,7 +25,7 @@ const Card = ({
     };
     cardStyle.shadowOpacity = 0.1;
     cardStyle.shadowRadius = 8;
-    cardStyle.elevation = 3;
+    cardStyle.elevation = 3; // Android shadow
   }
 
   return <View style={cardStyle}>{children}</View>;

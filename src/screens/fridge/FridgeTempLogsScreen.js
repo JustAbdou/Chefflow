@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -6,38 +6,72 @@ import {
   SafeAreaView,
   TouchableOpacity,
   ScrollView,
+  TextInput,
   ActivityIndicator,
   RefreshControl,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
-import { Ionicons, Feather } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { Swipeable } from "react-native-gesture-handler";
 import { getDocs, addDoc, serverTimestamp, doc, getDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
 import { auth } from "../../../firebase";
+
 import { Colors } from "../../constants/Colors";
 import { Typography } from "../../constants/Typography";
 import { Spacing } from "../../constants/Spacing";
 import { getAndroidTitleMargin } from "../../utils/responsive";
 import useNavigationBar from "../../hooks/useNavigationBar";
-import AddFridgeTempModal from "./AddFridgeTempModal";
+
 export default function FridgeTempLogsScreen({ navigation }) {
   const { restaurantId } = useRestaurant();
-  const [selectedTab, setSelectedTab] = useState("AM");
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [modalVisible, setModalVisible] = useState(false);
-  const navigationBar = useNavigationBar();
-  navigationBar.useHidden();
   const [fridgeNames, setFridgeNames] = useState([]);
-  const [loadingFridges, setLoadingFridges] = useState(false);
+  const [logs, setLogs] = useState([]);
+  const [expanded, setExpanded] = useState({});
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const updateTimeouts = useRef({});
+
+  // Hide Android navigation bar
+  const navigationBar = useNavigationBar();
+  navigationBar.useHidden(); // Use hidden mode for complete immersion
+
+  // Date formatting
+  const today = new Date();
+  const dayName = today.toLocaleDateString(undefined, { weekday: "long" });
+  const monthName = today.toLocaleDateString(undefined, { month: "long" });
+  const dayNum = today.getDate();
+  const todayString = `${dayName}, ${monthName} ${dayNum}`;
+
+  // Fetch fridge names from Firestore
+  const fetchFridgeNames = async () => {
+    if (!restaurantId) return;
+    
+    try {
+      const fridgesDocRef = getRestaurantDoc(restaurantId, "fridges", "fridges");
+      const fridgesDoc = await getDoc(fridgesDocRef);
+      
+      if (fridgesDoc.exists() && fridgesDoc.data().names) {
+        setFridgeNames(fridgesDoc.data().names);
+      } else {
+        setFridgeNames([]);
+      }
+    } catch (error) {
+      console.error("Error fetching fridge names:", error);
+      setFridgeNames([]);
+    }
+  };
+
+  // Fetch logs from fridgelogs collection
   const fetchLogs = async () => {
     if (!restaurantId) return;
+    
     try {
-      console.log('🔍 Fetching fridge logs for restaurant:', restaurantId);
       const fridgeLogsCollection = getRestaurantCollection(restaurantId, 'fridgelogs');
       const logsSnapshot = await getDocs(fridgeLogsCollection);
+      
       let allLogs = [];
       logsSnapshot.forEach(docSnap => {
         const data = docSnap.data();
@@ -46,119 +80,207 @@ export default function FridgeTempLogsScreen({ navigation }) {
           ...data,
         });
       });
+      
+      // Sort logs by createdAt (newest first)
       allLogs.sort((a, b) => {
         if (a.createdAt && b.createdAt) {
           return b.createdAt.seconds - a.createdAt.seconds;
         }
         return 0;
       });
-      console.log(`Fetched ${allLogs.length} fridge logs`);
+      
       setLogs(allLogs);
     } catch (error) {
       console.error('Error fetching fridge logs:', error);
     }
   };
+
+  // Fetch data from Firestore
   useEffect(() => {
-    const loadInitialData = async () => {
+    const loadData = async () => {
       setLoading(true);
-      await fetchLogs();
+      await Promise.all([fetchFridgeNames(), fetchLogs()]);
       setLoading(false);
+      setRefreshing(false);
     };
-    loadInitialData();
-  }, [selectedTab, restaurantId]);
-  const handleRefresh = async () => {
+    loadData();
+  }, [restaurantId]);
+
+  // Pull to refresh handler
+  const onRefresh = async () => {
     setRefreshing(true);
-    await fetchLogs();
+    await Promise.all([fetchFridgeNames(), fetchLogs()]);
     setRefreshing(false);
   };
-  useEffect(() => {
-    const fetchFridges = async () => {
-      if (!restaurantId) return;
-      setLoadingFridges(true);
-      try {
-        console.log('🔍 Fetching fridges array from restaurant:', restaurantId);
-        const fridgesDocRef = getRestaurantDoc(restaurantId, 'fridges', 'fridges');
-        const fridgesDoc = await getDoc(fridgesDocRef);
-        if (fridgesDoc.exists()) {
-          const data = fridgesDoc.data();
-          const fridgesArray = data.names || [];
-          console.log('Fetched fridges:', fridgesArray);
-          setFridgeNames(fridgesArray);
-        } else {
-          console.log('Fridges document not found, no fridges available');
-          setFridgeNames([]);
-        }
-      } catch (error) {
-        console.error('Error fetching fridges:', error);
-        setFridgeNames([]);
-      } finally {
-        setLoadingFridges(false);
+
+  // Create or update fridge log for a fridge
+  const handleCreateOrUpdateLog = async (fridgeName) => {
+    if (!restaurantId || !auth.currentUser) return;
+    
+    try {
+      // Check if a log already exists for this fridge today
+      const existingLog = logs.find(log => log.fridge === fridgeName);
+      
+      if (!existingLog) {
+        // Create new log
+        await addDoc(getRestaurantCollection(restaurantId, "fridgelogs"), {
+          fridge: fridgeName,
+          createdAt: serverTimestamp(),
+          createdBy: auth.currentUser.uid,
+          restaurantId: restaurantId,
+          temps: { am: "", pm: "" },
+        });
+        
+        // Refresh logs
+        await fetchLogs();
       }
+    } catch (error) {
+      console.error("Error creating fridge log:", error);
+    }
+  };
+
+  // Get combined fridge data (from fridge names list and existing logs)
+  const getCombinedFridgeData = () => {
+    const fridgeData = [];
+    
+    // Add all fridges from the fridge names list
+    fridgeNames.forEach(fridgeName => {
+      const existingLog = logs.find(log => log.fridge === fridgeName);
+      
+      if (existingLog) {
+        // Use existing log data, ensure temps object exists
+        fridgeData.push({
+          ...existingLog,
+          temps: existingLog.temps || { am: "", pm: "" },
+        });
+      } else {
+        // Create placeholder data for fridge without log
+        // Use a consistent ID format that includes the fridge name
+        const placeholderId = `placeholder-${fridgeName}`;
+        fridgeData.push({
+          id: placeholderId,
+          fridge: fridgeName,
+          createdAt: null,
+          temps: { am: "", pm: "" },
+          isPlaceholder: true,
+        });
+      }
+    });
+    
+    return fridgeData;
+  };
+
+  // Set temperature handler (updates local state immediately, Firestore with debounce)
+  const handleSetTemp = async (fridgeName, logId, type, value) => {
+    // If this is a placeholder (no log exists), create the log first
+    if (!logId || logId.startsWith('placeholder-')) {
+      try {
+        // Create new log
+        const newLogRef = await addDoc(getRestaurantCollection(restaurantId, "fridgelogs"), {
+          fridge: fridgeName,
+          createdAt: serverTimestamp(),
+          createdBy: auth.currentUser.uid,
+          restaurantId: restaurantId,
+          temps: { am: type === 'am' ? value : "", pm: type === 'pm' ? value : "" },
+        });
+        
+        // Update local state immediately with the new log instead of refreshing
+        const newLog = {
+          id: newLogRef.id,
+          fridge: fridgeName,
+          createdAt: new Date(),
+          temps: { am: type === 'am' ? value : "", pm: type === 'pm' ? value : "" },
+          isPlaceholder: false,
+        };
+        
+        setLogs(prev => {
+          // Remove the placeholder and add the real log
+          const filteredLogs = prev.filter(log => log.id !== logId);
+          return [...filteredLogs, newLog];
+        });
+        
+        return; // Don't continue with the timeout logic for new logs
+      } catch (error) {
+        console.error("Error creating fridge log:", error);
+        return;
+      }
+    }
+    
+    // Update local state immediately with the raw value for responsive UI
+    setLogs(prev =>
+      prev.map(l =>
+        l.id === logId ? { 
+          ...l, 
+          temps: { ...l.temps, [type]: value } 
+        } : l
+      )
+    );
+
+    // Clear existing timeout for this specific field
+    const timeoutKey = `${logId}-${type}`;
+    if (updateTimeouts.current[timeoutKey]) {
+      clearTimeout(updateTimeouts.current[timeoutKey]);
+    }
+
+    // Set new timeout to update Firestore after user stops typing
+    updateTimeouts.current[timeoutKey] = setTimeout(async () => {
+      if (!restaurantId) return;
+      
+      try {
+        // Process the value for storage (add negative sign if needed)
+        let processedValue = value;
+        if (value && !value.startsWith('-') && value !== '' && !isNaN(value)) {
+          processedValue = '-' + value;
+        }
+        
+        await updateDoc(getRestaurantDoc(restaurantId, "fridgelogs", logId), {
+          [`temps.${type}`]: processedValue,
+        });
+        
+        // Update local state with the processed value after successful save
+        setLogs(prev =>
+          prev.map(l =>
+            l.id === logId ? { 
+              ...l, 
+              temps: { ...l.temps, [type]: processedValue } 
+            } : l
+          )
+        );
+        
+        console.log(`Updated ${type} temperature for ${logId}: ${processedValue}`);
+      } catch (error) {
+        console.error("Error updating temperature:", error);
+      }
+      
+      // Clean up the timeout reference
+      delete updateTimeouts.current[timeoutKey];
+    }, 500); // 500ms delay after user stops typing
+  };
+
+  // Clean up timeouts on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(updateTimeouts.current).forEach(timeout => {
+        clearTimeout(timeout);
+      });
     };
-    fetchFridges();
-  }, [restaurantId]);
+  }, []);
+
+  // Helper for time display (for existing logs)
   const formatTime = (createdAt) => {
     if (!createdAt) return "--:--";
     const date = new Date(createdAt.seconds * 1000);
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    let hours = date.getHours();
+    let minutes = date.getMinutes();
+    const ampm = hours >= 12 ? "PM" : "AM";
+    hours = hours % 12 || 12;
+    return `${hours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
   };
-  const renderRightActions = (logId) => (
-    <View style={{ flex: 1, justifyContent: "center" }}>
-      <TouchableOpacity
-        style={{
-          backgroundColor: "#FF3B30",
-          justifyContent: "center",
-          alignItems: "center",
-          width: 90,
-          height: "80%",
-          borderRadius: 16,
-          marginVertical: 8,
-          alignSelf: "flex-end",
-        }}
-        onPress={() => deleteLog(logId)}
-        activeOpacity={0.8}
-      >
-        <Text style={{ color: "white", fontWeight: "bold", fontSize: 16 }}>Delete</Text>
-      </TouchableOpacity>
-    </View>
-  );
-  const handleSaveTemp = async (fridgeName, tempValue) => {
-    if (!restaurantId || !auth.currentUser) {
-      console.error('Missing restaurant ID or user authentication');
-      return;
-    }
-    try {
-      console.log('Saving fridge temperature log...');
-      console.log('Received temperature value:', tempValue, 'Type:', typeof tempValue);
-      if (!tempValue || tempValue.trim() === '') {
-        console.error('Empty temperature value');
-        return;
-      }
-      const tempNumber = parseFloat(tempValue);
-      if (isNaN(tempNumber)) {
-        console.error('Invalid temperature value:', tempValue);
-        return;
-      }
-      console.log('Temperature string to save:', tempValue);
-      const fridgeLogData = {
-        createdAt: serverTimestamp(),
-        createdBy: auth.currentUser.uid,
-        temperature: tempValue,
-        fridge: fridgeName,
-        restaurantId: restaurantId,
-      };
-      console.log('Fridge log data:', fridgeLogData);
-      const fridgeLogsCollection = getRestaurantCollection(restaurantId, 'fridgelogs');
-      const docRef = await addDoc(fridgeLogsCollection, fridgeLogData);
-      console.log('Fridge log saved with ID:', docRef.id);
-      await fetchLogs();
-      setModalVisible(false);
-    } catch (error) {
-      console.error('Error saving fridge log:', error);
-    }
-  };
+
+  // Delete individual log
   const deleteLog = async (logId) => {
     if (!restaurantId) return;
+    
     try {
       await deleteDoc(getRestaurantDoc(restaurantId, "fridgelogs", logId));
       setLogs((logs) => logs.filter((log) => log.id !== logId));
@@ -166,34 +288,43 @@ export default function FridgeTempLogsScreen({ navigation }) {
       console.error("Error deleting fridge log:", error);
     }
   };
-  const getPeriod = (createdAt) => {
-    if (!createdAt) return null;
-    const date = new Date(createdAt.seconds * 1000);
-    const hour = date.getHours();
-    return hour < 12 ? "AM" : "PM";
-  };
-  const filteredLogs = logs.filter(
-    (log) => getPeriod(log.createdAt) === selectedTab
+
+  // Render right action for swipe-to-delete
+  const renderRightActions = (logId) => (
+    <View style={styles.swipeActionContainer}>
+      <TouchableOpacity
+        style={styles.deleteAction}
+        onPress={() => deleteLog(logId)}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="trash-outline" size={24} color="white" />
+        <Text style={styles.deleteActionText}>Delete</Text>
+      </TouchableOpacity>
+    </View>
   );
-  const today = new Date();
-  const dayName = today.toLocaleDateString(undefined, { weekday: "long" });
-  const monthName = today.toLocaleDateString(undefined, { month: "long" });
-  const dayNum = today.getDate();
-  const todayString = `${dayName}, ${monthName} ${dayNum}`;
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: 40 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            colors={[Colors.primary]}
-            tintColor={Colors.primary}
-          />
-        }
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
+        <ScrollView 
+          style={{ flex: 1 }} 
+          contentContainerStyle={{ paddingBottom: 40 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[Colors.primary]}
+              tintColor={Colors.primary}
+            />
+          }
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+        {/* Header */}
         <View style={styles.header}>
           <View style={styles.backHeader}>
             <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()} activeOpacity={0.7}>
@@ -205,86 +336,110 @@ export default function FridgeTempLogsScreen({ navigation }) {
             </View>
           </View>
         </View>
-        <View style={styles.tabsRow}>
-          <TouchableOpacity onPress={() => setSelectedTab("AM")}>
-            <Text style={[styles.tabText, selectedTab === "AM" && styles.tabTextActive]}>
-              AM
-            </Text>
-            {selectedTab === "AM" && <View style={styles.tabUnderline} />}
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setSelectedTab("PM")}>
-            <Text style={[styles.tabText, selectedTab === "PM" && styles.tabTextActive]}>
-              PM
-            </Text>
-            {selectedTab === "PM" && <View style={styles.tabUnderline} />}
-          </TouchableOpacity>
-        </View>
+
+        {/* Fridges Section */}
+        <Text style={styles.fridgesTitle}>Fridges</Text>
         <View style={{ marginTop: 12 }}>
           {loading ? (
             <ActivityIndicator size="large" style={{ marginTop: 40 }} />
           ) : (
-            filteredLogs.length === 0 ? (
-              <Text style={{ textAlign: "center", color: "#888", marginTop: 40 }}>No logs found.</Text>
-            ) : (
-              filteredLogs.map((log, idx) => (
-                <Swipeable
-                  key={log.id}
-                  renderRightActions={() => renderRightActions(log.id)}
-                  overshootRight={false}
-                  containerStyle={{ backgroundColor: "transparent" }}
-                >
-                  <View style={styles.logCard}>
-                    <View style={styles.logLeft}>
-                      <View>
-                        <Text style={styles.logName}>{log.fridge}</Text>
-                        <Text style={styles.logTime}>{formatTime(log.createdAt)}</Text>
+            getCombinedFridgeData().map((fridgeData) => (
+              <Swipeable
+                key={fridgeData.id}
+                renderRightActions={() => !fridgeData.isPlaceholder ? renderRightActions(fridgeData.id) : null}
+                overshootRight={false}
+                containerStyle={styles.swipeableContainer}
+              >
+                <View style={styles.fridgeCard}>
+                  <TouchableOpacity
+                    style={styles.fridgeHeader}
+                    onPress={() =>
+                      setExpanded((prev) => ({
+                        ...prev,
+                        [fridgeData.id]: !prev[fridgeData.id],
+                      }))
+                    }
+                    activeOpacity={0.8}
+                  >
+                  <View>
+                    <Text style={styles.fridgeName}>{fridgeData.fridge}</Text>
+                    <Text style={styles.fridgeTime}>
+                      {fridgeData.isPlaceholder ? (
+                        "Not logged today"
+                      ) : (
+                        `Today - ${
+                          fridgeData.createdAt
+                            ? formatTime(fridgeData.createdAt)
+                            : "--:--"
+                        }`
+                      )}
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text style={[styles.tempValue, { color: "#2563eb" }]}>
+                      AM: {fridgeData.temps.am
+                        ? `${fridgeData.temps.am}°C`
+                        : "--°C"}
+                    </Text>
+                    <Text style={styles.tempValue}>
+                      PM: {fridgeData.temps.pm
+                        ? `${fridgeData.temps.pm}°C`
+                        : "--°C"}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+                {expanded[fridgeData.id] && (
+                  <View style={styles.tempInputsContainer}>
+                    <View style={styles.tempInputCard}>
+                      <Text style={styles.tempInputLabel}>Set Temperature</Text>
+                      <Text style={styles.tempInputType}>AM Check</Text>
+                      <View style={styles.tempInputRow}>
+                        <TextInput
+                          style={styles.tempInput}
+                          value={fridgeData.temps.am}
+                          onChangeText={(val) => handleSetTemp(fridgeData.fridge, fridgeData.id, "am", val)}
+                          placeholder="--"
+                          placeholderTextColor="#A0A7B3"
+                          keyboardType="numeric"
+                        />
+                        <Text style={styles.tempUnit}>℃</Text>
                       </View>
                     </View>
-                    <View style={styles.logRight}>
-                      <Text style={styles.logTemp}>
-                        {log.temperature ? `${log.temperature}℃` : "--℃"}
-                      </Text>
+                    <View style={styles.tempInputCard}>
+                      <Text style={styles.tempInputLabel}>Set Temperature</Text>
+                      <Text style={styles.tempInputType}>PM Check</Text>
+                      <View style={styles.tempInputRow}>
+                        <TextInput
+                          style={styles.tempInput}
+                          value={fridgeData.temps.pm}
+                          onChangeText={(val) => handleSetTemp(fridgeData.fridge, fridgeData.id, "pm", val)}
+                          placeholder="--"
+                          placeholderTextColor="#A0A7B3"
+                          keyboardType="numeric"
+                        />
+                        <Text style={styles.tempUnit}>℃</Text>
+                      </View>
                     </View>
                   </View>
-                </Swipeable>
-              ))
-            )
+                )}
+                </View>
+              </Swipeable>
+            ))
           )}
         </View>
       </ScrollView>
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => setModalVisible(true)}
-        activeOpacity={0.85}
-      >
-        <Ionicons name="add" size={38} color="#fff" />
-      </TouchableOpacity>
-      <AddFridgeTempModal
-        visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        onSave={handleSaveTemp}
-        fridgeNames={fridgeNames}
-        loadingFridges={loadingFridges}
-      />
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: "#fff",
   },
-  appTitle: {
-    fontFamily: Typography.fontBold,
-    fontSize: 28,
-    color: "#2563eb",
-    textAlign: "center",
-    marginTop: 12,
-    marginBottom: 8,
-  },
   header: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.lg + getAndroidTitleMargin(),
+    paddingHorizontal: Spacing.xl,
     paddingBottom: Spacing.md,
   },
   backHeader: {
@@ -292,6 +447,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     alignSelf: "flex-start",
     width: "100%",
+    paddingTop: Spacing.lg + getAndroidTitleMargin(),
   },
   backButton: {
     marginRight: Spacing.md,
@@ -315,81 +471,112 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: Spacing.xs,
   },
-  tabsRow: {
-    flexDirection: "row",
-    marginLeft: 30,
-    marginTop: 16,
+  fridgesTitle: {
+    fontSize: 22,
+    fontFamily: Typography.fontBold,
+    color: Colors.textPrimary,
+    marginLeft: Spacing.lg,
+    marginTop: Spacing.lg,
     marginBottom: 8,
-    gap: 32,
   },
-  tabText: {
-    fontFamily: Typography.fontMedium,
-    fontSize: 18,
-    color: "#6B7280",
-  },
-  tabTextActive: {
-    color: "#2563eb",
-  },
-  tabUnderline: {
-    height: 3,
-    backgroundColor: "#2563eb",
-    borderRadius: 2,
-    marginTop: 2,
-    width: 28,
-    alignSelf: "center",
-  },
-  logCard: {
+  fridgeCard: {
     backgroundColor: "#f8fafc",
     borderRadius: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    marginHorizontal: 16,
-    marginBottom: 18,
     paddingVertical: 18,
     paddingHorizontal: 16,
-    justifyContent: "space-between",
   },
-  logLeft: {
+  fridgeHeader: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
   },
-  logName: {
-    fontFamily: Typography.fontMedium,
+  fridgeName: {
+    fontFamily: Typography.fontBold,
     fontSize: 18,
     color: "#111",
   },
-  logTime: {
+  fridgeTime: {
     fontFamily: Typography.fontRegular,
     fontSize: 16,
     color: "#8B96A5",
     marginTop: 2,
   },
-  logRight: {
-    alignItems: "flex-end",
-    minWidth: 60,
+  tempValue: {
+    fontFamily: Typography.fontBold,
+    fontSize: 18,
+    color: "#111",
+    textAlign: "right",
   },
-  logTemp: {
+  tempInputsContainer: {
+    marginTop: 18,
+    gap: 12,
+  },
+  tempInputCard: {
+    backgroundColor: "#f8fafc",
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    marginBottom: 0,
+  },
+  tempInputLabel: {
+    fontFamily: Typography.fontRegular,
+    fontSize: 15,
+    color: "#8B96A5",
+    marginBottom: 2,
+  },
+  tempInputType: {
     fontFamily: Typography.fontBold,
     fontSize: 16,
-    color: "#111",
+    color: "#222",
+    marginBottom: 8,
   },
-  fab: {
-    position: "absolute",
-    right: 40,
-    bottom: 70,
-    width: 72,
-    height: 72,
-    borderRadius: 50,
-    backgroundColor: Colors.primary,
+  tempInputRow: {
+    flexDirection: "row",
     alignItems: "center",
+  },
+  tempInput: {
+    fontFamily: Typography.fontBold,
+    fontSize: 22,
+    color: "#111",
+    flex: 1,
+    marginRight: 8,
+  },
+  tempUnit: {
+    fontFamily: Typography.fontBold,
+    fontSize: 22,
+    color: "#8B96A5",
+  },
+  swipeableContainer: {
+    backgroundColor: "transparent",
+    marginHorizontal: 16,
+    marginBottom: 18,
+  },
+  swipeActionContainer: {
+    flex: 1,
     justifyContent: "center",
+    alignItems: "flex-end",
+    paddingRight: Spacing.md,
+  },
+  deleteAction: {
+    backgroundColor: "#FF3B30",
+    justifyContent: "center",
+    alignItems: "center",
+    width: 80,
+    height: "85%",
+    borderRadius: 16,
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
-      height: 4,
+      height: 2,
     },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  deleteActionText: {
+    color: "white",
+    fontSize: Typography.sm,
+    fontWeight: Typography.bold,
+    marginTop: 4,
   },
 });

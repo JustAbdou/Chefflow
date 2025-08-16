@@ -1,18 +1,21 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  TouchableOpacity
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  SafeAreaView, 
+  TouchableOpacity 
 } from 'react-native';
 import { Colors } from '../../constants/Colors';
 import { Typography } from '../../constants/Typography';
 import { Spacing } from '../../constants/Spacing';
 import { useNavigation } from '@react-navigation/native';
+
 function HandoverCompletionScreen({ route }) {
   const navigation = useNavigation();
   const { handoverData } = route.params || {};
+
+  // Get current date and time
   const getCurrentDateTime = () => {
     const date = new Date();
     const dateOptions = { weekday: 'long', month: 'long', day: 'numeric' };
@@ -21,30 +24,44 @@ function HandoverCompletionScreen({ route }) {
     const timeStr = date.toLocaleTimeString('en-US', timeOptions);
     return { date: dateStr, time: timeStr };
   };
+
   const { date, time } = getCurrentDateTime();
+
   const handleBackToDashboard = () => {
+    // Navigate back to the main tab navigator (Dashboard)
     navigation.reset({
       index: 0,
       routes: [{ name: 'Main' }],
     });
   };
+
   const handleViewPreviousHandovers = () => {
+    // Navigate to previous handovers screen
     navigation.navigate('PreviousHandovers');
   };
+
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTitle}>
           <Text style={styles.title}>Handover Complete</Text>
         </View>
       </View>
+
+      {/* Success Content */}
       <View style={styles.content}>
+
+
+        {/* Success Message */}
         <View style={styles.messageContainer}>
           <Text style={styles.successTitle}>Handover Submitted Successfully!</Text>
           <Text style={styles.successSubtitle}>
             Your handover has been recorded and is now available for the next shift. A PDF report has been generated and will be available for download shortly.
           </Text>
         </View>
+
+        {/* Date and Time Info */}
         <View style={styles.infoContainer}>
           <View style={styles.infoItem}>
             <Text style={styles.infoLabel}>Date</Text>
@@ -55,45 +72,49 @@ function HandoverCompletionScreen({ route }) {
             <Text style={styles.infoValue}>{time}</Text>
           </View>
         </View>
+
+        {/* Summary Stats */}
         {handoverData && (
           <View style={styles.summaryContainer}>
             <Text style={styles.summaryTitle}>Handover Summary</Text>
             <View style={styles.summaryItems}>
               <View style={styles.summaryItem}>
-                <View style={[styles.summaryIcon, {
-                  backgroundColor: handoverData.serviceNotes ? Colors.success : Colors.gray200
+                <View style={[styles.summaryIcon, { 
+                  backgroundColor: handoverData.serviceNotes ? Colors.success : Colors.gray200 
                 }]}>
                   <Text style={styles.summaryIconText}>📝</Text>
                 </View>
                 <Text style={styles.summaryText}>Service Notes</Text>
-                <Text style={[styles.summaryStatus, {
-                  color: handoverData.serviceNotes ? Colors.success : Colors.gray400
+                <Text style={[styles.summaryStatus, { 
+                  color: handoverData.serviceNotes ? Colors.success : Colors.gray400 
                 }]}>
                   {handoverData.serviceNotes ? 'Included' : 'None'}
                 </Text>
               </View>
+              
               <View style={styles.summaryItem}>
-                <View style={[styles.summaryIcon, {
-                  backgroundColor: handoverData.stockIssues ? Colors.warning : Colors.gray200
+                <View style={[styles.summaryIcon, { 
+                  backgroundColor: handoverData.stockIssues ? Colors.warning : Colors.gray200 
                 }]}>
                   <Text style={styles.summaryIconText}>📦</Text>
                 </View>
                 <Text style={styles.summaryText}>Stock Issues</Text>
-                <Text style={[styles.summaryStatus, {
-                  color: handoverData.stockIssues ? Colors.warning : Colors.gray400
+                <Text style={[styles.summaryStatus, { 
+                  color: handoverData.stockIssues ? Colors.warning : Colors.gray400 
                 }]}>
                   {handoverData.stockIssues ? 'Reported' : 'None'}
                 </Text>
               </View>
+              
               <View style={styles.summaryItem}>
-                <View style={[styles.summaryIcon, {
-                  backgroundColor: handoverData.problems ? Colors.error : Colors.gray200
+                <View style={[styles.summaryIcon, { 
+                  backgroundColor: handoverData.problems ? Colors.error : Colors.gray200 
                 }]}>
                   <Text style={styles.summaryIconText}>⚠️</Text>
                 </View>
                 <Text style={styles.summaryText}>Problems</Text>
-                <Text style={[styles.summaryStatus, {
-                  color: handoverData.problems ? Colors.error : Colors.gray400
+                <Text style={[styles.summaryStatus, { 
+                  color: handoverData.problems ? Colors.error : Colors.gray400 
                 }]}>
                   {handoverData.problems ? 'Reported' : 'None'}
                 </Text>
@@ -102,15 +123,18 @@ function HandoverCompletionScreen({ route }) {
           </View>
         )}
       </View>
+
+      {/* Bottom Actions */}
       <View style={styles.bottomActions}>
-        <TouchableOpacity
-          style={styles.secondaryButton}
+        <TouchableOpacity 
+          style={styles.secondaryButton} 
           onPress={handleViewPreviousHandovers}
         >
           <Text style={styles.secondaryButtonText}>View Previous Handovers</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.primaryButton}
+        
+        <TouchableOpacity 
+          style={styles.primaryButton} 
           onPress={handleBackToDashboard}
         >
           <Text style={styles.primaryButtonText}>Back to Dashboard</Text>
@@ -119,11 +143,13 @@ function HandoverCompletionScreen({ route }) {
     </SafeAreaView>
   );
 }
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
   },
+
   backButton: {
     padding: Spacing.sm,
     marginRight: Spacing.sm,
@@ -310,4 +336,5 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontBold,
   },
 });
+
 export default HandoverCompletionScreen;

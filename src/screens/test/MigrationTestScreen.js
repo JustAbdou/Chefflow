@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Button, Alert } from 'react-native';
 import { migrateToRestaurantStructure } from '../utils/dataMigration';
+
 const MigrationTestScreen = () => {
   const handleMigration = async () => {
     try {
@@ -11,13 +12,15 @@ const MigrationTestScreen = () => {
       Alert.alert('Migration Failed', error.message);
     }
   };
+
   return (
     <View style={{ flex: 1, justifyContent: 'center', padding: 20 }}>
-      <Button
-        title="Run Data Migration"
+      <Button 
+        title="Run Data Migration" 
         onPress={handleMigration}
       />
     </View>
   );
 };
+
 export default MigrationTestScreen;

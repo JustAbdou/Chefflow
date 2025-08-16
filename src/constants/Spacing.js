@@ -1,9 +1,13 @@
+import { responsiveSpacing, scaleModerate } from '../utils/responsive';
+
 export const Spacing = {
-  xs: 4,
-  sm: 8,
-  md: 16,
-  lg: 24,
-  xl: 32,
-  "2xl": 48,
-  "3xl": 64,
-}
+  xs: responsiveSpacing.xs,
+  sm: responsiveSpacing.sm,
+  md: responsiveSpacing.md,
+  lg: responsiveSpacing.lg,
+  xl: responsiveSpacing.xl,
+  "2xl": responsiveSpacing['2xl'],
+  "3xl": responsiveSpacing['3xl'],
+
+  scale: scaleModerate,
+};

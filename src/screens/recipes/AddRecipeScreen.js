@@ -26,9 +26,11 @@ export default function AddRecipeScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // Set today's date
     const today = new Date();
     setDate(today.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }));
-    
+
+    // Fetch categories from Firestore
     const fetchCategories = async () => {
       if (!restaurantId) return;
       
@@ -37,10 +39,10 @@ export default function AddRecipeScreen({ navigation }) {
       setCategories(data?.names || []);
       if (!category && data?.names?.length) setCategory(data.names[0]);
     };
-    
     fetchCategories();
   }, [restaurantId]);
 
+  // Image picker
   const pickImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -48,12 +50,12 @@ export default function AddRecipeScreen({ navigation }) {
       aspect: [4, 3],
       quality: 0.7,
     });
-
     if (!result.canceled && result.assets?.[0]?.uri) {
       setImage(result.assets[0].uri);
     }
   };
 
+  // Add ingredient
   const handleAddIngredient = () => {
     if (ingredientInput.trim()) {
       setIngredients([...ingredients, ingredientInput.trim()]);
@@ -61,26 +63,30 @@ export default function AddRecipeScreen({ navigation }) {
     }
   };
 
+  // Remove ingredient
   const handleRemoveIngredient = (idx) => {
     setIngredients(ingredients.filter((_, i) => i !== idx));
   };
 
+  // Add instruction
   const handleAddInstruction = () => {
     if (instructionInput.trim()) {
       setInstructions([...instructions, instructionInput.trim()]);
       setInstructionInput("");
     }
   };
+
+  // Remove instruction
   const handleRemoveInstruction = (idx) => {
     setInstructions(instructions.filter((_, i) => i !== idx));
   };
 
+  // Add recipe to Firestore
   const handleAddRecipe = async () => {
     if (!restaurantId || !category || !recipeName.trim() || ingredients.length === 0 || instructions.length === 0) {
       Alert.alert("Please fill all required fields.");
       return;
     }
-
     setLoading(true);
     try {
       const recipeData = {
@@ -89,15 +95,13 @@ export default function AddRecipeScreen({ navigation }) {
         ingredients,
         instructions,
         notes,
-        image: image || "https://firebasestorage.googleapis.com/v0/b/chefflow-67b1f.appspot.com/o/default-recipe.jpg?alt=media&token=default-recipe-token",
+        image: image || "https://placehold.co/200x200?text=No+Image",
         createdAt: serverTimestamp(),
       };
-
       await addDoc(
         getRestaurantSubCollection(restaurantId, "recipes", "categories", category),
         recipeData
       );
-
       Alert.alert("Recipe added!");
       navigation.goBack();
     } catch (e) {
@@ -107,6 +111,7 @@ export default function AddRecipeScreen({ navigation }) {
       setLoading(false);
     }
   };
+
   return (
     <View style={styles.safeArea}>
       <ScrollView
@@ -115,6 +120,7 @@ export default function AddRecipeScreen({ navigation }) {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {/* Header */}
         <View style={styles.headerRow}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerIcon}>
             <Ionicons name="arrow-back" size={28} color={Colors.textPrimary} />
@@ -125,6 +131,7 @@ export default function AddRecipeScreen({ navigation }) {
           </View>
         </View>
 
+        {/* Image Picker */}
         <TouchableOpacity style={styles.imagePicker} onPress={pickImage} activeOpacity={0.7}>
           {image ? (
             <Image source={{ uri: image }} style={styles.image} />
@@ -136,8 +143,9 @@ export default function AddRecipeScreen({ navigation }) {
           )}
         </TouchableOpacity>
 
+        {/* Recipe Details */}
         <Text style={styles.sectionTitle}>Recipe Details</Text>
-        
+        {/* Category Picker - Only keep the selection chips, remove the upper placeholder */}
         <View style={styles.inputGroup}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 0 }}>
             {categories.map(cat => (
@@ -161,7 +169,7 @@ export default function AddRecipeScreen({ navigation }) {
             ))}
           </ScrollView>
         </View>
-
+        {/* Recipe Name */}
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>Recipe Name</Text>
           <TextInput
@@ -173,6 +181,7 @@ export default function AddRecipeScreen({ navigation }) {
           />
         </View>
 
+        {/* Ingredients */}
         <Text style={styles.sectionTitle}>Ingredients</Text>
         <View style={styles.ingredientList}>
           {ingredients.map((ingredient, idx) => (
@@ -185,7 +194,6 @@ export default function AddRecipeScreen({ navigation }) {
             </View>
           ))}
         </View>
-
         <View style={styles.addRow}>
           <TextInput
             style={styles.input}
@@ -199,6 +207,7 @@ export default function AddRecipeScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
+        {/* Instructions */}
         <Text style={styles.sectionTitle}>Instructions</Text>
         <View style={styles.ingredientList}>
           {instructions.map((instruction, idx) => (
@@ -213,7 +222,6 @@ export default function AddRecipeScreen({ navigation }) {
             </View>
           ))}
         </View>
-
         <View style={styles.addRow}>
           <TextInput
             style={styles.input}
@@ -227,6 +235,7 @@ export default function AddRecipeScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
+        {/* Notes */}
         <Text style={styles.sectionTitle}>Notes</Text>
         <TextInput
           style={[styles.input, styles.notesInput]}
@@ -237,6 +246,7 @@ export default function AddRecipeScreen({ navigation }) {
           multiline
         />
 
+        {/* Add Recipe Button */}
         <TouchableOpacity
           style={styles.addRecipeButton}
           onPress={handleAddRecipe}
@@ -245,7 +255,7 @@ export default function AddRecipeScreen({ navigation }) {
         >
           <Text style={styles.addRecipeButtonText}>{loading ? "Adding..." : "Add Recipe"}</Text>
         </TouchableOpacity>
-
+        {/* Cancel Button */}
         <TouchableOpacity style={styles.cancelButton} onPress={() => navigation.goBack()}>
           <Text style={styles.cancelButtonText}>Cancel</Text>
         </TouchableOpacity>
@@ -253,6 +263,7 @@ export default function AddRecipeScreen({ navigation }) {
     </View>
   );
 }
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,

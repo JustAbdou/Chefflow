@@ -4,8 +4,10 @@ import { Colors } from "../../constants/Colors";
 import { Typography } from "../../constants/Typography";
 import { Spacing } from "../../constants/Spacing";
 import Button from "../../components/ui/Button";
+
 export default function AddPrepItemModal({ visible, onClose, onAdd, date }) {
   const [itemName, setItemName] = useState("");
+
   const handleAdd = () => {
     if (itemName.trim()) {
       onAdd(itemName.trim());
@@ -13,6 +15,7 @@ export default function AddPrepItemModal({ visible, onClose, onAdd, date }) {
       onClose();
     }
   };
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
@@ -22,6 +25,7 @@ export default function AddPrepItemModal({ visible, onClose, onAdd, date }) {
         <View style={styles.overlay}>
           <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} />
           <View style={styles.modal}>
+            {/* Header */}
             <View style={styles.header}>
               <View style={styles.titleContainer}>
                 <Text style={styles.title}>Add Prep Item</Text>
@@ -31,6 +35,7 @@ export default function AddPrepItemModal({ visible, onClose, onAdd, date }) {
                 <Text style={styles.closeText}>×</Text>
               </TouchableOpacity>
             </View>
+            {/* Form */}
             <View style={styles.form}>
               <Text style={styles.label}>Item Name</Text>
               <TextInput
@@ -42,6 +47,7 @@ export default function AddPrepItemModal({ visible, onClose, onAdd, date }) {
                 autoFocus
               />
             </View>
+            {/* Add Button */}
             <View style={styles.buttonContainer}>
               <Button onPress={handleAdd} disabled={!itemName.trim()} fullWidth size="lg">
                 Add Item
@@ -53,6 +59,7 @@ export default function AddPrepItemModal({ visible, onClose, onAdd, date }) {
     </Modal>
   );
 }
+
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: "flex-end" },
   backdrop: {

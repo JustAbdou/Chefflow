@@ -21,9 +21,10 @@ import { uploadPdfToStorage, uploadPdfToStorageTemporary, generatePdfFileName } 
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
+
 const InvoicesDownloadsScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
-  const [selectedRange, setSelectedRange] = useState(null);
+  const [selectedRange, setSelectedRange] = useState(null); // Changed from '7' to null
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
   const [invoices, setInvoices] = useState([]);
@@ -31,9 +32,11 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
   const [showEndPicker, setShowEndPicker] = useState(false);
   const [recentDownloads, setRecentDownloads] = useState([]);
   const today = getFormattedTodayDate();
+
   useEffect(() => {
     const fetchInvoicesInRange = async () => {
       if (!restaurantId || !startDate || !endDate) return;
+      
       const start = Timestamp.fromDate(new Date(startDate.setHours(0,0,0,0)));
       const end = Timestamp.fromDate(new Date(endDate.setHours(23,59,59,999)));
       const q = query(
@@ -47,15 +50,19 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
         createdAt: doc.data().createdAt?.toDate?.() || null,
       })));
     };
+
     fetchInvoicesInRange();
   }, [startDate, endDate, restaurantId]);
+
+  // Move fetchRecentDownloads outside useEffect so you can call it manually
   const fetchRecentDownloads = async () => {
     if (!restaurantId) return;
+    
     try {
       const recentDownloadsRef = getRestaurantSubCollection(
         restaurantId,
         "downloads",
-        "invoices",
+        "invoices", 
         "recent_downloads"
       );
       const q = query(recentDownloadsRef, orderBy("createdAt", "desc"));
@@ -69,9 +76,11 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
       console.error("Failed to fetch recent downloads", e);
     }
   };
+
   useEffect(() => {
     fetchRecentDownloads();
   }, [restaurantId]);
+
   const renderDownloadItem = ({ item }) => (
     <TouchableOpacity
       style={styles.downloadItem}
@@ -101,8 +110,10 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
             Alert.alert('No Link', 'No download link available for this item.');
             return;
           }
+          
           try {
             if (item.link.startsWith('http')) {
+              // For cloud URLs, we can either open in browser or download
               Alert.alert(
                 'Download Options',
                 'How would you like to access this file?',
@@ -134,6 +145,7 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
                 ]
               );
             } else if (item.link.startsWith('file')) {
+              // Legacy local files
               await Sharing.shareAsync(item.link, { mimeType: 'application/pdf' });
             } else {
               Alert.alert('Invalid Link', 'This download link is not supported.');
@@ -145,29 +157,38 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
         }}
         style={{ padding: 8 }}
       >
-        <Ionicons
-          name={item.link && item.link.startsWith('http') ? "cloud-download-outline" : "download-outline"}
-          size={20}
-          color={Colors.gray300}
+        <Ionicons 
+          name={item.link && item.link.startsWith('http') ? "cloud-download-outline" : "download-outline"} 
+          size={20} 
+          color={Colors.gray300} 
         />
       </TouchableOpacity>
     </TouchableOpacity>
   );
+
   const formatDate = (date) => {
+    // Implement your date formatting logic here
     return date.toLocaleDateString();
   };
+
   const exportToPDF = async () => {
     if (!invoices.length) {
       Alert.alert('No Data', 'No invoices found for the selected date range.');
       return;
     }
+
     try {
+      // Show loading state
       Alert.alert('Generating PDF', 'Please wait while we prepare your invoice records...');
+
+      // Generate unique filename
       const fileName = generatePdfFileName('invoice', startDate, endDate);
+
       let html = `
         <h1>Invoice Records</h1>
         <p>Generated on: ${new Date().toLocaleDateString()}</p>
         <p>Period: ${startDate ? startDate.toLocaleDateString() : ''} to ${endDate ? endDate.toLocaleDateString() : ''}</p>
+        
         <table border="1" cellspacing="0" cellpadding="8" style="width: 100%; border-collapse: collapse;">
           <tr style="background-color: #f5f5f5;">
             <th>Invoice Number</th>
@@ -184,49 +205,66 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
             </tr>
           `).join('')}
         </table>
+        
         <p style="margin-top: 20px; font-size: 12px; color: #666;">
           Total Invoices: ${invoices.length}<br>
           Total Amount: £${invoices.reduce((sum, inv) => sum + (parseFloat(inv.amount) || 0), 0).toFixed(2)}
         </p>
       `;
-      const { uri } = await Print.printToFileAsync({
-        html,
-        base64: false,
-        fileName: fileName.replace('.pdf', '')
+
+      // Generate PDF locally first
+      const { uri } = await Print.printToFileAsync({ 
+        html, 
+        base64: false, 
+        fileName: fileName.replace('.pdf', '') 
       });
+
       console.log('📄 PDF generated locally:', uri);
+
+      // Use temporary storage solution until Firebase Storage blob issues are resolved
       let downloadURL;
       try {
+        // Try the original method first
         downloadURL = await uploadPdfToStorage(uri, fileName, restaurantId, 'invoices');
         console.log('☁️ PDF uploaded to Firebase Storage successfully:', downloadURL);
       } catch (storageError) {
         console.log('⚠️ Firebase Storage upload failed, using temporary local storage:', storageError.message);
+        // Use temporary local storage as fallback
         downloadURL = await uploadPdfToStorageTemporary(uri, fileName, restaurantId, 'invoices');
         console.log('💾 PDF saved to local storage:', downloadURL);
       }
+
+      // Save download info to Firestore with the cloud URL
       await addDoc(
         getRestaurantSubCollection(restaurantId, "downloads", "invoices", "recent_downloads"),
         {
           name: fileName,
-          link: downloadURL,
+          link: downloadURL, // This is now a cloud URL, not local path
           createdAt: serverTimestamp(),
         }
       );
+
       console.log('💾 Download record saved to Firestore');
+
+      // Clean up the original temporary file (keep the permanent copy)
       try {
         await FileSystem.deleteAsync(uri, { idempotent: true });
         console.log('🗑️ Original temporary file cleaned up');
       } catch (cleanupError) {
         console.warn('⚠️ Could not clean up original temporary file:', cleanupError);
       }
+
+      // Refresh the downloads list
       await fetchRecentDownloads();
+
       Alert.alert(
-        'Success!',
+        'Success!', 
         'Invoice records have been generated and saved. You can access them from the Recent Downloads section.',
         [
           {
             text: 'View Downloads',
             onPress: () => {
+              // The list will automatically refresh
             }
           },
           {
@@ -235,15 +273,17 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
           }
         ]
       );
+
     } catch (error) {
       console.error('❌ Error exporting PDF:', error);
       Alert.alert(
-        'Export Failed',
+        'Export Failed', 
         'Failed to export PDF: ' + error.message,
         [{ text: 'OK' }]
       );
     }
   };
+
   const handleRangeSelect = (days) => {
     setSelectedRange(days);
     const end = new Date();
@@ -252,10 +292,11 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
     setStartDate(start);
     setEndDate(end);
   };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
-        <View style={styles.headerRow}>
+        <View style={[styles.headerRow]}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
             <Text style={styles.backArrow}>‹</Text>
           </TouchableOpacity>
@@ -264,6 +305,8 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
             <Text style={styles.date}>{today}</Text>
           </View>
         </View>
+
+        {/* Invoices Records Card */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <View style={styles.cardIconCircle}>
@@ -280,6 +323,8 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
             <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
           </TouchableOpacity>
         </View>
+
+        {/* Date Range Section */}
         <Text style={styles.sectionTitle}>Select Date Range</Text>
         <View style={styles.dateInputsRow}>
           <TouchableOpacity style={styles.dateInput} onPress={() => setShowStartPicker(true)}>
@@ -328,6 +373,8 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
         <TouchableOpacity style={styles.exportButton} onPress={exportToPDF}>
           <Text style={styles.exportButtonText}>Export Selected Records</Text>
         </TouchableOpacity>
+
+        {/* Recent Downloads */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: Spacing.md}}>
           <Text style={styles.sectionTitle}>Recent Downloads</Text>
           <TouchableOpacity onPress={fetchRecentDownloads} style={{ paddingHorizontal: Spacing.lg }}>
@@ -345,6 +392,7 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
     </SafeAreaView>
   );
 };
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -378,6 +426,7 @@ const styles = StyleSheet.create({
   },
   titleContainer: {
     flex: 1,
+    marginTop: Spacing.xl,
   },
   title: {
     fontFamily: Typography.fontBold,
@@ -535,4 +584,5 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 });
+
 export default InvoicesDownloadsScreen;

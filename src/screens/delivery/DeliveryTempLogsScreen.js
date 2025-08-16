@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -7,12 +7,10 @@ import {
   TouchableOpacity,
   ScrollView,
   TextInput,
-  Modal,
+  ActivityIndicator,
+  RefreshControl,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
-  FlatList,
-  RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Swipeable } from "react-native-gesture-handler";
@@ -25,131 +23,50 @@ import { addDoc, getDocs, updateDoc, serverTimestamp, doc, getDoc, deleteDoc } f
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
 import { auth } from "../../../firebase";
-function AddSupplierModal({ visible, onClose, onAdd, date }) {
-  const { restaurantId } = useRestaurant();
-  const [suppliers, setSuppliers] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [selectedSupplier, setSelectedSupplier] = useState("");
-  useEffect(() => {
-    const fetchSuppliers = async () => {
-      if (!visible || !restaurantId) return;
-      setLoading(true);
-      try {
-        const suppliersDocRef = getRestaurantDoc(restaurantId, "suppliers", "suppliers");
-        const suppliersDoc = await getDoc(suppliersDocRef);
-        if (suppliersDoc.exists() && suppliersDoc.data().names) {
-          setSuppliers(suppliersDoc.data().names);
-        } else {
-          setSuppliers([]);
-        }
-      } catch (error) {
-        console.error("Error fetching suppliers:", error);
-        setSuppliers([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchSuppliers();
-  }, [visible, restaurantId]);
-  const handleAdd = () => {
-    if (selectedSupplier.trim()) {
-      onAdd(selectedSupplier.trim());
-      setSelectedSupplier("");
-      onClose();
-    }
-  };
-  React.useEffect(() => {
-    if (!visible) {
-      setSelectedSupplier("");
-    }
-  }, [visible]);
-  const renderSupplierItem = ({ item }) => (
-    <TouchableOpacity
-      style={[
-        styles.supplierOption,
-        selectedSupplier === item && styles.supplierOptionSelected
-      ]}
-      onPress={() => setSelectedSupplier(item)}
-      activeOpacity={0.7}
-    >
-      <Text style={[
-        styles.supplierOptionText,
-        selectedSupplier === item && styles.supplierOptionTextSelected
-      ]}>
-        {item}
-      </Text>
-      {selectedSupplier === item && (
-        <Ionicons name="checkmark" size={20} color="#2563eb" />
-      )}
-    </TouchableOpacity>
-  );
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
-      >
-        <View style={styles.overlay}>
-          <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} />
-          <View style={styles.modal}>
-            <View style={styles.modalHeader}>
-              <View style={styles.titleContainer}>
-                <Text style={styles.modalTitle}>Select Supplier</Text>
-                {date && <Text style={styles.modalDate}>{date}</Text>}
-              </View>
-              <TouchableOpacity style={styles.closeButton} onPress={onClose} activeOpacity={0.7}>
-                <Text style={styles.closeText}>×</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.suppliersList}>
-              {loading ? (
-                <ActivityIndicator size="large" color="#2563eb" style={{ marginVertical: 20 }} />
-              ) : suppliers.length > 0 ? (
-                <FlatList
-                  data={suppliers}
-                  renderItem={renderSupplierItem}
-                  keyExtractor={(item, index) => index.toString()}
-                  showsVerticalScrollIndicator={false}
-                  style={{ maxHeight: 300 }}
-                />
-              ) : (
-                <Text style={styles.noSuppliersText}>No suppliers found</Text>
-              )}
-            </View>
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.addButton,
-                  !selectedSupplier.trim() && { backgroundColor: Colors.gray200 },
-                ]}
-                onPress={handleAdd}
-                disabled={!selectedSupplier.trim()}
-              >
-                <Text style={styles.addButtonText}>Add Supplier</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-}
+
 export default function DeliveryTempLogsScreen({ navigation }) {
   const { restaurantId } = useRestaurant();
-  const [modalVisible, setModalVisible] = useState(false);
+  const [suppliers, setSuppliers] = useState([]);
   const [logs, setLogs] = useState([]);
   const [expanded, setExpanded] = useState({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const updateTimeouts = useRef({});
+
+  // Hide Android navigation bar
   const navigationBar = useNavigationBar();
-  navigationBar.useHidden();
+  navigationBar.useHidden(); // Use hidden mode for complete immersion
+
+  // Date formatting
   const today = new Date();
   const dayName = today.toLocaleDateString(undefined, { weekday: "long" });
   const monthName = today.toLocaleDateString(undefined, { month: "long" });
   const dayNum = today.getDate();
   const todayString = `${dayName}, ${monthName} ${dayNum}`;
+
+  // Fetch suppliers from Firestore
+  const fetchSuppliers = async () => {
+    if (!restaurantId) return;
+    
+    try {
+      const suppliersDocRef = getRestaurantDoc(restaurantId, "suppliers", "suppliers");
+      const suppliersDoc = await getDoc(suppliersDocRef);
+      
+      if (suppliersDoc.exists() && suppliersDoc.data().names) {
+        setSuppliers(suppliersDoc.data().names);
+      } else {
+        setSuppliers([]);
+      }
+    } catch (error) {
+      console.error("Error fetching suppliers:", error);
+      setSuppliers([]);
+    }
+  };
+
+  // Reusable function to fetch logs
   const fetchLogs = async () => {
     if (!restaurantId) return;
+    
     const snapshot = await getDocs(getRestaurantCollection(restaurantId, "deliverylogs"));
     const fetched = snapshot.docs.map(docSnap => {
       const data = docSnap.data();
@@ -162,54 +79,143 @@ export default function DeliveryTempLogsScreen({ navigation }) {
         temps: data.temps || { frozen: "", chilled: "" },
       };
     });
+    // Sort by createdAt descending
     fetched.sort((a, b) => b.createdAt - a.createdAt);
     setLogs(fetched);
   };
+
+  // Fetch data from Firestore
   useEffect(() => {
-    const loadLogs = async () => {
+    const loadData = async () => {
       setLoading(true);
-      await fetchLogs();
+      await Promise.all([fetchSuppliers(), fetchLogs()]);
       setLoading(false);
       setRefreshing(false);
     };
-    loadLogs();
+    loadData();
   }, [restaurantId]);
+
+  // Pull to refresh handler
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchLogs();
+    await Promise.all([fetchSuppliers(), fetchLogs()]);
     setRefreshing(false);
   };
-  const handleAddSupplier = async (supplierName) => {
+
+  // Create or update delivery log for a supplier
+  const handleCreateOrUpdateLog = async (supplierName) => {
     if (!restaurantId || !auth.currentUser) return;
+    
     try {
-      await addDoc(getRestaurantCollection(restaurantId, "deliverylogs"), {
-        supplier: supplierName,
-        createdAt: serverTimestamp(),
-        createdBy: auth.currentUser.uid,
-        restaurantId: restaurantId,
-        temps: { frozen: "", chilled: "" },
-      });
-      await fetchLogs();
+      // Check if a log already exists for this supplier today
+      const existingLog = logs.find(log => log.supplier === supplierName);
+      
+      if (!existingLog) {
+        // Create new log
+        await addDoc(getRestaurantCollection(restaurantId, "deliverylogs"), {
+          supplier: supplierName,
+          createdAt: serverTimestamp(),
+          createdBy: auth.currentUser.uid,
+          restaurantId: restaurantId,
+          temps: { frozen: "", chilled: "" },
+        });
+        
+        // Refresh logs
+        await fetchLogs();
+      }
     } catch (error) {
-      console.error("Error adding delivery log:", error);
+      console.error("Error creating delivery log:", error);
     }
   };
-  const handleSetTemp = async (logId, type, value) => {
-    if (!restaurantId) return;
-    const log = logs.find(l => l.id === logId);
-    if (!log) return;
-    const newTemps = { ...log.temps, [type]: value };
-    await updateDoc(getRestaurantDoc(restaurantId, "deliverylogs", logId), {
-      temps: newTemps,
+
+  // Get combined supplier data (from suppliers list and existing logs)
+  const getCombinedSupplierData = () => {
+    const supplierData = [];
+    
+    // Add all suppliers from the suppliers list
+    suppliers.forEach(supplierName => {
+      const existingLog = logs.find(log => log.supplier === supplierName);
+      
+      if (existingLog) {
+        // Use existing log data
+        supplierData.push(existingLog);
+      } else {
+        // Create placeholder data for supplier without log
+        supplierData.push({
+          id: `placeholder-${supplierName}`,
+          supplier: supplierName,
+          createdAt: null,
+          temps: { frozen: "", chilled: "" },
+          isPlaceholder: true,
+        });
+      }
     });
+    
+    return supplierData;
+  };
+
+  // Set temperature handler (updates local state immediately, Firestore with debounce)
+  const handleSetTemp = async (supplierName, logId, type, value) => {
+    // Ensure the value is negative or empty
+    let processedValue = value;
+    if (value && !value.startsWith('-') && value !== '') {
+      processedValue = '-' + value;
+    }
+    
+    // If this is a placeholder (no log exists), create the log first
+    if (!logId || logId.startsWith('placeholder-')) {
+      await handleCreateOrUpdateLog(supplierName);
+      // Refresh to get the new log ID
+      await fetchLogs();
+      return;
+    }
+    
+    // Update local state immediately for responsive UI
     setLogs(prev =>
       prev.map(l =>
-        l.id === logId ? { ...l, temps: newTemps } : l
+        l.id === logId ? { ...l, temps: { ...l.temps, [type]: processedValue } } : l
       )
     );
+
+    // Clear existing timeout for this specific field
+    const timeoutKey = `${logId}-${type}`;
+    if (updateTimeouts.current[timeoutKey]) {
+      clearTimeout(updateTimeouts.current[timeoutKey]);
+    }
+
+    // Set new timeout to update Firestore after user stops typing
+    updateTimeouts.current[timeoutKey] = setTimeout(async () => {
+      if (!restaurantId) return;
+      
+      try {
+        await updateDoc(getRestaurantDoc(restaurantId, "deliverylogs", logId), {
+          [`temps.${type}`]: processedValue,
+        });
+        console.log(`Updated ${type} temperature for ${logId}: ${processedValue}`);
+      } catch (error) {
+        console.error("Error updating temperature:", error);
+        // Optionally revert the local state on error
+        // fetchLogs(); // Uncomment if you want to revert on error
+      }
+      
+      // Clean up the timeout reference
+      delete updateTimeouts.current[timeoutKey];
+    }, 500); // 500ms delay after user stops typing
   };
-  const deleteLog = async (logId) => {
+
+  // Clean up timeouts on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(updateTimeouts.current).forEach(timeout => {
+        clearTimeout(timeout);
+      });
+    };
+  }, []);
+
+  // Delete individual supplier log
+  const deleteSupplierLog = async (logId) => {
     if (!restaurantId) return;
+    
     try {
       await deleteDoc(getRestaurantDoc(restaurantId, "deliverylogs", logId));
       setLogs((logs) => logs.filter((log) => log.id !== logId));
@@ -217,35 +223,38 @@ export default function DeliveryTempLogsScreen({ navigation }) {
       console.error("Error deleting delivery log:", error);
     }
   };
+
+  // Render right action for swipe-to-delete
   const renderRightActions = (logId) => (
-    <View style={{ flex: 1, justifyContent: "center" }}>
+    <View style={styles.swipeActionContainer}>
       <TouchableOpacity
-        style={{
-          backgroundColor: "#FF3B30",
-          justifyContent: "center",
-          alignItems: "center",
-          width: 90,
-          height: "80%",
-          borderRadius: 16,
-          marginVertical: 8,
-          alignSelf: "flex-end",
-        }}
-        onPress={() => deleteLog(logId)}
+        style={styles.deleteAction}
+        onPress={() => deleteSupplierLog(logId)}
         activeOpacity={0.8}
       >
-        <Text style={{ color: "white", fontWeight: "bold", fontSize: 16 }}>Delete</Text>
+        <Ionicons name="trash-outline" size={24} color="white" />
+        <Text style={styles.deleteActionText}>Delete</Text>
       </TouchableOpacity>
     </View>
   );
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: 40 }}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
+        <ScrollView 
+          style={{ flex: 1 }} 
+          contentContainerStyle={{ paddingBottom: 40 }}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+        {/* Header */}
         <View style={styles.header}>
           <View style={styles.backHeader}>
             <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()} activeOpacity={0.7}>
@@ -257,17 +266,19 @@ export default function DeliveryTempLogsScreen({ navigation }) {
             </View>
           </View>
         </View>
+
+        {/* Suppliers Section */}
         <Text style={styles.suppliersTitle}>Suppliers</Text>
         <View style={{ marginTop: 12 }}>
           {loading ? (
             <ActivityIndicator size="large" style={{ marginTop: 40 }} />
           ) : (
-            logs.map((log) => (
+            getCombinedSupplierData().map((supplierData) => (
               <Swipeable
-                key={log.id}
-                renderRightActions={() => renderRightActions(log.id)}
+                key={supplierData.id}
+                renderRightActions={() => !supplierData.isPlaceholder ? renderRightActions(supplierData.id) : null}
                 overshootRight={false}
-                containerStyle={{ backgroundColor: "transparent" }}
+                containerStyle={styles.swipeableContainer}
               >
                 <View style={styles.supplierCard}>
                   <TouchableOpacity
@@ -275,85 +286,83 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                     onPress={() =>
                       setExpanded((prev) => ({
                         ...prev,
-                        [log.id]: !prev[log.id],
+                        [supplierData.id]: !prev[supplierData.id],
                       }))
                     }
                     activeOpacity={0.8}
                   >
-                    <View>
-                      <Text style={styles.supplierName}>{log.supplier}</Text>
-                      <Text style={styles.supplierTime}>
-                        Today -{" "}
-                        {log.createdAt
-                          ? log.createdAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                          : "--:--"}
-                      </Text>
-                    </View>
-                    <View style={{ alignItems: "flex-end" }}>
-                      <Text style={[styles.tempValue, { color: "#2563eb" }]}>
-                        {log.temps.frozen
-                          ? `${log.temps.frozen}°C`
-                          : "--°C"}
-                      </Text>
-                      <Text style={styles.tempValue}>
-                        {log.temps.chilled
-                          ? `${log.temps.chilled}°C`
-                          : "--°C"}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                  {expanded[log.id] && (
-                    <View style={styles.tempInputsContainer}>
-                      <View style={styles.tempInputCard}>
-                        <Text style={styles.tempInputLabel}>Set Temperature</Text>
-                        <Text style={styles.tempInputType}>Frozen Items</Text>
-                        <View style={styles.tempInputRow}>
-                          <TextInput
-                            style={styles.tempInput}
-                            value={log.temps.frozen}
-                            onChangeText={(val) => handleSetTemp(log.id, "frozen", val)}
-                            placeholder="--"
-                            placeholderTextColor="#A0A7B3"
-                            keyboardType="decimal-pad"
-                          />
-                          <Text style={styles.tempUnit}>℃</Text>
-                        </View>
-                      </View>
-                      <View style={styles.tempInputCard}>
-                        <Text style={styles.tempInputLabel}>Set Temperature</Text>
-                        <Text style={styles.tempInputType}>Chilled Items</Text>
-                        <View style={styles.tempInputRow}>
-                          <TextInput
-                            style={styles.tempInput}
-                            value={log.temps.chilled}
-                            onChangeText={(val) => handleSetTemp(log.id, "chilled", val)}
-                            placeholder="--"
-                            placeholderTextColor="#A0A7B3"
-                            keyboardType="decimal-pad"
-                          />
-                          <Text style={styles.tempUnit}>℃</Text>
-                        </View>
+                  <View>
+                    <Text style={styles.supplierName}>{supplierData.supplier}</Text>
+                    <Text style={styles.supplierTime}>
+                      {supplierData.isPlaceholder ? (
+                        "Not logged today"
+                      ) : (
+                        `Today - ${
+                          supplierData.createdAt
+                            ? supplierData.createdAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                            : "--:--"
+                        }`
+                      )}
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text style={[styles.tempValue, { color: "#2563eb" }]}>
+                      {supplierData.temps.frozen
+                        ? `${supplierData.temps.frozen}°C`
+                        : "--°C"}
+                    </Text>
+                    <Text style={styles.tempValue}>
+                      {supplierData.temps.chilled
+                        ? `${supplierData.temps.chilled}°C`
+                        : "--°C"}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+                {expanded[supplierData.id] && (
+                  <View style={styles.tempInputsContainer}>
+                    <View style={styles.tempInputCard}>
+                      <Text style={styles.tempInputLabel}>Set Temperature</Text>
+                      <Text style={styles.tempInputType}>Frozen Items</Text>
+                      <View style={styles.tempInputRow}>
+                        <TextInput
+                          style={styles.tempInput}
+                          value={supplierData.temps.frozen}
+                          onChangeText={(val) => handleSetTemp(supplierData.supplier, supplierData.id, "frozen", val)}
+                          placeholder="--"
+                          placeholderTextColor="#A0A7B3"
+                          keyboardType="numeric"
+                        />
+                        <Text style={styles.tempUnit}>℃</Text>
                       </View>
                     </View>
-                  )}
+                    <View style={styles.tempInputCard}>
+                      <Text style={styles.tempInputLabel}>Set Temperature</Text>
+                      <Text style={styles.tempInputType}>Chilled Items</Text>
+                      <View style={styles.tempInputRow}>
+                        <TextInput
+                          style={styles.tempInput}
+                          value={supplierData.temps.chilled}
+                          onChangeText={(val) => handleSetTemp(supplierData.supplier, supplierData.id, "chilled", val)}
+                          placeholder="--"
+                          placeholderTextColor="#A0A7B3"
+                          keyboardType="numeric"
+                        />
+                        <Text style={styles.tempUnit}>℃</Text>
+                      </View>
+                    </View>
+                  </View>
+                )}
                 </View>
               </Swipeable>
             ))
           )}
         </View>
       </ScrollView>
-      <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)}>
-        <Ionicons name="add" size={38} color="#fff" />
-      </TouchableOpacity>
-      <AddSupplierModal
-        visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        onAdd={handleAddSupplier}
-        date={todayString}
-      />
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
+
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#fff" },
   appTitle: {
@@ -406,8 +415,6 @@ const styles = StyleSheet.create({
   supplierCard: {
     backgroundColor: "#f8fafc",
     borderRadius: 16,
-    marginHorizontal: 16,
-    marginBottom: 18,
     paddingVertical: 18,
     paddingHorizontal: 16,
   },
@@ -472,136 +479,37 @@ const styles = StyleSheet.create({
     fontSize: 22,
     color: "#8B96A5",
   },
-  fab: {
-    position: "absolute",
-    right: 40,
-    bottom: 70,
-    width: 72,
-    height: 72,
-    borderRadius: 50,
-    backgroundColor: Colors.primary,
-    alignItems: "center",
+  swipeableContainer: {
+    backgroundColor: "transparent",
+    marginHorizontal: 16,
+    marginBottom: 18,
+  },
+  swipeActionContainer: {
+    flex: 1,
     justifyContent: "center",
+    alignItems: "flex-end",
+    paddingRight: Spacing.md,
+  },
+  deleteAction: {
+    backgroundColor: "#FF3B30",
+    justifyContent: "center",
+    alignItems: "center",
+    width: 80,
+    height: "85%",
+    borderRadius: 16,
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
-      height: 4,
+      height: 2,
     },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  overlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  backdrop: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-  },
-  modal: {
-    backgroundColor: Colors.background,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.xl,
-    minHeight: 400,
-    maxHeight: "80%",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: Spacing.xl,
-  },
-  modalTitle: {
-    fontSize: Typography.xl,
-    fontWeight: "bold",
-    color: Colors.textPrimary,
-    marginBottom: Spacing.xs,
-  },
-  modalDate: {
-    fontSize: Typography.md,
-    color: Colors.textSecondary,
-    marginTop: Spacing.xs,
-  },
-  closeButton: {
-    padding: Spacing.xs,
-  },
-  closeText: {
-    fontSize: 24,
-    color: Colors.textSecondary,
-    fontWeight: "300",
-  },
-  suppliersList: {
-    flex: 1,
-    marginBottom: Spacing.xl,
-  },
-  supplierOption: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginBottom: 8,
-    backgroundColor: "#f8fafc",
-  },
-  supplierOptionSelected: {
-    backgroundColor: "#e0f2fe",
-    borderColor: "#2563eb",
-    borderWidth: 1,
-  },
-  supplierOptionText: {
-    fontSize: Typography.base,
-    color: Colors.textPrimary,
-    fontWeight: "500",
-  },
-  supplierOptionTextSelected: {
-    color: "#2563eb",
-    fontWeight: "600",
-  },
-  noSuppliersText: {
-    textAlign: "center",
-    fontSize: Typography.base,
-    color: Colors.textSecondary,
-    marginVertical: 20,
-  },
-  form: {
-    marginBottom: Spacing.xl,
-  },
-  label: {
-    fontSize: Typography.base,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.sm,
-  },
-  input: {
-    fontSize: Typography.lg,
-    fontWeight: "600",
-    color: Colors.textPrimary,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: 0,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
-  },
-  buttonContainer: {
-    marginTop: "auto",
-  },
-  addButton: {
-    backgroundColor: "#2563eb",
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  addButtonText: {
-    color: "#fff",
-    fontFamily: Typography.fontBold,
-    fontSize: 20,
+  deleteActionText: {
+    color: "white",
+    fontSize: Typography.sm,
+    fontWeight: Typography.bold,
+    marginTop: 4,
   },
 });
