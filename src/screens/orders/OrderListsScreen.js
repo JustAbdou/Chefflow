@@ -1,14 +1,13 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, RefreshControl, Alert } from "react-native"
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, RefreshControl, Alert, Modal, TextInput, KeyboardAvoidingView, Platform } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { Colors } from "../../constants/Colors"
 import { Typography } from "../../constants/Typography"
 import { Spacing } from "../../constants/Spacing"
 import { getAndroidTitleMargin } from "../../utils/responsive"
 import useNavigationBar from "../../hooks/useNavigationBar"
-import AddOrderItemModal from "./AddOrderItemModal"
 import { Swipeable } from "react-native-gesture-handler"
 import { useNavigation } from "@react-navigation/native"
 import { getFormattedTodayDate } from '../../utils/dateUtils';
@@ -17,24 +16,110 @@ import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
 import { auth, db } from "../../../firebase";
 
+function AddItemModal({ visible, onClose, onAdd, supplier, date }) {
+  const [itemName, setItemName] = useState("");
+
+  useEffect(() => {
+    if (!visible) {
+      setItemName("");
+    }
+  }, [visible]);
+
+  const handleAdd = () => {
+    if (itemName.trim()) {
+      onAdd(itemName.trim(), supplier);
+      setItemName("");
+      onClose();
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+      >
+        <View style={styles.overlay}>
+          <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} />
+          <View style={styles.modal}>
+            <View style={styles.modalHeader}>
+              <View style={styles.titleContainer}>
+                <Text style={styles.modalTitle}>Add Order Item</Text>
+                {date && <Text style={styles.modalDate}>{date}</Text>}
+                <Text style={styles.modalSupplier}>Supplier: {supplier}</Text>
+              </View>
+              <TouchableOpacity style={styles.closeButton} onPress={onClose} activeOpacity={0.7}>
+                <Text style={styles.closeText}>×</Text>
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.form}>
+              <Text style={styles.label}>Item Name</Text>
+              <TextInput
+                style={styles.input}
+                value={itemName}
+                onChangeText={setItemName}
+                placeholder="Enter item name"
+                placeholderTextColor={Colors.gray200}
+                autoFocus
+              />
+            </View>
+
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.addButton,
+                  !itemName.trim() && { backgroundColor: Colors.gray200 },
+                ]}
+                onPress={handleAdd}
+                disabled={!itemName.trim()}
+              >
+                <Text style={styles.addButtonText}>Add Item</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 export function OrderListsScreen() {
   const { restaurantId } = useRestaurant();
   const navigation = useNavigation()
   const [showAddModal, setShowAddModal] = useState(false)
+  const [selectedSupplier, setSelectedSupplier] = useState("")
   const [orderItems, setOrderItems] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Hide Android navigation bar
   const navigationBar = useNavigationBar();
-  navigationBar.useHidden(); // Use hidden mode for complete immersion
+  navigationBar.useHidden(); 
   const [currentDate, setCurrentDate] = useState('')
 
   useEffect(() => {
     setCurrentDate(getFormattedTodayDate());
   }, [])
 
-  // Reusable function to fetch order items
+  const fetchSuppliers = async () => {
+    if (!restaurantId) return;
+    
+    try {
+      const suppliersDocRef = getRestaurantDoc(restaurantId, "suppliers", "suppliers");
+      const suppliersDoc = await getDoc(suppliersDocRef);
+      
+      if (suppliersDoc.exists() && suppliersDoc.data().names) {
+        setSuppliers(suppliersDoc.data().names);
+      } else {
+        setSuppliers([]);
+      }
+    } catch (error) {
+      console.error("Error fetching suppliers:", error);
+      setSuppliers([]);
+    }
+  };
+
   const fetchOrderItems = async () => {
     if (!restaurantId) return;
     
@@ -44,7 +129,7 @@ export function OrderListsScreen() {
       const items = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
-        completed: doc.data().done || false, // completed UI state matches Firestore 'done' field
+        completed: doc.data().done || false, 
       }));
       setOrderItems(items);
     } catch (error) {
@@ -53,26 +138,24 @@ export function OrderListsScreen() {
   };
 
   useEffect(() => {
-    const loadOrderItems = async () => {
+    const loadData = async () => {
       setLoading(true);
-      await fetchOrderItems();
+      await Promise.all([fetchSuppliers(), fetchOrderItems()]);
       setLoading(false);
       setRefreshing(false);
     };
-    loadOrderItems();
+    loadData();
   }, [restaurantId]);
 
-  // Pull to refresh handler
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchOrderItems();
+    await Promise.all([fetchSuppliers(), fetchOrderItems()]);
     setRefreshing(false);
   };
 
   const toggleItem = async (id) => {
     if (!restaurantId) return;
     
-    // Update local state first for immediate UI feedback
     const item = orderItems.find(item => item.id === id);
     if (!item) return;
     
@@ -82,7 +165,6 @@ export function OrderListsScreen() {
       items.map((item) => (item.id === id ? { ...item, completed: newCompletedStatus } : item))
     );
     
-    // Update Firestore - when checked (completed: true), set done: true
     try {
       await updateDoc(getRestaurantDoc(restaurantId, "orderlist", id), {
         done: newCompletedStatus,
@@ -112,14 +194,12 @@ export function OrderListsScreen() {
             if (!restaurantId) return;
             
             try {
-              // Delete all items from Firestore
               const deletePromises = orderItems.map(item =>
                 deleteDoc(getRestaurantDoc(restaurantId, "orderlist", item.id))
               );
               
               await Promise.all(deletePromises);
               
-              // Clear local state
               setOrderItems([]);
             } catch (error) {
               console.error("Error clearing all items:", error);
@@ -144,7 +224,6 @@ export function OrderListsScreen() {
       };
 
       if (currentUser) {
-        // Fetch user's full name from Firestore
         try {
           const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
           const userData = userDoc.exists() ? userDoc.data() : null;
@@ -157,7 +236,6 @@ export function OrderListsScreen() {
           };
         } catch (firestoreError) {
           console.warn('Could not fetch user data from Firestore:', firestoreError);
-          // Fallback to auth data only
           userInfo = {
             userId: currentUser.uid,
             userEmail: currentUser.email || 'Unknown Email',
@@ -169,16 +247,16 @@ export function OrderListsScreen() {
 
       const docRef = await addDoc(getRestaurantCollection(restaurantId, "orderlist"), {
         name: itemName,
-        supplier: supplierName, // Add supplier field
+        supplier: supplierName, 
         createdAt: serverTimestamp(),
         createdBy: userInfo,
-        done: false, // Initialize as not done
+        done: false, 
       });
       setOrderItems((items) => [
         { 
           id: docRef.id, 
           name: itemName, 
-          supplier: supplierName, // Add supplier to local state
+          supplier: supplierName, 
           completed: false, 
           createdBy: userInfo, 
           done: false 
@@ -206,18 +284,29 @@ export function OrderListsScreen() {
     navigation.goBack('Main', { screen: 'Dashboard' })
   }
 
-  // Group order items by supplier
-  const groupedOrderItems = orderItems.reduce((groups, item) => {
-    const supplier = item.supplier || 'No Supplier';
-    if (!groups[supplier]) {
-      groups[supplier] = [];
-    }
-    groups[supplier].push(item);
-    return groups;
-  }, {});
+  const getSuppliersWithItems = () => {
+    const groupedItems = orderItems.reduce((groups, item) => {
+      const supplier = item.supplier || 'No Supplier';
+      if (!groups[supplier]) {
+        groups[supplier] = [];
+      }
+      groups[supplier].push(item);
+      return groups;
+    }, {});
 
-  // Render items for a specific supplier
+    return suppliers.map(supplier => ({
+      supplier,
+      items: groupedItems[supplier] || []
+    }));
+  };
+
   const renderSupplierItems = (items) => {
+    if (items.length === 0) {
+      return (
+        <Text style={styles.noItemsText}>No items yet for this supplier</Text>
+      );
+    }
+
     return items.map((item) => (
       <Swipeable
         key={item.id}
@@ -239,7 +328,6 @@ export function OrderListsScreen() {
     ));
   };
 
-  // Render right action for swipe-to-delete
   const renderRightActions = (itemId) => (
     <View style={styles.swipeActionContainer}>
       <TouchableOpacity
@@ -262,7 +350,6 @@ export function OrderListsScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {/* Header */}
         <View style={styles.header}>
           <View style={styles.backHeader}>
             <TouchableOpacity style={styles.backButton} onPress={onBack} activeOpacity={0.7}>
@@ -275,7 +362,6 @@ export function OrderListsScreen() {
           </View>
         </View>
 
-        {/* Section Header */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Today's Orders</Text>
           {orderItems.length > 0 && (
@@ -289,18 +375,30 @@ export function OrderListsScreen() {
           )}
         </View>
 
-        {/* Order Items List - Grouped by Supplier */}
         <View style={styles.listContainer}>
           {loading ? (
             <Text style={{ textAlign: "center", marginTop: 40 }}>Loading...</Text>
-          ) : Object.keys(groupedOrderItems).length === 0 ? (
-            <Text style={styles.emptyState}>No order items yet. Add your first item!</Text>
+          ) : suppliers.length === 0 ? (
+            <Text style={styles.emptyState}>No suppliers found. Please add suppliers first.</Text>
           ) : (
-            Object.entries(groupedOrderItems).map(([supplier, items]) => (
+            getSuppliersWithItems().map(({ supplier, items }) => (
               <View key={supplier} style={styles.supplierSection}>
                 <View style={styles.supplierHeader}>
-                  <Text style={styles.supplierName}>{supplier}</Text>
-                  <Text style={styles.supplierItemCount}>{items.length} item{items.length !== 1 ? 's' : ''}</Text>
+                  <View style={styles.supplierInfo}>
+                    <Text style={styles.supplierName}>{supplier}</Text>
+                    <Text style={styles.supplierItemCount}>{items.length} item{items.length !== 1 ? 's' : ''}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.addItemButton}
+                    onPress={() => {
+                      setSelectedSupplier(supplier);
+                      setShowAddModal(true);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="add" size={20} color="#fff" />
+                    <Text style={styles.addItemButtonText}>Add</Text>
+                  </TouchableOpacity>
                 </View>
                 <View style={styles.supplierItems}>
                   {renderSupplierItems(items)}
@@ -311,17 +409,12 @@ export function OrderListsScreen() {
         </View>
       </ScrollView>
 
-      {/* Floating Action Button */}
-      <TouchableOpacity style={styles.fab} onPress={() => setShowAddModal(true)} activeOpacity={0.85}>
-        <Ionicons name="add" size={38} color="#fff" />
-      </TouchableOpacity>
-
-      {/* Add Item Modal */}
       {showAddModal && (
-        <AddOrderItemModal 
+        <AddItemModal 
           visible={showAddModal}
           onClose={() => setShowAddModal(false)} 
           onAdd={addNewItem}
+          supplier={selectedSupplier}
           date={currentDate}
         />
       )}
@@ -453,6 +546,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: Spacing.sm,
   },
+  supplierInfo: {
+    flex: 1,
+  },
   supplierName: {
     fontSize: Typography.lg,
     fontFamily: Typography.fontBold,
@@ -462,9 +558,31 @@ const styles = StyleSheet.create({
     fontSize: Typography.sm,
     color: Colors.textSecondary,
     fontWeight: Typography.medium,
+    marginTop: 2,
+  },
+  addItemButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: 20,
+    gap: 4,
+  },
+  addItemButtonText: {
+    color: "#fff",
+    fontSize: Typography.sm,
+    fontWeight: Typography.bold,
   },
   supplierItems: {
     paddingLeft: Spacing.md,
+  },
+  noItemsText: {
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: Spacing.md,
   },
   listItem: {
     flexDirection: "row",
@@ -522,6 +640,95 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 12,
     elevation: 8,
+  },
+  // Modal Styles
+  overlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  backdrop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
+  modal: {
+    backgroundColor: Colors.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.xl,
+    minHeight: 300,
+    maxHeight: "80%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: Spacing.xl,
+  },
+  titleContainer: {
+    flex: 1,
+  },
+  modalTitle: {
+    fontSize: Typography.xl,
+    fontWeight: "bold",
+    color: Colors.textPrimary,
+    marginBottom: Spacing.xs,
+  },
+  modalDate: {
+    fontSize: Typography.base,
+    color: Colors.textSecondary,
+    marginTop: Spacing.xs,
+  },
+  modalSupplier: {
+    fontSize: Typography.sm,
+    color: Colors.primary,
+    marginTop: Spacing.xs,
+    fontWeight: "600",
+  },
+  closeButton: {
+    padding: Spacing.xs,
+  },
+  closeText: {
+    fontSize: 24,
+    color: Colors.textSecondary,
+    fontWeight: "300",
+  },
+  form: {
+    marginBottom: Spacing.xl,
+  },
+  label: {
+    fontSize: Typography.base,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.sm,
+  },
+  input: {
+    fontSize: Typography.lg,
+    fontWeight: "600",
+    color: Colors.textPrimary,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
+  },
+  buttonContainer: {
+    marginTop: "auto",
+  },
+  addButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addButtonText: {
+    color: "#fff",
+    fontFamily: Typography.fontBold,
+    fontSize: Typography.lg,
   },
   swipeableContainer: {
     backgroundColor: "transparent",
