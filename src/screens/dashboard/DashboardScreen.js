@@ -123,6 +123,7 @@ const DashboardScreen = ({ navigation }) => {
           totalRecipes += categorySnapshot.size;
         }
         
+        console.log('📚 Recipe count updated:', totalRecipes); // Debug log
         setRecipeCount(totalRecipes);
       } catch (error) {
         console.warn('Error fetching recipe count:', error);
@@ -327,7 +328,7 @@ const DashboardScreen = ({ navigation }) => {
                     navigation.navigate('Recipes');
                   } else if (item.title === 'Fridge Temperature') {
                     navigation.navigate('FridgeTempLogs');
-                  } else if (item.title === 'Cleaning Checklist') {
+                  } else if (item.title === 'Closing Checklist') {
                     navigation.navigate('CleaningChecklist');
                   } else if (item.title === 'Delivery Temperature') {
                     navigation.navigate('DeliveryTempLogs');

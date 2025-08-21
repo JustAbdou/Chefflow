@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Image, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView } from "react-native";
+import { View, Text, StyleSheet, Image, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView, FlatList, Dimensions, RefreshControl } from "react-native";
 import { Colors } from "../../constants/Colors";
 import { Typography } from "../../constants/Typography";
 import { Spacing } from "../../constants/Spacing";
@@ -7,11 +7,17 @@ import { getDoc } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantSubDoc } from "../../utils/firestoreHelpers";
 
+const { width: screenWidth } = Dimensions.get('window');
+
 function RecipeDetailScreen({ route, navigation }) {
   const { restaurantId } = useRestaurant();
   const { recipeId, category } = route.params;
   const [recipe, setRecipe] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [imageLoadingStates, setImageLoadingStates] = useState({});
+  const [imageErrors, setImageErrors] = useState({});
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     const fetchRecipeDetails = async () => {
@@ -26,11 +32,129 @@ function RecipeDetailScreen({ route, navigation }) {
         console.error("Error fetching recipe details:", error);
       } finally {
         setLoading(false);
+        setRefreshing(false);
       }
     };
 
     fetchRecipeDetails();
   }, [recipeId, category, restaurantId]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    
+    if (!restaurantId) {
+      setRefreshing(false);
+      return;
+    }
+    
+    try {
+      const recipeDoc = await getDoc(
+        getRestaurantSubDoc(restaurantId, "recipes", "categories", category, recipeId)
+      );
+      setRecipe(recipeDoc.data());
+      
+      setImageLoadingStates({});
+      setImageErrors({});
+      setCurrentImageIndex(0);
+    } catch (error) {
+      console.error("Error refreshing recipe details:", error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const getImageArray = (recipe) => {
+    if (!recipe?.image) return [];
+    
+    // Handle backward compatibility
+    if (Array.isArray(recipe.image)) {
+      // New format: already an array - filter out invalid entries
+      return recipe.image.filter(img => img && typeof img === 'string' && img.trim() !== '');
+    } else if (typeof recipe.image === 'string' && recipe.image.trim() !== '') {
+      // Old format: single string, convert to array
+      return [recipe.image];
+    }
+    
+    return [];
+  };
+
+  // Image slideshow functions
+  const renderImageItem = ({ item, index }) => {
+    // Validate the image URI
+    if (!item || typeof item !== 'string' || item.trim() === '') {
+      return (
+        <View style={styles.imageItemContainer}>
+          <View style={styles.imageErrorOverlay}>
+            <Text style={styles.imageErrorText}>Invalid image</Text>
+          </View>
+        </View>
+      );
+    }
+
+    const imageKey = `${index}-${item}`;
+    const isLoading = imageLoadingStates[imageKey];
+    const hasError = imageErrors[imageKey];
+
+    return (
+      <View style={styles.imageItemContainer}>
+        <Image 
+          source={{ uri: item.trim() }} 
+          style={styles.image} 
+          resizeMode="cover"
+          onLoadStart={() => {
+            setImageLoadingStates(prev => ({ ...prev, [imageKey]: true }));
+          }}
+          onLoad={() => {
+            setImageLoadingStates(prev => ({ ...prev, [imageKey]: false }));
+          }}
+          onError={(error) => {
+            console.log('Image load error:', error);
+            setImageLoadingStates(prev => ({ ...prev, [imageKey]: false }));
+            setImageErrors(prev => ({ ...prev, [imageKey]: true }));
+          }}
+        />
+        {isLoading && !hasError && (
+          <View style={styles.imageLoadingOverlay}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+          </View>
+        )}
+        {hasError && (
+          <View style={styles.imageErrorOverlay}>
+            <Text style={styles.imageErrorText}>Failed to load image</Text>
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  const onImageScroll = (event) => {
+    const slideSize = event.nativeEvent.layoutMeasurement.width;
+    const index = event.nativeEvent.contentOffset.x / slideSize;
+    const roundedIndex = Math.round(index);
+    
+    if (roundedIndex !== currentImageIndex) {
+      setCurrentImageIndex(roundedIndex);
+    }
+  };
+
+  const renderPaginationDots = () => {
+    const images = getImageArray(recipe);
+    if (!images || images.length <= 1) return null;
+    
+    return (
+      <View style={styles.paginationContainer}>
+        {images.map((_, index) => (
+          <View
+            key={index}
+            style={[
+              styles.paginationDot,
+              index === currentImageIndex && styles.paginationDotActive
+            ]}
+          />
+        ))}
+      </View>
+    );
+  };
 
   if (loading) {
     return (
@@ -50,7 +174,13 @@ function RecipeDetailScreen({ route, navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 32 }}>
+      <ScrollView 
+        style={{ flex: 1 }} 
+        contentContainerStyle={{ paddingBottom: 32 }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.backHeader}>
@@ -60,8 +190,35 @@ function RecipeDetailScreen({ route, navigation }) {
           </View>
         </View>
 
-      {/* Image */}
-      <Image source={{ uri: recipe.image }} style={styles.image} resizeMode="cover" />
+        {/* Image Slideshow */}
+        {(() => {
+          const images = getImageArray(recipe);
+          console.log('Recipe images:', images); // Debug log
+          return images.length > 0 ? (
+            <View style={styles.imageContainer}>
+              <FlatList
+                data={images}
+                renderItem={renderImageItem}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                onScroll={onImageScroll}
+                scrollEventThrottle={16}
+                keyExtractor={(item, index) => `image-${index}-${typeof item === 'string' ? item.substring(0, 10) : 'invalid'}`}
+                style={styles.imageSlideshow}
+                // Simplified performance optimizations
+                initialNumToRender={1}
+                windowSize={2}
+                removeClippedSubviews={false}
+              />
+              {renderPaginationDots()}
+            </View>
+          ) : (
+            <View style={styles.noImageContainer}>
+              <Text style={styles.noImageText}>No images available</Text>
+            </View>
+          );
+        })()}
 
       {/* Title */}
       <Text style={styles.title}>{recipe["recipe name"]}</Text>
@@ -89,13 +246,9 @@ function RecipeDetailScreen({ route, navigation }) {
             <View style={styles.instructionCircle}>
               <Text style={styles.instructionCircleText}>{idx + 1}</Text>
             </View>
-            <View style={{ flex: 1 }}>
-              {/* Try to bold the first sentence as the step title */}
-              <Text style={styles.instructionTitle}>
-                {instruction.split(".")[0]}
-              </Text>
-              <Text style={styles.instructionDesc}>
-                {instruction.substring(instruction.indexOf(".") + 1).trim()}
+            <View style={styles.instructionTextContainer}>
+              <Text style={styles.instructionText}>
+                {instruction}
               </Text>
             </View>
           </View>
@@ -140,11 +293,78 @@ const styles = StyleSheet.create({
     fontWeight: "300",
   },
   image: {
+    width: screenWidth * 0.92,
+    height: 220,
+    borderRadius: 18,
+    marginHorizontal: screenWidth * 0.04,
+  },
+  imageItemContainer: {
+    position: 'relative',
+  },
+  imageLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: screenWidth * 0.04,
+    right: screenWidth * 0.04,
+    bottom: 0,
+    backgroundColor: Colors.gray100,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imageErrorOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: screenWidth * 0.04,
+    right: screenWidth * 0.04,
+    bottom: 0,
+    backgroundColor: Colors.gray100,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imageErrorText: {
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
+  },
+  imageContainer: {
+    marginBottom: Spacing.lg,
+  },
+  imageSlideshow: {
+    height: 220,
+  },
+  noImageContainer: {
     width: "92%",
     height: 220,
     alignSelf: "center",
     borderRadius: 18,
+    backgroundColor: Colors.gray100,
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: Spacing.lg,
+  },
+  noImageText: {
+    fontSize: Typography.base,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
+  },
+  paginationContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: Spacing.md,
+  },
+  paginationDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.gray200,
+    marginHorizontal: 4,
+  },
+  paginationDotActive: {
+    backgroundColor: Colors.primary,
+    width: 20,
   },
   title: {
     fontSize: 26,
@@ -216,6 +436,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginRight: 14,
     marginTop: 2,
+    flexShrink: 0,
   },
   instructionCircleText: {
     color: "#fff",
@@ -231,6 +452,16 @@ const styles = StyleSheet.create({
   instructionDesc: {
     fontSize: Typography.base,
     color: Colors.textSecondary,
+  },
+  instructionText: {
+    fontSize: Typography.base,
+    color: Colors.textPrimary,
+    lineHeight: 22,
+  },
+  instructionTextContainer: {
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 32,
   },
   notes: {
     fontSize: Typography.base,

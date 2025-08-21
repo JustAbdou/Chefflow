@@ -59,7 +59,7 @@ export default function CleaningChecklistScreen({ navigation }) {
       });
       setTasks(fetchedTasks);
     } catch (e) {
-      console.error("Error fetching cleaning tasks:", e);
+      console.error("Error fetching closing tasks:", e);
       setTasks([]);
     }
   };
@@ -89,7 +89,7 @@ export default function CleaningChecklistScreen({ navigation }) {
           
           // If task was completed more than 24 hours ago, reset it
           if (completedDate < twentyFourHoursAgo) {
-            console.log(`Resetting cleaning task: ${task.title}`);
+            console.log(`Resetting closing task: ${task.title}`);
             const resetPromise = updateDoc(getRestaurantDoc(restaurantId, "cleaninglist", task.id), {
               done: false,
               completedAt: null,
@@ -101,7 +101,7 @@ export default function CleaningChecklistScreen({ navigation }) {
       
       if (resetPromises.length > 0) {
         await Promise.all(resetPromises);
-        console.log(`Reset ${resetPromises.length} cleaning tasks`);
+        console.log(`Reset ${resetPromises.length} closing tasks`);
         
         // Update local state
         setTasks(prevTasks =>
@@ -181,11 +181,11 @@ export default function CleaningChecklistScreen({ navigation }) {
         )
       );
     } catch (e) {
-      console.error("Error updating cleaning task:", e);
+      console.error("Error updating closing task:", e);
     }
   };
 
-  // Add new cleaning task to Firestore
+  // Add new closing task to Firestore
   const handleAddTask = async (taskName) => {
     if (!restaurantId || !auth.currentUser) return;
     
@@ -202,7 +202,7 @@ export default function CleaningChecklistScreen({ navigation }) {
       // Refresh tasks after adding
       await fetchTasks();
     } catch (error) {
-      console.error("Error adding cleaning task:", error);
+      console.error("Error adding closing task:", error);
     }
   };
 
@@ -225,7 +225,7 @@ export default function CleaningChecklistScreen({ navigation }) {
               <Text style={styles.backArrow}>‹</Text>
             </TouchableOpacity>
             <View style={styles.titleContainer}>
-              <Text style={styles.title}>Cleaning Checklist</Text>
+              <Text style={styles.title}>Closing Checklist</Text>
               <Text style={styles.date}>{currentDate}</Text>
             </View>
           </View>
@@ -301,7 +301,7 @@ export default function CleaningChecklistScreen({ navigation }) {
               
               {/* Empty state */}
               {todayTasks.length === 0 && yesterdayTasks.length === 0 && (
-                <Text style={styles.emptyState}>No cleaning tasks yet. Add your first task!</Text>
+                <Text style={styles.emptyState}>No closing tasks yet. Add your first task!</Text>
               )}
             </>
           )}

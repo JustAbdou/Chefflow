@@ -42,8 +42,8 @@ function TasksScreen({ navigation }) {
       screen: "DeliveryTempLogs", 
     },
     {
-      title: "Cleaning Checklist",
-      subtitle: "Today's cleaning tasks",
+      title: "Closing Checklist",
+      subtitle: "Today's closing tasks",
       icon: ClipboardIcon,
       iconColor: Colors.primary,
       screen: "CleaningChecklist",

@@ -109,6 +109,23 @@ function RecipesScreen() {
     await fetchCategoriesAndRecipes();
   };
 
+  // Helper function to get thumbnail image from recipe
+  const getThumbnailImage = (recipe) => {
+    if (!recipe?.image) return null;
+    
+    // Handle backward compatibility
+    if (Array.isArray(recipe.image)) {
+      // New format: array - return first valid image
+      const validImages = recipe.image.filter(img => img && typeof img === 'string' && img.trim() !== '');
+      return validImages.length > 0 ? validImages[0] : null;
+    } else if (typeof recipe.image === 'string' && recipe.image.trim() !== '') {
+      // Old format: single string
+      return recipe.image;
+    }
+    
+    return null;
+  };
+
   // Recipes to display (filtered by search)
   const recipes = (recipesByCategory[selectedCategory] || []).filter(recipe => {
     if (!search || search.trim() === "") return true; // Show all if no search
@@ -221,22 +238,35 @@ function RecipesScreen() {
           {loading ? (
             <ActivityIndicator size="large" style={{ marginTop: 40 }} />
           ) : (
-            recipes.map(recipe => (
-              <TouchableOpacity
-                key={recipe.id}
-                style={styles.recipeCard}
-                activeOpacity={0.7}
-                onPress={() => navigation.navigate("RecipeDetail", { recipeId: recipe.id, category: recipe.category })}
-              >
-                <Image source={{ uri: recipe.image }} style={styles.recipeImage} resizeMode="cover" />
-                <View style={styles.recipeInfo}>
-                  <Text style={styles.recipeName}>
-                    {recipe["recipe name"] || recipe.name || recipe.title || recipe.recipeName || "Untitled Recipe"}
-                  </Text>
-                  <Text style={styles.recipeCategory}>{recipe.category}</Text>
-                </View>
-              </TouchableOpacity>
-            ))
+            recipes.map(recipe => {
+              const thumbnailImage = getThumbnailImage(recipe);
+              return (
+                <TouchableOpacity
+                  key={recipe.id}
+                  style={styles.recipeCard}
+                  activeOpacity={0.7}
+                  onPress={() => navigation.navigate("RecipeDetail", { recipeId: recipe.id, category: recipe.category })}
+                >
+                  {thumbnailImage ? (
+                    <Image 
+                      source={{ uri: thumbnailImage }} 
+                      style={styles.recipeImage} 
+                      resizeMode="cover" 
+                    />
+                  ) : (
+                    <View style={[styles.recipeImage, styles.noImagePlaceholder]}>
+                      <Text style={styles.noImageText}>No Image</Text>
+                    </View>
+                  )}
+                  <View style={styles.recipeInfo}>
+                    <Text style={styles.recipeName}>
+                      {recipe["recipe name"] || recipe.name || recipe.title || recipe.recipeName || "Untitled Recipe"}
+                    </Text>
+                    <Text style={styles.recipeCategory}>{recipe.category}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })
           )}
         </View>
       </ScrollView>
@@ -368,6 +398,15 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     backgroundColor: Colors.gray100,
     marginRight: Spacing.md,
+  },
+  noImagePlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noImageText: {
+    fontSize: Typography.xs,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
   },
   recipeInfo: {
     flex: 1,
