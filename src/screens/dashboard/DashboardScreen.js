@@ -28,6 +28,7 @@ const DashboardScreen = ({ navigation }) => {
   const [orderCount, setOrderCount] = useState(0);
   const [recipeCount, setRecipeCount] = useState(0);
   const [invoiceCount, setInvoiceCount] = useState(0);
+  const [closingChecklistCount, setClosingChecklistCount] = useState(0);
   const [latestFridgeTemp, setLatestFridgeTemp] = useState('--°C');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -112,6 +113,20 @@ const DashboardScreen = ({ navigation }) => {
       (error) => {
         console.warn('Invoices listener error:', error);
         setInvoiceCount(0);
+      }
+    );
+    
+    // Real-time listener for closing checklist with error handling (count all closing checklist items)
+    const unsubClosingChecklist = onSnapshot(
+      getRestaurantCollection(restaurantId, "closinglist"),
+      (snapshot) => {
+        // needs to check if the task is pending  
+        const pendingTasks = snapshot.docs.filter(doc => !doc.data().done);
+        setClosingChecklistCount(pendingTasks.length);
+      },
+      (error) => {
+        console.warn('Closing checklist listener error:', error);
+        setClosingChecklistCount(0);
       }
     );
     
@@ -210,8 +225,8 @@ const DashboardScreen = ({ navigation }) => {
       screen: 'Invoices',
     },
     { 
-      title: 'Closing', 
-      value: '0', 
+      title: 'Closing Checklists', 
+      value: closingChecklistCount.toString(), 
       subtitle: 'Tasks pending',
       iconUri: 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/cleaning-icon.png',
       icon: <Ionicons name="shield-checkmark-outline" size={22} color={Colors.primary} />,
@@ -381,16 +396,8 @@ const DashboardScreen = ({ navigation }) => {
                 key={index}
                 style={styles.menuItem}
                 onPress={() => {
-                  if (item.title === 'Order Lists') {
-                    navigation.navigate('OrderLists');
-                  } else if (item.title === 'Prep Lists') {
-                    navigation.navigate('PrepLists');
-                  } else if (item.title === 'Recipe Library') {
-                    navigation.navigate('Recipes');
-                  } else if (item.title === 'Fridge Temperature') {
+                  if (item.title === 'Fridge Temperature') {
                     navigation.navigate('FridgeTempLogs');
-                  } else if (item.title === 'Cleaning Checklist') {
-                    navigation.navigate('CleaningChecklist');
                   } else if (item.title === 'Delivery Temperature') {
                     navigation.navigate('DeliveryTempLogs');
                   } else if (item.title === 'Cooling & Reheating') {

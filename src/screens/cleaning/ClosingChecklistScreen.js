@@ -19,10 +19,9 @@ import { getDocs, updateDoc, addDoc, serverTimestamp } from "firebase/firestore"
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
 import { auth } from "../../../firebase";
-import { getFormattedTodayDate, groupCleaningTasksByDay } from '../../utils/dateUtils';
-import AddCleaningTaskModal from "./AddCleaningTaskModal"; // import the modal
+import { getFormattedTodayDate } from '../../utils/dateUtils';
 
-export default function CleaningChecklistScreen({ navigation }) {
+export default function ClosingChecklistScreen({ navigation }) {
   const { restaurantId } = useRestaurant();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -181,12 +180,9 @@ export default function CleaningChecklistScreen({ navigation }) {
         )
       );
     } catch (e) {
-      console.error("Error updating cleaning task:", e);
+      console.error("Error updating closing checklist task:", e);
     }
   };
-
-  // Group tasks by day (today/yesterday based on 3 AM cutoff)
-  // const { todayTasks, yesterdayTasks } = groupCleaningTasksByDay(tasks);
 
   return (
     <SafeAreaView style={styles.safeArea}>
