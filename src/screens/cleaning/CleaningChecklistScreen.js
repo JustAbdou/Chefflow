@@ -185,29 +185,8 @@ export default function CleaningChecklistScreen({ navigation }) {
     }
   };
 
-  // Add new cleaning task to Firestore
-  const handleAddTask = async (taskName) => {
-    if (!restaurantId || !auth.currentUser) return;
-    
-    try {
-      // Add document with proper structure
-      await addDoc(getRestaurantCollection(restaurantId, "cleaninglist"), {
-        createdAt: serverTimestamp(),
-        createdBy: auth.currentUser.uid,
-        name: taskName,
-        done: false,
-        restaurantId: restaurantId,
-      });
-      
-      // Refresh tasks after adding
-      await fetchTasks();
-    } catch (error) {
-      console.error("Error adding cleaning task:", error);
-    }
-  };
-
   // Group tasks by day (today/yesterday based on 3 AM cutoff)
-  const { todayTasks, yesterdayTasks } = groupCleaningTasksByDay(tasks);
+  // const { todayTasks, yesterdayTasks } = groupCleaningTasksByDay(tasks);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -238,13 +217,10 @@ export default function CleaningChecklistScreen({ navigation }) {
           ) : (
             <>
               {/* Today's Tasks */}
-              {todayTasks.length > 0 && (
+              {tasks.length > 0 && (
                 <>
-                  <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Today's Tasks</Text>
-                  </View>
                   <View style={styles.tasksContainer}>
-                    {todayTasks.map((task) => (
+                    {tasks.map((task) => (
                       <TouchableOpacity 
                         key={task.id} 
                         style={styles.taskCard}
@@ -259,66 +235,18 @@ export default function CleaningChecklistScreen({ navigation }) {
                           )}
                           <View style={styles.taskContent}>
                             <Text style={styles.taskTitle}>{task.title}</Text>
-                            <Text style={styles.taskTime}>{task.time}</Text>
                           </View>
                         </View>
                       </TouchableOpacity>
                     ))}
                   </View>
                 </>
-              )}
-              
-              {/* Yesterday's Tasks */}
-              {yesterdayTasks.length > 0 && (
-                <>
-                  <View style={styles.sectionHeader}>
-                    <Text style={[styles.sectionTitle, styles.yesterdaySectionTitle]}>Yesterday's Tasks</Text>
-                  </View>
-                  <View style={styles.tasksContainer}>
-                    {yesterdayTasks.map((task) => (
-                      <TouchableOpacity 
-                        key={task.id} 
-                        style={styles.taskCard}
-                        onPress={() => toggleTaskDone(task.id, task.done)}
-                        activeOpacity={0.7}
-                      >
-                        <View style={styles.taskLeft}>
-                          {task.done ? (
-                            <Ionicons name="checkmark-circle" size={24} color="#2563eb" style={styles.checkCircle} />
-                          ) : (
-                            <Ionicons name="ellipse-outline" size={24} color="#A0A7B3" style={styles.checkCircle} />
-                          )}
-                          <View style={styles.taskContent}>
-                            <Text style={styles.taskTitle}>{task.title}</Text>
-                            <Text style={styles.taskTime}>{task.time}</Text>
-                          </View>
-                        </View>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </>
-              )}
-              
-              {/* Empty state */}
-              {todayTasks.length === 0 && yesterdayTasks.length === 0 && (
-                <Text style={styles.emptyState}>No cleaning tasks yet. Add your first task!</Text>
               )}
             </>
           )}
         </View>
       </ScrollView>
 
-      {/* Floating Action Button */}
-      <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)}>
-        <Ionicons name="add" size={38} color="#fff" />
-      </TouchableOpacity>
-
-      <AddCleaningTaskModal
-        visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        onAdd={handleAddTask}
-        date={currentDate}
-      />
     </SafeAreaView>
   );
 }
