@@ -43,7 +43,7 @@ export default function CleaningChecklistScreen({ navigation }) {
     if (!restaurantId) return;
     
     try {
-      const snapshot = await getDocs(getRestaurantCollection(restaurantId, "cleaninglist"));
+      const snapshot = await getDocs(getRestaurantCollection(restaurantId, "closinglist"));
       const fetchedTasks = snapshot.docs.map(docSnap => {
         const data = docSnap.data();
         return {
@@ -90,7 +90,7 @@ export default function CleaningChecklistScreen({ navigation }) {
           // If task was completed more than 24 hours ago, reset it
           if (completedDate < twentyFourHoursAgo) {
             console.log(`Resetting cleaning task: ${task.title}`);
-            const resetPromise = updateDoc(getRestaurantDoc(restaurantId, "cleaninglist", task.id), {
+            const resetPromise = updateDoc(getRestaurantDoc(restaurantId, "closinglist", task.id), {
               done: false,
               completedAt: null,
             });
@@ -166,7 +166,7 @@ export default function CleaningChecklistScreen({ navigation }) {
       }
       
       // Update in Firestore
-      await updateDoc(getRestaurantDoc(restaurantId, "cleaninglist", taskId), updateData);
+      await updateDoc(getRestaurantDoc(restaurantId, "closinglist", taskId), updateData);
       
       // Update locally
       setTasks(prevTasks =>
@@ -204,7 +204,7 @@ export default function CleaningChecklistScreen({ navigation }) {
               <Text style={styles.backArrow}>‹</Text>
             </TouchableOpacity>
             <View style={styles.titleContainer}>
-              <Text style={styles.title}>Cleaning Checklist</Text>
+              <Text style={styles.title}>Closing Checklist</Text>
               <Text style={styles.date}>{currentDate}</Text>
             </View>
           </View>
@@ -223,20 +223,16 @@ export default function CleaningChecklistScreen({ navigation }) {
                     {tasks.map((task) => (
                       <TouchableOpacity 
                         key={task.id} 
-                        style={styles.taskCard}
+                        style={styles.listItem}
                         onPress={() => toggleTaskDone(task.id, task.done)}
                         activeOpacity={0.7}
                       >
-                        <View style={styles.taskLeft}>
-                          {task.done ? (
-                            <Ionicons name="checkmark-circle" size={24} color="#2563eb" style={styles.checkCircle} />
-                          ) : (
-                            <Ionicons name="ellipse-outline" size={24} color="#A0A7B3" style={styles.checkCircle} />
-                          )}
-                          <View style={styles.taskContent}>
-                            <Text style={styles.taskTitle}>{task.title}</Text>
-                          </View>
+                        <View style={[styles.checkbox, task.done && styles.checkedBox]}>
+                          {task.done && <Text style={styles.checkmark}>✓</Text>}
                         </View>
+                        <Text style={[styles.itemText, task.done && styles.completedText]}>
+                          {task.title}
+                        </Text>
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -327,42 +323,46 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontMedium,
     color: "#2563eb",
   },
-  tasksContainer: {
-    gap: Spacing.md,
-  },
-  taskCard: {
-    backgroundColor: "#f8fafc",
+
+  listItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: Spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
+    backgroundColor: Colors.gray50,
     borderRadius: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 18,
-    paddingHorizontal: 16,
-    justifyContent: "space-between",
+    paddingHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
   },
-  taskLeft: {
-    flexDirection: "row",
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    marginRight: Spacing.lg,
     alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.background,
+  },
+  checkedBox: {
+    backgroundColor: Colors.primary,
+  },
+  checkmark: {
+    color: "white",
+    fontSize: 10,
+    fontWeight: Typography.bold,
+  },
+  itemText: {
+    fontSize: Typography.lg,
+    color: Colors.textPrimary,
+    fontWeight: Typography.medium,
     flex: 1,
   },
-  checkCircle: {
-    marginRight: 14,
-  },
-  taskContent: {
-    flex: 1,
-  },
-  taskTitle: {
-    fontFamily: Typography.fontBold,
-    fontSize: 18,
-    color: "#111",
-    marginBottom: 2,
-  },
-  taskTime: {
-    fontFamily: Typography.fontRegular,
-    fontSize: 16,
-    color: "#8B96A5",
-  },
-  taskRight: {
-    alignItems: "flex-end",
+  completedText: {
+    textDecorationLine: "line-through",
+    color: Colors.textSecondary,
   },
   fab: {
     position: "absolute",
