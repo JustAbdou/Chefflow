@@ -20,7 +20,7 @@ import PrepListsScreen from './src/screens/prep/PrepListsScreen';
 import InvoicesDownloadsScreen from './src/screens/invoices/InvoicesDownloadsScreen';
 import AddRecipeScreen from './src/screens/recipes/AddRecipeScreen';
 import FridgeTempLogsScreen from './src/screens/fridge/FridgeTempLogsScreen';
-import CleaningChecklistScreen from './src/screens/cleaning/CleaningChecklistScreen';
+import CleaningChecklistScreen from './src/screens/cleaning/ClosingChecklistScreen';
 import DeliveryTempLogsScreen from "./src/screens/delivery/DeliveryTempLogsScreen";
 import HandoverScreen from './src/screens/handover/HandoverScreen';
 import HandoverCompletionScreen from './src/screens/handover/HandoverCompletionScreen';

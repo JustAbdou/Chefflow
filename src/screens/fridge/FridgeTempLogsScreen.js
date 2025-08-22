@@ -282,11 +282,18 @@ export default function FridgeTempLogsScreen({ navigation }) {
           <TouchableOpacity
             style={styles.dateSelector}
             onPress={() => setShowDatePicker(true)}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
           >
-            <Ionicons name="calendar-outline" size={20} color={Colors.primary} />
-            <Text style={styles.dateText}>{todayString}</Text>
-            <Ionicons name="chevron-down" size={16} color={Colors.gray400} />
+            <View style={styles.dateIconContainer}>
+              <Ionicons name="calendar" size={22} color={Colors.primary} />
+            </View>
+            <View style={styles.dateContent}>
+              <Text style={styles.dateLabel}>Selected Date</Text>
+              <Text style={styles.dateText}>{todayString}</Text>
+            </View>
+            <View style={styles.chevronContainer}>
+              <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
+            </View>
           </TouchableOpacity>
         </View>
 
@@ -571,17 +578,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginTop: Spacing.xs,
   },
-  dateSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: Spacing.xs,
-    backgroundColor: Colors.gray100,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: Colors.gray300,
-  },
+
   calendarIcon: {
     marginLeft: Spacing.xs,
     color: Colors.primary,
@@ -742,24 +739,60 @@ const styles = StyleSheet.create({
   },
   dateSection: {
     paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.md,
+    paddingBottom: Spacing.lg,
   },
   dateSelector: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: Colors.gray100,
+    backgroundColor: "#f8fafc",
+    paddingVertical: Spacing.lg,
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.gray300,
+    borderRadius: 16,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  dateIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  dateContent: {
+    flex: 1,
+    marginLeft: Spacing.md,
+  },
+  dateLabel: {
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+    fontFamily: Typography.fontRegular,
+    marginBottom: 2,
   },
   dateText: {
-    fontSize: Typography.md,
+    fontSize: Typography.lg,
     color: Colors.textPrimary,
-    fontWeight: "500",
-    marginHorizontal: Spacing.sm,
+    fontFamily: Typography.fontBold,
+  },
+  chevronContainer: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
   },
   fridgeSection: {
     paddingHorizontal: Spacing.lg,
