@@ -14,7 +14,7 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing, Typography } from '../../constants';
 import { getFormattedTodayDate } from '../../utils/dateUtils';
 import DateTimePickerModal from "react-native-modal-datetime-picker";
-import { query, where, getDocs, Timestamp, orderBy, addDoc, serverTimestamp } from "firebase/firestore";
+import { query, where, getDocs, Timestamp, orderBy, addDoc, serverTimestamp, deleteDoc } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantSubCollection } from "../../utils/firestoreHelpers";
 import { uploadPdfToStorage, uploadPdfToStorageTemporary, generatePdfFileName } from "../../utils/pdfUpload";
@@ -29,6 +29,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
   const [endDate, setEndDate] = useState(null);
   const [fridgeLogs, setFridgeLogs] = useState([]);
   const [deliveryLogs, setDeliveryLogs] = useState([]);
+  const [coolingReheatingLogs, setCoolingReheatingLogs] = useState([]);
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
   const [recentDownloads, setRecentDownloads] = useState([]);
@@ -68,6 +69,20 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         createdAt: doc.data().createdAt?.toDate?.() || null,
         type: 'delivery'
       })));
+
+      // Fetch cooling/reheating logs
+      const coolingReheatingQuery = query(
+        getRestaurantCollection(restaurantId, "coolingreheating"),
+        where("createdAt", ">=", start),
+        where("createdAt", "<=", end),
+        orderBy("createdAt", "desc")
+      );
+      const coolingReheatingSnapshot = await getDocs(coolingReheatingQuery);
+      setCoolingReheatingLogs(coolingReheatingSnapshot.docs.map(doc => ({
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate?.() || null,
+        type: 'cooling_reheating'
+      })));
     };
 
     fetchTemperatureRecordsInRange();
@@ -104,8 +119,17 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
     <TouchableOpacity
       style={styles.downloadItem}
       onPress={() => {
-        if (item.link && item.link.startsWith('http')) {
+        if (!item.link) {
+          Alert.alert('No Link', 'No download link available for this item.');
+          return;
+        }
+        
+        if (item.link.startsWith('http')) {
+          // Cloud URL - open in browser
           Linking.openURL(item.link);
+        } else if (item.link.startsWith('file://')) {
+          // Local file - check if it exists and share it
+          handleLocalFileAccess(item.link, item.name);
         } else {
           Alert.alert('Invalid Link', 'This download link is not accessible.');
         }
@@ -163,9 +187,9 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
                   }
                 ]
               );
-            } else if (item.link.startsWith('file')) {
-              // Legacy local files
-              await Sharing.shareAsync(item.link, { mimeType: 'application/pdf' });
+            } else if (item.link.startsWith('file://')) {
+              // Local file - check if it exists and share it
+              handleLocalFileAccess(item.link, item.name);
             } else {
               Alert.alert('Invalid Link', 'This download link is not supported.');
             }
@@ -185,12 +209,91 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
     </TouchableOpacity>
   );
 
+  // Helper function to handle local file access
+  const handleLocalFileAccess = async (filePath, fileName) => {
+    try {
+      // Check if the file exists
+      const fileInfo = await FileSystem.getInfoAsync(filePath);
+      
+      if (!fileInfo.exists) {
+        Alert.alert(
+          'File Not Found', 
+          'This file is no longer available. It may have been cleaned up or moved.',
+          [
+            {
+              text: 'Remove from List',
+              onPress: () => removeInvalidDownload(filePath),
+              style: 'destructive'
+            },
+            {
+              text: 'OK',
+              style: 'default'
+            }
+          ]
+        );
+        return;
+      }
+      
+      // File exists, share it
+      await Sharing.shareAsync(filePath, { 
+        mimeType: 'application/pdf',
+        dialogTitle: `Share ${fileName || 'Temperature Records'}`
+      });
+      
+    } catch (error) {
+      console.error('Error accessing local file:', error);
+      Alert.alert(
+        'File Access Error', 
+        'Could not access this file. It may be corrupted or inaccessible.',
+        [
+          {
+            text: 'Remove from List',
+            onPress: () => removeInvalidDownload(filePath),
+            style: 'destructive'
+          },
+          {
+            text: 'OK',
+            style: 'default'
+          }
+        ]
+      );
+    }
+  };
+
+  // Helper function to remove invalid downloads from the list
+  const removeInvalidDownload = async (filePath) => {
+    try {
+      // Find the download item with this file path
+      const downloadToRemove = recentDownloads.find(item => item.link === filePath);
+      if (downloadToRemove) {
+        // Remove from local state
+        setRecentDownloads(prev => prev.filter(item => item.id !== downloadToRemove.id));
+        
+        // Remove from Firestore
+        try {
+          const docRef = getRestaurantSubCollection(
+            restaurantId, 
+            "downloads", 
+            "temperature", 
+            "recent_downloads"
+          ).doc(downloadToRemove.id);
+          await deleteDoc(docRef);
+          console.log('Removed invalid download from Firestore:', downloadToRemove.name);
+        } catch (firestoreError) {
+          console.warn('Could not remove from Firestore:', firestoreError.message);
+        }
+      }
+    } catch (error) {
+      console.error('Error removing invalid download:', error);
+    }
+  };
+
   const formatDate = (date) => {
     return date.toLocaleDateString();
   };
 
   const exportToPDF = async () => {
-    if (!fridgeLogs.length && !deliveryLogs.length) {
+    if (!fridgeLogs.length && !deliveryLogs.length && !coolingReheatingLogs.length) {
       Alert.alert('No Data', 'No temperature records found for the selected date range.');
       return;
     }
@@ -210,18 +313,23 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         <table border="1" cellspacing="0" cellpadding="8" style="width: 100%; border-collapse: collapse;">
           <tr style="background-color: #f5f5f5;">
             <th>Fridge Name</th>
-            <th>Temperature</th>
-            <th>Checked</th>
+            <th>AM Temperature</th>
+            <th>PM Temperature</th>
             <th>Date</th>
           </tr>
-          ${fridgeLogs.map(log => `
+          ${fridgeLogs.map(log => {
+            console.log('Fridge log data:', log);
+            console.log('Temps structure:', log.temps);
+            console.log('AM temp:', log.temps?.am, 'PM temp:', log.temps?.pm);
+            
+            return `
             <tr>
               <td>${log.fridge || 'Unknown'}</td>
-              <td>${log.temperature}°C</td>
-              <td>${log.checked ? 'Yes' : 'No'}</td>
+              <td>${log.temps?.am && log.temps.am !== '' ? `${log.temps.am}°C` : '--'}</td>
+              <td>${log.temps?.pm && log.temps.pm !== '' ? `${log.temps.pm}°C` : '--'}</td>
               <td>${log.createdAt ? new Date(log.createdAt).toLocaleDateString() : ''}</td>
             </tr>
-          `).join('')}
+          `}).join('')}
         </table>
         
         <h2>Delivery Temperature Logs</h2>
@@ -237,6 +345,24 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
               <td>${log.supplier || 'Unknown'}</td>
               <td>${log.temps?.frozen || '--'}°C</td>
               <td>${log.temps?.chilled || '--'}°C</td>
+              <td>${log.createdAt ? new Date(log.createdAt).toLocaleDateString() : ''}</td>
+            </tr>
+          `).join('')}
+        </table>
+        
+        <h2>Cooling & Reheating Temperature Logs</h2>
+        <table border="1" cellspacing="0" cellpadding="8" style="width: 100%; border-collapse: collapse;">
+          <tr style="background-color: #f5f5f5;">
+            <th>Food Item</th>
+            <th>Type</th>
+            <th>Temperature</th>
+            <th>Date</th>
+          </tr>
+          ${coolingReheatingLogs.map(log => `
+            <tr>
+              <td>${log.item || 'Unknown'}</td>
+              <td>${log.type === 'cooling' ? 'Cooling' : log.type === 'reheating' ? 'Reheating' : 'Unknown'}</td>
+              <td>${log.temperature || '--'}°C</td>
               <td>${log.createdAt ? new Date(log.createdAt).toLocaleDateString() : ''}</td>
             </tr>
           `).join('')}
@@ -260,9 +386,22 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         console.log('☁️ PDF uploaded to Firebase Storage successfully:', downloadURL);
       } catch (storageError) {
         console.log('⚠️ Firebase Storage upload failed, using temporary local storage:', storageError.message);
-        // Use temporary local storage as fallback
-        downloadURL = await uploadPdfToStorageTemporary(uri, fileName, restaurantId, 'temperature');
-        console.log('💾 PDF saved to local storage:', downloadURL);
+        
+        // Try to use temporary local storage as fallback
+        try {
+          downloadURL = await uploadPdfToStorageTemporary(uri, fileName, restaurantId, 'temperature');
+          console.log('💾 PDF saved to local storage:', downloadURL);
+          
+          // Show warning about local storage
+          Alert.alert(
+            'Local Storage Used', 
+            'PDF was saved locally due to cloud storage issues. The file may not be accessible from other devices.',
+            [{ text: 'OK' }]
+          );
+        } catch (localStorageError) {
+          console.error('❌ Both Firebase Storage and local storage failed:', localStorageError);
+          throw new Error('Failed to save PDF: ' + localStorageError.message);
+        }
       }
 
       // Save download info to Firestore with the cloud URL

@@ -21,6 +21,7 @@ export const Colors = {
   gray900: "#111827",
 
   background: "#FFFFFF",
+  backgroundPrimary: "#FFFFFF",
   backgroundSecondary: "#F8F9FA",
 
   textPrimary: "#1F2937",

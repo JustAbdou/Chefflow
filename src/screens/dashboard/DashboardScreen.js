@@ -18,6 +18,7 @@ import { onSnapshot, query, orderBy, limit, where, doc, getDoc, getDocs } from "
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection } from "../../utils/firestoreHelpers";
 import { auth, db } from "../../../firebase";
+import { DocumentIcon } from '../../components/icons/NavigationIcons';
 
 const DashboardScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
@@ -26,6 +27,7 @@ const DashboardScreen = ({ navigation }) => {
   const [prepCount, setPrepCount] = useState(0);
   const [orderCount, setOrderCount] = useState(0);
   const [recipeCount, setRecipeCount] = useState(0);
+  const [invoiceCount, setInvoiceCount] = useState(0);
   const [latestFridgeTemp, setLatestFridgeTemp] = useState('--°C');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -101,6 +103,18 @@ const DashboardScreen = ({ navigation }) => {
       }
     );
     
+    // Real-time listener for invoices with error handling (count all invoices)
+    const unsubInvoices = onSnapshot(
+      getRestaurantCollection(restaurantId, "invoices"),
+      (snapshot) => {
+        setInvoiceCount(snapshot.size);
+      },
+      (error) => {
+        console.warn('Invoices listener error:', error);
+        setInvoiceCount(0);
+      }
+    );
+    
     // Real-time listener for recipes with error handling (recipes are stored in category subcollections)
     const fetchRecipeCount = async () => {
       try {
@@ -165,6 +179,7 @@ const DashboardScreen = ({ navigation }) => {
     return () => {
       unsubPrep();
       unsubOrder();
+      unsubInvoices();
       clearInterval(recipeCountInterval);
       unsubFridgeTemp();
     };
@@ -177,69 +192,86 @@ const DashboardScreen = ({ navigation }) => {
       value: prepCount.toString(), 
       subtitle: prepCount === 1 ? 'Item pending' : 'Items pending',
       iconUri: 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/prep-list-icon-7OGiBj3xTb4oUzsdkEHvYfd6U6uST2.png',
+      screen: 'PrepLists',
     },
     { 
       title: 'Order List', 
       value: orderCount.toString(), 
       subtitle: orderCount === 1 ? 'Active order' : 'Active orders',
       iconUri: 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/order-list-icon-Z5JTOiHoj7KslxsJDGqVam7GH6o46F.png',
+      screen: 'OrderLists',
+    },
+    { 
+      title: 'Invoices', 
+      value: invoiceCount.toString(), 
+      subtitle: invoiceCount === 1 ? 'Invoice total' : 'Invoices total',
+      iconUri: 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/invoice-icon.png',
+      icon: <Ionicons name="receipt-outline" size={22} color={Colors.primary} />,
+      screen: 'Invoices',
+    },
+    { 
+      title: 'Closing', 
+      value: '0', 
+      subtitle: 'Tasks pending',
+      iconUri: 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/cleaning-icon.png',
+      icon: <Ionicons name="shield-checkmark-outline" size={22} color={Colors.primary} />,
+      screen: 'CleaningChecklist',
     },
   ];
 
   const kitchenManagement = [
     {
-      title: 'Prep Lists',
-      subtitle: `${prepCount} item${prepCount === 1 ? '' : 's'} pending`,
-      icon: 'clipboard-outline',
-      iconColor: Colors.primary,
-      iconType: 'ionicon'
-    },
-    {
-      title: 'Order Lists',
-      subtitle: `${orderCount} active order${orderCount === 1 ? '' : 's'}`,
-      icon: 'fast-food-outline',
-      iconColor: Colors.primary,
-      iconType: 'ionicon'
-    },
-    {
       title: 'Fridge Temperature',
-      subtitle: 'Log fridge temps',
-      icon: 'thermometer-outline',
-      iconColor: Colors.primary,
-      iconType: 'ionicon'
-    },
-    {
-      title: 'Delivery Temperature',
-      subtitle: 'Log and monitor delivery temps',
+      subtitle: 'Monitor fridge temperatures',
       icon: 'thermometer-outline',
       iconColor: Colors.primary,
       iconType: 'ionicon',
-      screen: 'DeliveryTempLogs', // This should match the Stack.Screen name in App.js
+      screen: 'FridgeTempLogs',
     },
     {
-      title: 'Recipe Library',
-      subtitle: `${recipeCount} recipe${recipeCount === 1 ? '' : 's'}`,
-      icon: 'restaurant-outline',
+      title: 'Delivery Temperature',
+      subtitle: 'Monitor delivery temperatures',
+      icon: 'thermometer-outline',
       iconColor: Colors.primary,
-      iconType: 'ionicon'
+      iconType: 'ionicon',
+      screen: 'DeliveryTempLogs',
+    },
+    {
+      title: 'Cooling & Reheating',
+      subtitle: 'Log food temperature safety',
+      icon: 'thermometer-outline',
+      iconColor: Colors.primary,
+      iconType: 'ionicon',
+      screen: 'CoolingReheating',
+    },
+    {
+      title: 'Kitchen Handover',
+      subtitle: 'Complete shift handover',
+      icon: 'people-outline',
+      iconColor: Colors.primary,
+      iconType: 'ionicon',
+      screen: 'Handover',
     },
   ];
 
   const downloadables = [
     {
       title: 'Invoices',
+      subtitle: `${invoiceCount} invoice${invoiceCount === 1 ? '' : 's'} total`,
       icon: 'document-outline',
-      iconColor: Colors.textPrimary,
+      iconColor: Colors.primary,
       iconType: 'ionicon'
     },
     {
       title: 'Temperature Records',
+      subtitle: 'Download temperature logs',
       icon: 'thermometer-outline',
       iconColor: Colors.textPrimary,
       iconType: 'ionicon'
     },
     {
       title: 'Shift Handovers',
+      subtitle: 'View previous handovers',
       icon: 'people-outline',
       iconColor: Colors.textPrimary,
       iconType: 'ionicon'
@@ -284,30 +316,60 @@ const DashboardScreen = ({ navigation }) => {
 
         {/* Stats Grid */}
         <View style={styles.statsGrid}>
-          {stats.map((stat, index) => (
-            <TouchableOpacity
-              key={index}
-              style={styles.statCard}
-              onPress={() => {
-                if (stat.title === 'Prep List') {
-                  navigation.navigate('PrepLists');
-                } else if (stat.title === 'Order List') {
-                  navigation.navigate('OrderLists');
-                }
-              }}
-            >
-              <View style={styles.statHeader}>
-                <Image 
-                  source={{ uri: stat.iconUri }} 
-                  style={styles.statIcon}
-                  resizeMode="contain"
-                />
-                <Text style={styles.statTitle}>{stat.title}</Text>
-              </View>
-              <Text style={styles.statValue}>{stat.value}</Text>
-              <Text style={styles.statSubtitle}>{stat.subtitle}</Text>
-            </TouchableOpacity>
-          ))}
+          <View style={styles.statsRow}>
+            {stats.slice(0, 2).map((stat, index) => (
+              <TouchableOpacity
+                key={index}
+                style={styles.statCard}
+                onPress={() => {
+                  if (stat.screen) {
+                    navigation.navigate(stat.screen);
+                  }
+                }}
+              >
+                <View style={styles.statHeader}>
+                  <Image 
+                    source={{ uri: stat.iconUri }} 
+                    style={styles.statIcon}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.statTitle}>{stat.title}</Text>
+                </View>
+                <Text style={styles.statValue}>{stat.value}</Text>
+                <Text style={styles.statSubtitle}>{stat.subtitle}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View style={styles.statsRow}>
+            {stats.slice(2).map((stat, index) => (
+              <TouchableOpacity
+                key={index + 2}
+                style={styles.statCard}
+                onPress={() => {
+                  if (stat.screen) {
+                    navigation.navigate(stat.screen);
+                  }
+                }}
+              >
+                <View style={styles.statHeader}>
+                  {stat.icon ? (
+                    <View style={styles.statIconContainer}>
+                      {stat.icon}
+                    </View>
+                  ) : (
+                    <Image 
+                      source={{ uri: stat.iconUri }} 
+                      style={styles.statIcon}
+                      resizeMode="contain"
+                    />
+                  )}
+                  <Text style={styles.statTitle}>{stat.title}</Text>
+                </View>
+                <Text style={styles.statValue}>{stat.value}</Text>
+                <Text style={styles.statSubtitle}>{stat.subtitle}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         {/* Kitchen Management */}
@@ -331,6 +393,12 @@ const DashboardScreen = ({ navigation }) => {
                     navigation.navigate('CleaningChecklist');
                   } else if (item.title === 'Delivery Temperature') {
                     navigation.navigate('DeliveryTempLogs');
+                  } else if (item.title === 'Cooling & Reheating') {
+                    navigation.navigate('CoolingReheating');
+                  } else if (item.title === 'Invoices') {
+                    navigation.navigate('Invoices');
+                  } else if (item.title === 'Kitchen Handover') {
+                    navigation.navigate('Handover');
                   } else if (item.screen) {
                     navigation.navigate(item.screen);
                   }
@@ -343,38 +411,6 @@ const DashboardScreen = ({ navigation }) => {
                   <View>
                     <Text style={styles.menuItemTitle}>{item.title}</Text>
                     <Text style={styles.menuItemSubtitle}>{item.subtitle}</Text>
-                  </View>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* Downloadables */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Downloadables</Text>
-          <View style={styles.menuContainer}>
-            {downloadables.map((item, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.menuItem}
-                onPress={() => {
-                  if (item.title === 'Invoices') {
-                    navigation.navigate('Invoices');
-                  } else if (item.title === 'Shift Handovers') {
-                    navigation.navigate('PreviousHandovers');
-                  } else if (item.title === 'Temperature Records') {
-                    navigation.navigate('TemperatureRecords');
-                  }
-                }}
-              >
-                <View style={styles.menuItemLeft}>
-                  <View style={styles.menuItemIcon}>
-                    {renderIcon(item.icon, item.iconColor, item.iconType)}
-                  </View>
-                  <View>
-                    <Text style={styles.menuItemTitle}>{item.title}</Text>
                   </View>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
@@ -425,10 +461,14 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: 'column',
     paddingHorizontal: Spacing.md,
     marginBottom: Spacing.xl,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.md,
   },
   statCard: {
     width: '46%',
@@ -436,8 +476,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: Spacing.md,
-    marginHorizontal: '2%',
-    marginBottom: Spacing.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  statCardCenter: {
+    width: '46%',
+    paddingVertical: Spacing.xl,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: Spacing.md,
+    alignSelf: 'flex-start',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
@@ -452,6 +503,13 @@ const styles = StyleSheet.create({
   statIcon: {
     width: 25,
     height: 25,
+    marginRight: Spacing.sm,
+  },
+  statIconContainer: {
+    width: 25,
+    height: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
     marginRight: Spacing.sm,
   },
   statTitle: {

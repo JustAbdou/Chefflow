@@ -60,13 +60,25 @@ const InvoicesScreen = ({ navigation }) => {
   }, []);
 
   const renderItem = ({ item }) => (
-    <View style={styles.invoiceCard}>
-      <View>
+    <TouchableOpacity 
+      style={styles.invoiceCard}
+      onPress={() => navigation.navigate('InvoiceDetail', { invoice: item })}
+    >
+      <View style={styles.invoiceInfo}>
         <Text style={styles.invoiceNumber}>{item.invoiceNumber}</Text>
-        {/* Optionally, add a subtitle or date here */}
+        <Text style={styles.supplier}>{item.supplier || 'Unknown Supplier'}</Text>
+        <Text style={styles.date}>{item.date}</Text>
       </View>
-      <Text style={styles.amount}>£{item.amount}</Text>
-    </View>
+      <View style={styles.invoiceRight}>
+        <Text style={styles.amount}>£{item.amount}</Text>
+        {item.images && item.images.length > 0 && (
+          <View style={styles.photoIndicator}>
+            <Ionicons name="camera" size={16} color={Colors.primary} />
+            <Text style={styles.photoCount}>{item.images.length}</Text>
+          </View>
+        )}
+      </View>
+    </TouchableOpacity>
   );
 
   return (
@@ -98,12 +110,14 @@ const InvoicesScreen = ({ navigation }) => {
         refreshing={refreshing}
         onRefresh={handleRefresh}
       />
+
       {/* Floating Action Button */}
-      <TouchableOpacity
+      <TouchableOpacity 
         style={styles.fab}
         onPress={() => navigation.navigate('InvoiceUpload')}
+        activeOpacity={0.8}
       >
-        <Ionicons name="add" size={36} color="#fff" />
+        <Ionicons name="add" size={24} color={Colors.white} />
       </TouchableOpacity>
     </SafeAreaView>
   );
@@ -193,15 +207,41 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     marginBottom: Spacing.md,
   },
+  invoiceInfo: {
+    flex: 1,
+  },
   invoiceNumber: {
     ...Typography.h4,
     color: Colors.textPrimary,
     fontWeight: '500',
   },
+  supplier: {
+    ...Typography.body,
+    color: Colors.gray400,
+    marginTop: 2,
+  },
+  date: {
+    ...Typography.body,
+    color: Colors.gray400,
+    marginTop: 2,
+  },
+  invoiceRight: {
+    alignItems: 'flex-end',
+  },
   amount: {
     ...Typography.h4,
     color: Colors.textPrimary,
     fontWeight: '500',
+  },
+  photoIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  photoCount: {
+    ...Typography.body,
+    color: Colors.gray400,
+    marginLeft: 4,
   },
   fab: {
     position: "absolute",

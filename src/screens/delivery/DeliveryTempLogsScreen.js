@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -23,6 +23,7 @@ import { addDoc, getDocs, updateDoc, serverTimestamp, doc, getDoc, deleteDoc } f
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
 import { auth } from "../../../firebase";
+import DateTimePickerModal from "react-native-modal-datetime-picker";
 
 export default function DeliveryTempLogsScreen({ navigation }) {
   const { restaurantId } = useRestaurant();
@@ -31,7 +32,9 @@ export default function DeliveryTempLogsScreen({ navigation }) {
   const [expanded, setExpanded] = useState({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const updateTimeouts = useRef({});
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [inputValues, setInputValues] = useState({});
 
   // Hide Android navigation bar
   const navigationBar = useNavigationBar();
@@ -67,22 +70,59 @@ export default function DeliveryTempLogsScreen({ navigation }) {
   const fetchLogs = async () => {
     if (!restaurantId) return;
     
-    const snapshot = await getDocs(getRestaurantCollection(restaurantId, "deliverylogs"));
-    const fetched = snapshot.docs.map(docSnap => {
-      const data = docSnap.data();
-      return {
-        id: docSnap.id,
-        supplier: data.supplier,
-        createdAt: data.createdAt?.seconds
-          ? new Date(data.createdAt.seconds * 1000)
-          : new Date(),
-        temps: data.temps || { frozen: "", chilled: "" },
-      };
-    });
-    // Sort by createdAt descending
-    fetched.sort((a, b) => b.createdAt - a.createdAt);
-    setLogs(fetched);
+    try {
+      const deliveryLogsCollection = getRestaurantCollection(restaurantId, 'deliverylogs');
+      const logsSnapshot = await getDocs(deliveryLogsCollection);
+      
+      let allLogs = [];
+      logsSnapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        allLogs.push({
+          id: docSnap.id,
+          ...data,
+        });
+      });
+      
+      // Filter logs for the selected date
+      const selectedDateStart = new Date(selectedDate);
+      selectedDateStart.setHours(0, 0, 0, 0);
+      const selectedDateEnd = new Date(selectedDate);
+      selectedDateEnd.setHours(23, 59, 59, 999);
+      
+      const filteredLogs = allLogs.filter(log => {
+        if (!log.createdAt) return false;
+        const logDate = log.createdAt.toDate ? log.createdAt.toDate() : new Date(log.createdAt.seconds * 1000);
+        const isInRange = logDate >= selectedDateStart && logDate <= selectedDateEnd;
+        return isInRange;
+      });
+      
+      // Sort by createdAt descending
+      filteredLogs.sort((a, b) => {
+        if (!a.createdAt || !b.createdAt) return 0;
+        const dateA = a.createdAt.toDate ? a.createdAt.toDate() : new Date(a.createdAt.seconds * 1000);
+        const dateB = b.createdAt.toDate ? b.createdAt.toDate() : new Date(b.createdAt.seconds * 1000);
+        return dateB - dateA;
+      });
+      
+      setLogs(filteredLogs);
+    } catch (error) {
+      console.error("Error fetching delivery logs:", error);
+    }
   };
+
+  // Initialize input values when logs change
+  useEffect(() => {
+    const newInputValues = {};
+    logs.forEach(log => {
+      if (log.temps?.frozen !== undefined) {
+        newInputValues[`${log.id}-frozen`] = log.temps.frozen;
+      }
+      if (log.temps?.chilled !== undefined) {
+        newInputValues[`${log.id}-chilled`] = log.temps.chilled;
+      }
+    });
+    setInputValues(prev => ({ ...prev, ...newInputValues }));
+  }, [logs]);
 
   // Fetch data from Firestore
   useEffect(() => {
@@ -93,7 +133,7 @@ export default function DeliveryTempLogsScreen({ navigation }) {
       setRefreshing(false);
     };
     loadData();
-  }, [restaurantId]);
+  }, [restaurantId, selectedDate]);
 
   // Pull to refresh handler
   const onRefresh = async () => {
@@ -154,63 +194,27 @@ export default function DeliveryTempLogsScreen({ navigation }) {
     return supplierData;
   };
 
-  // Set temperature handler (updates local state immediately, Firestore with debounce)
+  // Utility function for individual temperature updates (if needed elsewhere)
   const handleSetTemp = async (supplierName, logId, type, value) => {
-    // Ensure the value is negative or empty
-    let processedValue = value;
-    if (value && !value.startsWith('-') && value !== '') {
-      processedValue = '-' + value;
-    }
-    
-    // If this is a placeholder (no log exists), create the log first
-    if (!logId || logId.startsWith('placeholder-')) {
-      await handleCreateOrUpdateLog(supplierName);
-      // Refresh to get the new log ID
-      await fetchLogs();
+    if (!supplierName || !type || !restaurantId || !logId || logId === 'new') {
       return;
     }
     
-    // Update local state immediately for responsive UI
-    setLogs(prev =>
-      prev.map(l =>
-        l.id === logId ? { ...l, temps: { ...l.temps, [type]: processedValue } } : l
-      )
-    );
-
-    // Clear existing timeout for this specific field
-    const timeoutKey = `${logId}-${type}`;
-    if (updateTimeouts.current[timeoutKey]) {
-      clearTimeout(updateTimeouts.current[timeoutKey]);
-    }
-
-    // Set new timeout to update Firestore after user stops typing
-    updateTimeouts.current[timeoutKey] = setTimeout(async () => {
-      if (!restaurantId) return;
-      
-      try {
-        await updateDoc(getRestaurantDoc(restaurantId, "deliverylogs", logId), {
-          [`temps.${type}`]: processedValue,
-        });
-        console.log(`Updated ${type} temperature for ${logId}: ${processedValue}`);
-      } catch (error) {
-        console.error("Error updating temperature:", error);
-        // Optionally revert the local state on error
-        // fetchLogs(); // Uncomment if you want to revert on error
-      }
-      
-      // Clean up the timeout reference
-      delete updateTimeouts.current[timeoutKey];
-    }, 500); // 500ms delay after user stops typing
-  };
-
-  // Clean up timeouts on unmount
-  useEffect(() => {
-    return () => {
-      Object.values(updateTimeouts.current).forEach(timeout => {
-        clearTimeout(timeout);
+    try {
+      await updateDoc(getRestaurantDoc(restaurantId, "deliverylogs", logId), {
+        [`temps.${type}`]: value,
       });
-    };
-  }, []);
+      
+      // Update local state
+      setLogs(prev =>
+        prev.map(l =>
+          l.id === logId ? { ...l, temps: { ...l.temps, [type]: value } } : l
+        )
+      );
+    } catch (error) {
+      console.error("Error updating temperature:", error);
+    }
+  };
 
   // Delete individual supplier log
   const deleteSupplierLog = async (logId) => {
@@ -238,154 +242,306 @@ export default function DeliveryTempLogsScreen({ navigation }) {
     </View>
   );
 
+  const handleDateConfirm = (date) => {
+    setSelectedDate(date);
+    setShowDatePicker(false);
+  };
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+    <SafeAreaView style={styles.container}>
+      <ScrollView 
+        style={styles.scrollView}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
       >
-        <ScrollView 
-          style={{ flex: 1 }} 
-          contentContainerStyle={{ paddingBottom: 40 }}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
         {/* Header */}
         <View style={styles.header}>
-          <View style={styles.backHeader}>
-            <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()} activeOpacity={0.7}>
-              <Text style={styles.backArrow}>‹</Text>
-            </TouchableOpacity>
-            <View style={styles.titleContainer}>
-              <Text style={styles.title}>Delivery Temp Logs</Text>
-              <Text style={styles.date}>{todayString}</Text>
-            </View>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Text style={styles.backArrow}>‹</Text>
+          </TouchableOpacity>
+          <View style={styles.headerInfo}>
+            <Text style={styles.title}>Delivery Temperature</Text>
+            <Text style={styles.subtitle}>Monitor Delivery Temps</Text>
           </View>
+          <View style={{ width: 28 }} />
         </View>
 
-        {/* Suppliers Section */}
-        <Text style={styles.suppliersTitle}>Suppliers</Text>
-        <View style={{ marginTop: 12 }}>
-          {loading ? (
-            <ActivityIndicator size="large" style={{ marginTop: 40 }} />
+        {/* Date Selector */}
+        <View style={styles.dateSection}>
+          <TouchableOpacity
+            style={styles.dateSelector}
+            onPress={() => setShowDatePicker(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="calendar-outline" size={20} color={Colors.primary} />
+            <Text style={styles.dateText}>
+              {selectedDate.toLocaleDateString(undefined, { 
+                weekday: "long", 
+                month: "long", 
+                day: "numeric" 
+              })}
+            </Text>
+            <Ionicons name="chevron-down" size={16} color={Colors.gray400} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Suppliers List */}
+        <View style={styles.suppliersSection}>
+          <Text style={styles.sectionTitle}>
+            Delivery Temperature Logs ({suppliers.length})
+          </Text>
+          
+          {suppliers.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="thermometer-outline" size={48} color={Colors.gray300} />
+              <Text style={styles.emptyStateText}>No suppliers configured</Text>
+              <Text style={styles.emptyStateSubtext}>Please add supplier names in settings</Text>
+            </View>
           ) : (
-            getCombinedSupplierData().map((supplierData) => (
-              <Swipeable
-                key={supplierData.id}
-                renderRightActions={() => !supplierData.isPlaceholder ? renderRightActions(supplierData.id) : null}
-                overshootRight={false}
-                containerStyle={styles.swipeableContainer}
-              >
-                <View style={styles.supplierCard}>
+            suppliers.map((supplierName, index) => {
+              const log = logs.find(l => l.supplier === supplierName);
+              const isExpanded = expanded[supplierName];
+              
+              return (
+                <View key={index} style={styles.supplierCard}>
+                  {/* Supplier Header */}
                   <TouchableOpacity
                     style={styles.supplierHeader}
-                    onPress={() =>
-                      setExpanded((prev) => ({
-                        ...prev,
-                        [supplierData.id]: !prev[supplierData.id],
-                      }))
-                    }
+                    onPress={() => setExpanded(prev => ({ ...prev, [supplierName]: !prev[supplierName] }))}
                     activeOpacity={0.8}
                   >
-                  <View>
-                    <Text style={styles.supplierName}>{supplierData.supplier}</Text>
-                    <Text style={styles.supplierTime}>
-                      {supplierData.isPlaceholder ? (
-                        "Not logged today"
+                    <View style={styles.supplierInfo}>
+                                                  <Ionicons name="car-outline" size={24} color={Colors.primary} />
+                      <Text style={styles.supplierName}>{supplierName}</Text>
+                    </View>
+                    <View style={styles.supplierStatus}>
+                      {log && log.temps && (log.temps.frozen || log.temps.chilled) ? (
+                        <View style={styles.statusIndicator}>
+                          <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
+                          <Text style={styles.statusText}>Logged</Text>
+                        </View>
                       ) : (
-                        `Today - ${
-                          supplierData.createdAt
-                            ? supplierData.createdAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                            : "--:--"
-                        }`
+                        <View style={styles.statusIndicator}>
+                          <Ionicons name="alert-circle" size={20} color={Colors.warning} />
+                          <Text style={styles.statusText}>Pending</Text>
+                        </View>
                       )}
-                    </Text>
-                  </View>
-                  <View style={{ alignItems: "flex-end" }}>
-                    <Text style={[styles.tempValue, { color: "#2563eb" }]}>
-                      {supplierData.temps.frozen
-                        ? `${supplierData.temps.frozen}°C`
-                        : "--°C"}
-                    </Text>
-                    <Text style={styles.tempValue}>
-                      {supplierData.temps.chilled
-                        ? `${supplierData.temps.chilled}°C`
-                        : "--°C"}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-                {expanded[supplierData.id] && (
-                  <View style={styles.tempInputsContainer}>
-                    <View style={styles.tempInputCard}>
-                      <Text style={styles.tempInputLabel}>Set Temperature</Text>
-                      <Text style={styles.tempInputType}>Frozen Items</Text>
-                      <View style={styles.tempInputRow}>
-                        <TextInput
-                          style={styles.tempInput}
-                          value={supplierData.temps.frozen}
-                          onChangeText={(val) => handleSetTemp(supplierData.supplier, supplierData.id, "frozen", val)}
-                          placeholder="--"
-                          placeholderTextColor="#A0A7B3"
-                          keyboardType="numeric"
-                        />
-                        <Text style={styles.tempUnit}>℃</Text>
-                      </View>
+                      <Ionicons 
+                        name={isExpanded ? "chevron-up" : "chevron-down"} 
+                        size={20} 
+                        color={Colors.gray400} 
+                      />
                     </View>
-                    <View style={styles.tempInputCard}>
-                      <Text style={styles.tempInputLabel}>Set Temperature</Text>
-                      <Text style={styles.tempInputType}>Chilled Items</Text>
-                      <View style={styles.tempInputRow}>
-                        <TextInput
-                          style={styles.tempInput}
-                          value={supplierData.temps.chilled}
-                          onChangeText={(val) => handleSetTemp(supplierData.supplier, supplierData.id, "chilled", val)}
-                          placeholder="--"
-                          placeholderTextColor="#A0A7B3"
-                          keyboardType="numeric"
-                        />
-                        <Text style={styles.tempUnit}>℃</Text>
+                  </TouchableOpacity>
+
+                  {/* Expanded Temperature Inputs */}
+                  {isExpanded && (
+                    <View style={styles.temperatureInputs}>
+                      {/* Frozen Items Temperature */}
+                      <View style={styles.tempInputGroup}>
+                        <Text style={styles.tempLabel}>Frozen Items Temperature</Text>
+                        <View style={styles.tempInputContainer}>
+                          <TextInput
+                            style={styles.tempInput}
+                            value={inputValues[`${log?.id || 'new'}-frozen`] !== undefined ? inputValues[`${log?.id || 'new'}-frozen`] : (log?.temps?.frozen || '')}
+                            onChangeText={(value) => {
+                              const inputKey = `${log?.id || 'new'}-frozen`;
+                              console.log('Frozen input changed:', { value, inputKey, logId: log?.id });
+                              setInputValues(prev => ({ ...prev, [inputKey]: value }));
+                            }}
+                            placeholder="Enter frozen temp"
+                            placeholderTextColor={Colors.gray400}
+                            keyboardType="numeric"
+                          />
+                          <Text style={styles.tempUnit}>°C</Text>
+                        </View>
                       </View>
+
+                      {/* Chilled Items Temperature */}
+                      <View style={styles.tempInputGroup}>
+                        <Text style={styles.tempLabel}>Chilled Items Temperature</Text>
+                        <View style={styles.tempInputContainer}>
+                          <TextInput
+                            style={styles.tempInput}
+                            value={inputValues[`${log?.id || 'new'}-chilled`] !== undefined ? inputValues[`${log?.id || 'new'}-chilled`] : (log?.temps?.chilled || '')}
+                            onChangeText={(value) => {
+                              const inputKey = `${log?.id || 'new'}-chilled`;
+                              console.log('Chilled input changed:', { value, inputKey, logId: log?.id });
+                              setInputValues(prev => ({ ...prev, [inputKey]: value }));
+                            }}
+                            placeholder="Enter chilled temp"
+                            placeholderTextColor={Colors.gray400}
+                            keyboardType="numeric"
+                          />
+                          <Text style={styles.tempUnit}>°C</Text>
+                        </View>
+                      </View>
+
+                      {/* Save Button */}
+                      <TouchableOpacity
+                        style={styles.saveButton}
+                        onPress={async () => {
+                          const frozenValue = inputValues[`${log?.id || 'new'}-frozen`] || '';
+                          const chilledValue = inputValues[`${log?.id || 'new'}-chilled`] || '';
+                          
+                          // Get original values for comparison
+                          const originalFrozen = log?.temps?.frozen || '';
+                          const originalChilled = log?.temps?.chilled || '';
+                          
+                          // Debug logging
+                          console.log('Save button pressed:');
+                          console.log('Input values:', { frozen: frozenValue, chilled: chilledValue });
+                          console.log('Original values:', { frozen: originalFrozen, chilled: originalChilled });
+                          console.log('Log ID:', log?.id);
+                          
+                          // Check if any values have actually changed (including being cleared)
+                          const frozenChanged = frozenValue !== originalFrozen;
+                          const chilledChanged = chilledValue !== originalChilled;
+                          
+                          console.log('Changes detected:', { frozenChanged, chilledChanged });
+                          
+                          // Allow saving if there are any changes OR if we're creating a new log
+                          if (frozenChanged || chilledChanged || !log?.id) {
+                            try {
+                              let currentLogId = log?.id;
+                              
+                              // If no existing log, create one first
+                              if (!currentLogId) {
+                                const selectedDateTimestamp = new Date(selectedDate);
+                                selectedDateTimestamp.setHours(12, 0, 0, 0);
+                                
+                                const newLogRef = await addDoc(getRestaurantCollection(restaurantId, "deliverylogs"), {
+                                  supplier: supplierName,
+                                  createdAt: selectedDateTimestamp,
+                                  temps: { frozen: "", chilled: "" },
+                                  isPlaceholder: false,
+                                });
+                                
+                                currentLogId = newLogRef.id;
+                                
+                                // Add the new log to local state
+                                const newLog = {
+                                  id: newLogRef.id,
+                                  supplier: supplierName,
+                                  createdAt: selectedDateTimestamp,
+                                  temps: { frozen: "", chilled: "" },
+                                  isPlaceholder: false,
+                                };
+                                
+                                setLogs(prev => [...prev, newLog]);
+                              }
+                              
+                              // Now update changed values in a single operation
+                              const updateData = {};
+                              if (frozenChanged) {
+                                if (frozenValue !== '') {
+                                  const processedFrozenValue = frozenValue.startsWith('-') ? frozenValue : `-${frozenValue}`;
+                                  updateData['temps.frozen'] = processedFrozenValue;
+                                } else {
+                                  // Value was cleared, update to empty string
+                                  updateData['temps.frozen'] = '';
+                                }
+                              }
+                              if (chilledChanged) {
+                                if (chilledValue !== '') {
+                                  updateData['temps.chilled'] = chilledValue;
+                                } else {
+                                  // Value was cleared, update to empty string
+                                  updateData['temps.chilled'] = '';
+                                }
+                              }
+                              
+                              if (Object.keys(updateData).length > 0) {
+                                await updateDoc(getRestaurantDoc(restaurantId, "deliverylogs", currentLogId), updateData);
+                                
+                                // Update local state
+                                setLogs(prev =>
+                                  prev.map(l =>
+                                    l.id === currentLogId ? { 
+                                      ...l, 
+                                      temps: { 
+                                        ...l.temps, 
+                                        ...(frozenChanged ? { frozen: frozenValue !== '' ? (frozenValue.startsWith('-') ? frozenValue : `-${frozenValue}`) : '' } : {}),
+                                        ...(chilledChanged ? { chilled: chilledValue !== '' ? chilledValue : '' } : {})
+                                      } 
+                                    } : l
+                                  )
+                                );
+                                
+                                // Clear input values
+                                setInputValues(prev => {
+                                  const newValues = { ...prev };
+                                  delete newValues[`${currentLogId}-frozen`];
+                                  delete newValues[`${currentLogId}-chilled`];
+                                  return newValues;
+                                });
+                              }
+                            } catch (error) {
+                              console.error("Error saving delivery log:", error);
+                            }
+                          }
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.saveButtonText}>Save Log</Text>
+                      </TouchableOpacity>
+
+                      {/* Current Values Display */}
+                      {(log?.temps?.frozen || log?.temps?.chilled) && (
+                        <View style={styles.currentValues}>
+                          <Text style={styles.currentValuesTitle}>Current Values:</Text>
+                          <View style={styles.valuesRow}>
+                            {log.temps?.frozen && (
+                              <View style={styles.valueChip}>
+                                <Text style={styles.valueChipLabel}>Frozen</Text>
+                                <Text style={styles.valueChipTemp}>-{log.temps.frozen}°C</Text>
+                              </View>
+                            )}
+                            {log.temps?.chilled && (
+                              <View style={styles.valueChip}>
+                                <Text style={styles.valueChipLabel}>Chilled</Text>
+                                <Text style={styles.valueChipTemp}>{log.temps.chilled}°C</Text>
+                              </View>
+                            )}
+                          </View>
+                        </View>
+                      )}
                     </View>
-                  </View>
-                )}
+                  )}
                 </View>
-              </Swipeable>
-            ))
+              );
+            })
           )}
         </View>
+
+        {/* Date Picker Modal */}
+        <DateTimePickerModal
+          isVisible={showDatePicker}
+          mode="date"
+          onConfirm={handleDateConfirm}
+          onCancel={() => setShowDatePicker(false)}
+          date={selectedDate}
+          maximumDate={new Date()}
+          themeVariant="light"
+        />
       </ScrollView>
-      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#fff" },
-  appTitle: {
-    fontFamily: Typography.fontBold,
-    fontSize: 28,
-    color: "#2563eb",
-    textAlign: "center",
-    marginTop: 12,
-    marginBottom: 8,
-  },
+  container: { flex: 1, backgroundColor: "#fff" },
+  scrollView: { flex: 1 },
   header: {
-    paddingHorizontal: Spacing.xl,
-    paddingBottom: Spacing.md,
-  },
-  backHeader: {
     flexDirection: "row",
     alignItems: "center",
-    alignSelf: "flex-start",
-    width: "100%",
+    justifyContent: "space-between",
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.md,
     paddingTop: Spacing.lg + getAndroidTitleMargin(),
   },
   backButton: {
-    marginRight: Spacing.md,
     padding: Spacing.xs,
   },
   backArrow: {
@@ -393,79 +549,109 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     fontWeight: "300",
   },
-  titleContainer: { flex: 1 },
+  headerInfo: {
+    flex: 1,
+    marginLeft: Spacing.md,
+  },
   title: {
     fontSize: 22,
     fontFamily: Typography.fontBold,
     color: Colors.textPrimary,
   },
-  date: {
+  subtitle: {
     fontSize: Typography.md,
     color: Colors.textSecondary,
     marginTop: Spacing.xs,
   },
-  suppliersTitle: {
+  dateSection: {
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.md,
+  },
+  dateSelector: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f0f2f5",
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  dateText: {
+    fontSize: Typography.md,
+    color: Colors.textPrimary,
+    marginLeft: Spacing.sm,
+    marginRight: Spacing.sm,
+  },
+  suppliersSection: {
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.lg,
+  },
+  sectionTitle: {
     fontSize: 22,
     fontFamily: Typography.fontBold,
     color: Colors.textPrimary,
-    marginLeft: Spacing.lg,
-    marginTop: Spacing.lg,
-    marginBottom: 8,
+    marginBottom: 12,
   },
   supplierCard: {
     backgroundColor: "#f8fafc",
     borderRadius: 16,
     paddingVertical: 18,
     paddingHorizontal: 16,
+    marginBottom: 12,
   },
   supplierHeader: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
+    alignItems: "center",
+  },
+  supplierInfo: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   supplierName: {
     fontFamily: Typography.fontBold,
     fontSize: 18,
     color: "#111",
+    marginLeft: Spacing.sm,
   },
-  supplierTime: {
-    fontFamily: Typography.fontRegular,
-    fontSize: 16,
-    color: "#8B96A5",
-    marginTop: 2,
+  supplierStatus: {
+    flexDirection: "row",
+    alignItems: "center",
   },
-  tempValue: {
+  statusIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff3cd",
+    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginRight: Spacing.sm,
+  },
+  statusText: {
     fontFamily: Typography.fontBold,
-    fontSize: 18,
-    color: "#111",
-    textAlign: "right",
+    fontSize: 14,
+    color: "#856404",
+    marginLeft: Spacing.xs,
   },
-  tempInputsContainer: {
+  temperatureInputs: {
     marginTop: 18,
     gap: 12,
   },
-  tempInputCard: {
-    backgroundColor: "#f8fafc",
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    marginBottom: 0,
+  tempInputGroup: {
+    marginBottom: 12,
   },
-  tempInputLabel: {
+  tempLabel: {
     fontFamily: Typography.fontRegular,
     fontSize: 15,
     color: "#8B96A5",
     marginBottom: 2,
   },
-  tempInputType: {
-    fontFamily: Typography.fontBold,
-    fontSize: 16,
-    color: "#222",
-    marginBottom: 8,
-  },
-  tempInputRow: {
+  tempInputContainer: {
     flexDirection: "row",
     alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
   },
   tempInput: {
     fontFamily: Typography.fontBold,
@@ -478,6 +664,39 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontBold,
     fontSize: 22,
     color: "#8B96A5",
+  },
+  currentValues: {
+    marginTop: 18,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#e0e0e0",
+  },
+  currentValuesTitle: {
+    fontFamily: Typography.fontBold,
+    fontSize: 16,
+    color: "#222",
+    marginBottom: 8,
+  },
+  valuesRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  valueChip: {
+    backgroundColor: "#e0f2fe",
+    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  valueChipLabel: {
+    fontFamily: Typography.fontBold,
+    fontSize: 14,
+    color: "#111",
+  },
+  valueChipTemp: {
+    fontFamily: Typography.fontBold,
+    fontSize: 14,
+    color: "#2563eb",
   },
   swipeableContainer: {
     backgroundColor: "transparent",
@@ -511,5 +730,37 @@ const styles = StyleSheet.create({
     fontSize: Typography.sm,
     fontWeight: Typography.bold,
     marginTop: 4,
+  },
+  emptyState: {
+    alignItems: "center",
+    paddingVertical: 40,
+    backgroundColor: "#f0f2f5",
+    borderRadius: 16,
+    marginTop: 12,
+  },
+  emptyStateText: {
+    fontFamily: Typography.fontBold,
+    fontSize: 20,
+    color: "#222",
+    marginTop: 12,
+  },
+  emptyStateSubtext: {
+    fontFamily: Typography.fontRegular,
+    fontSize: 16,
+    color: "#8B96A5",
+    marginTop: 4,
+  },
+  saveButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    alignItems: "center",
+    marginTop: 18,
+  },
+  saveButtonText: {
+    color: "white",
+    fontFamily: Typography.fontBold,
+    fontSize: 16,
   },
 });

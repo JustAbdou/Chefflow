@@ -138,3 +138,60 @@ export const UsersIcon = ({ color = "#6B7280", size = 24 }) => (
     />
   </Svg>
 )
+
+export const DownloadsIcon = ({ focused, size = 24 }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15"
+      stroke={focused ? "#2563eb" : "#8B96A5"}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <Path
+      d="M7 10L12 15L17 10"
+      stroke={focused ? "#2563eb" : "#8B96A5"}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <Path
+      d="M12 15V3"
+      stroke={focused ? "#2563eb" : "#8B96A5"}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
+);
+
+export const CoolingReheatingIcon = ({ focused, size = 24 }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"
+      fill={focused ? "#2563eb" : "#8B96A5"}
+    />
+    <Path
+      d="M12 6c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm0 10c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z"
+      fill={focused ? "#2563eb" : "#8B96A5"}
+    />
+    <Path
+      d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"
+      fill={focused ? "#2563eb" : "#8B96A5"}
+    />
+    {/* Snowflake for cooling */}
+    <Path
+      d="M8 4l1.5 1.5L8 7l-1.5-1.5L8 4z"
+      fill={focused ? "#3B82F6" : "#8B96A5"}
+    />
+    <Path
+      d="M16 4l-1.5 1.5L16 7l1.5-1.5L16 4z"
+      fill={focused ? "#3B82F6" : "#8B96A5"}
+    />
+    {/* Flame for reheating */}
+    <Path
+      d="M12 18c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"
+      fill={focused ? "#EF4444" : "#8B96A5"}
+    />
+  </Svg>
+);

@@ -14,7 +14,7 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing, Typography } from '../../constants';
 import { getFormattedTodayDate } from '../../utils/dateUtils';
 import DateTimePickerModal from "react-native-modal-datetime-picker";
-import { query, where, getDocs, Timestamp, orderBy, addDoc, serverTimestamp } from "firebase/firestore";
+import { query, where, getDocs, Timestamp, orderBy, addDoc, serverTimestamp, deleteDoc } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantSubCollection } from "../../utils/firestoreHelpers";
 import { uploadPdfToStorage, uploadPdfToStorageTemporary, generatePdfFileName } from "../../utils/pdfUpload";
@@ -81,90 +81,143 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
     fetchRecentDownloads();
   }, [restaurantId]);
 
-  const renderDownloadItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.downloadItem}
-      onPress={() => {
-        if (item.link && item.link.startsWith('http')) {
-          Linking.openURL(item.link);
+  const renderDownloadItem = ({ item }) => {
+    // Helper function to handle local file access
+    const handleLocalFileAccess = async (fileUri) => {
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(fileUri);
+        if (fileInfo.exists) {
+          await Sharing.shareAsync(fileUri, { mimeType: 'application/pdf' });
         } else {
-          Alert.alert('Invalid Link', 'This download link is not accessible.');
+          Alert.alert(
+            'File Not Found', 
+            'This file is no longer accessible. It may have been moved or deleted.',
+            [
+              {
+                text: 'Remove Invalid Download',
+                onPress: () => removeInvalidDownload(item.id),
+                style: 'destructive'
+              },
+              {
+                text: 'OK',
+                style: 'cancel'
+              }
+            ]
+          );
         }
-      }}
-    >
-      <MaterialIcons name="description" size={28} color="#E53935" style={{ marginRight: 12 }} />
-      <View style={{ flex: 1 }}>
-        <Text style={styles.downloadName}>
-          {(item.name || item.id).replace(/\.pdf$/i, '')}
-        </Text>
-        <Text style={styles.downloadMeta}>
-          {item.createdAt?.toDate
-            ? item.createdAt.toDate().toLocaleDateString()
-            : ''}
-        </Text>
-      </View>
+      } catch (error) {
+        console.error('Error accessing local file:', error);
+        Alert.alert('Error', 'Could not access this file.');
+      }
+    };
+
+    // Helper function to remove invalid downloads
+    const removeInvalidDownload = async (downloadId) => {
+      try {
+        const downloadRef = getRestaurantSubCollection(
+          restaurantId,
+          "downloads",
+          "invoices", 
+          "recent_downloads"
+        ).doc(downloadId);
+        await deleteDoc(downloadRef);
+        
+        // Update local state
+        setRecentDownloads(prev => prev.filter(download => download.id !== downloadId));
+        Alert.alert('Success', 'Invalid download removed.');
+      } catch (error) {
+        console.error('Error removing invalid download:', error);
+        Alert.alert('Error', 'Could not remove the invalid download.');
+      }
+    };
+
+    return (
       <TouchableOpacity
-        onPress={async (e) => {
-          e.stopPropagation();
-          if (!item.link) {
-            Alert.alert('No Link', 'No download link available for this item.');
-            return;
-          }
-          
-          try {
-            if (item.link.startsWith('http')) {
-              // For cloud URLs, we can either open in browser or download
-              Alert.alert(
-                'Download Options',
-                'How would you like to access this file?',
-                [
-                  {
-                    text: 'Open in Browser',
-                    onPress: () => Linking.openURL(item.link)
-                  },
-                  {
-                    text: 'Download to Device',
-                    onPress: async () => {
-                      try {
-                        const fileUri = FileSystem.documentDirectory + (item.name || 'invoice.pdf');
-                        const downloadResumable = FileSystem.createDownloadResumable(item.link, fileUri);
-                        const result = await downloadResumable.downloadAsync();
-                        if (result) {
-                          await Sharing.shareAsync(result.uri, { mimeType: 'application/pdf' });
-                        }
-                      } catch (downloadError) {
-                        console.error('Download error:', downloadError);
-                        Alert.alert('Download Failed', 'Could not download the file.');
-                      }
-                    }
-                  },
-                  {
-                    text: 'Cancel',
-                    style: 'cancel'
-                  }
-                ]
-              );
-            } else if (item.link.startsWith('file')) {
-              // Legacy local files
-              await Sharing.shareAsync(item.link, { mimeType: 'application/pdf' });
-            } else {
-              Alert.alert('Invalid Link', 'This download link is not supported.');
-            }
-          } catch (error) {
-            console.error('Error handling download:', error);
-            Alert.alert('Error', 'Could not process the download.');
+        style={styles.downloadItem}
+        onPress={() => {
+          if (item.link && item.link.startsWith('http')) {
+            Linking.openURL(item.link);
+          } else if (item.link && item.link.startsWith('file')) {
+            handleLocalFileAccess(item.link);
+          } else {
+            Alert.alert('Invalid Link', 'This download link is not accessible.');
           }
         }}
-        style={{ padding: 8 }}
       >
-        <Ionicons 
-          name={item.link && item.link.startsWith('http') ? "cloud-download-outline" : "download-outline"} 
-          size={20} 
-          color={Colors.gray300} 
-        />
+        <MaterialIcons name="description" size={28} color="#E53935" style={{ marginRight: 12 }} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.downloadName}>
+            {(item.name || item.id).replace(/\.pdf$/i, '')}
+          </Text>
+          <Text style={styles.downloadMeta}>
+            {item.createdAt?.toDate
+              ? item.createdAt.toDate().toLocaleDateString()
+              : ''}
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={async (e) => {
+            e.stopPropagation();
+            if (!item.link) {
+              Alert.alert('No Link', 'No download link available for this item.');
+              return;
+            }
+            
+            try {
+              if (item.link.startsWith('http')) {
+                // For cloud URLs, we can either open in browser or download
+                Alert.alert(
+                  'Download Options',
+                  'How would you like to access this file?',
+                  [
+                    {
+                      text: 'Open in Browser',
+                      onPress: () => Linking.openURL(item.link)
+                    },
+                    {
+                      text: 'Download to Device',
+                      onPress: async () => {
+                        try {
+                          const fileUri = FileSystem.documentDirectory + (item.name || 'invoice.pdf');
+                          const downloadResumable = FileSystem.createDownloadResumable(item.link, fileUri);
+                          const result = await downloadResumable.downloadAsync();
+                          if (result) {
+                            await Sharing.shareAsync(result.uri, { mimeType: 'application/pdf' });
+                          }
+                        } catch (downloadError) {
+                          console.error('Download error:', downloadError);
+                          Alert.alert('Download Failed', 'Could not download the file.');
+                        }
+                      }
+                    },
+                    {
+                      text: 'Cancel',
+                      style: 'cancel'
+                    }
+                  ]
+                );
+              } else if (item.link.startsWith('file')) {
+                // Local files - use the helper function
+                await handleLocalFileAccess(item.link);
+              } else {
+                Alert.alert('Invalid Link', 'This download link is not supported.');
+              }
+            } catch (error) {
+              console.error('Error handling download:', error);
+              Alert.alert('Error', 'Could not process the download.');
+            }
+          }}
+          style={{ padding: 8 }}
+        >
+          <Ionicons 
+            name={item.link && item.link.startsWith('http') ? "cloud-download-outline" : "download-outline"} 
+            size={20} 
+            color={Colors.gray300} 
+          />
+        </TouchableOpacity>
       </TouchableOpacity>
-    </TouchableOpacity>
-  );
+    );
+  };
 
   const formatDate = (date) => {
     // Implement your date formatting logic here
@@ -195,6 +248,7 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
             <th>Supplier</th>
             <th>Amount</th>
             <th>Date</th>
+            <th>Photos</th>
           </tr>
           ${invoices.map(inv => `
             <tr>
@@ -202,6 +256,7 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
               <td>${inv.supplier || 'Unknown'}</td>
               <td>£${inv.amount || '0.00'}</td>
               <td>${inv.createdAt ? new Date(inv.createdAt).toLocaleDateString() : 'N/A'}</td>
+              <td>${inv.images && inv.images.length > 0 ? `${inv.images.length} photo${inv.images.length === 1 ? '' : 's'}` : 'No photos'}</td>
             </tr>
           `).join('')}
         </table>
@@ -232,6 +287,13 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
         // Use temporary local storage as fallback
         downloadURL = await uploadPdfToStorageTemporary(uri, fileName, restaurantId, 'invoices');
         console.log('💾 PDF saved to local storage:', downloadURL);
+        
+        // Alert user about local storage limitation
+        Alert.alert(
+          'Local Storage Used',
+          'Your PDF has been saved locally. Note that local files may have limited accessibility across app sessions.',
+          [{ text: 'OK' }]
+        );
       }
 
       // Save download info to Firestore with the cloud URL

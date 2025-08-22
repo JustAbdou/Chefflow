@@ -14,6 +14,7 @@ import { setupFirestoreErrorHandling } from './src/utils/firestoreConnectionMana
 import { clearFirestoreCache, resetFirestoreConnection } from './firebase';
 import navigationBarUtils from './src/utils/navigationBar';
 import InvoicesScreen from './src/screens/invoices/InvoicesScreen';
+import InvoiceDetailScreen from './src/screens/invoices/InvoiceDetailScreen';
 import RecipeDetailScreen from './src/screens/recipes/RecipeDetailScreen';
 import PrepListsScreen from './src/screens/prep/PrepListsScreen';
 import InvoicesDownloadsScreen from './src/screens/invoices/InvoicesDownloadsScreen';
@@ -26,6 +27,7 @@ import HandoverCompletionScreen from './src/screens/handover/HandoverCompletionS
 import PreviousHandoversScreen from './src/screens/handover/PreviousHandoversScreen';
 import TemperatureRecordsScreen from './src/screens/temperature/TemperatureRecordsScreen';
 import TemperatureDownloadsScreen from './src/screens/temperature/TemperatureDownloadsScreen';
+import CoolingReheatingScreen from './src/screens/temperature/CoolingReheatingScreen';
 
 const Stack = createStackNavigator();
 
@@ -97,6 +99,7 @@ export default function App() {
           <Stack.Screen name="InvoiceUpload" component={InvoiceUploadScreen} />
           <Stack.Screen name="Invoices" component={InvoicesScreen} />
           <Stack.Screen name="InvoicesDownloads" component={InvoicesDownloadsScreen} />
+          <Stack.Screen name="InvoiceDetail" component={InvoiceDetailScreen} />
           <Stack.Screen name="RecipeDetail" component={RecipeDetailScreen} />
           <Stack.Screen name="AddRecipe" component={AddRecipeScreen} />
           <Stack.Screen name="FridgeTempLogs" component={FridgeTempLogsScreen} />
@@ -107,6 +110,7 @@ export default function App() {
           <Stack.Screen name="PreviousHandovers" component={PreviousHandoversScreen} />
           <Stack.Screen name="TemperatureRecords" component={TemperatureRecordsScreen} />
           <Stack.Screen name="TemperatureDownloads" component={TemperatureDownloadsScreen} />
+          <Stack.Screen name="CoolingReheating" component={CoolingReheatingScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </RestaurantProvider>

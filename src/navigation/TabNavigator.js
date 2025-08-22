@@ -4,8 +4,8 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import DashboardScreen from '../screens/dashboard/DashboardScreen';
 import ProfileScreen from '../screens/settings/ProfileScreen';
 import RecipesScreen from '../screens/recipes/RecipesScreen'; 
-import TasksScreen from '../screens/tasks/TasksScreen';
-import { HomeIcon, RecipesIcon, SettingsIcon, TasksIcon } from '../components/icons/NavigationIcons'; // <-- Import icons
+import { HomeIcon, RecipesIcon, SettingsIcon, DownloadsIcon } from '../components/icons/NavigationIcons';
+import DownloadsScreen from "../screens/downloads/DownloadsScreen";
 
 const Tab = createBottomTabNavigator();
 
@@ -41,19 +41,19 @@ export default function TabNavigator() {
         }}
       />
       <Tab.Screen
-        name="Tasks"
-        component={TasksScreen}
-        options={{
-          tabBarIcon: ({ color, size }) => <TasksIcon color={color} size={size} />,
-          tabBarLabel: 'Tasks',
-        }}
-      />
-      <Tab.Screen
         name="Recipes"
         component={RecipesScreen}
         options={{
           tabBarIcon: ({ color, size }) => <RecipesIcon color={color} size={size} />,
           tabBarLabel: 'Recipes',
+        }}
+      />
+      <Tab.Screen
+        name="Downloads"
+        component={DownloadsScreen}
+        options={{
+          tabBarIcon: ({ focused }) => <DownloadsIcon focused={focused} />,
+          tabBarLabel: "Downloads",
         }}
       />
       <Tab.Screen
@@ -64,7 +64,6 @@ export default function TabNavigator() {
           tabBarLabel: 'Settings',
         }}
       />
-      {/* Add other screens here */}
     </Tab.Navigator>
   );
 }
