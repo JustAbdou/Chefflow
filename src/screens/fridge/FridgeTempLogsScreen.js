@@ -307,7 +307,7 @@ export default function FridgeTempLogsScreen({ navigation }) {
             <View style={styles.emptyState}>
               <Ionicons name="thermometer-outline" size={48} color={Colors.gray300} />
               <Text style={styles.emptyStateText}>No fridges configured</Text>
-              <Text style={styles.emptyStateSubtext}>Please add fridge names in settings</Text>
+              <Text style={styles.emptyStateSubtext}>Please add fridge names in admin panel</Text>
             </View>
           ) : (
             fridgeNames.map((fridgeName, index) => {
@@ -355,15 +355,18 @@ export default function FridgeTempLogsScreen({ navigation }) {
                         <View style={styles.tempInputContainer}>
                           <TextInput
                             style={styles.tempInput}
-                            value={inputValues[`${log?.id || 'new'}-am`] !== undefined ? inputValues[`${log?.id || 'new'}-am`] : (log?.temps?.am || '')}
+                            value={inputValues[`${log?.id || `placeholder-${fridgeName}`}-am`] !== undefined ? inputValues[`${log?.id || `placeholder-${fridgeName}`}-am`] : (log?.temps?.am || '')}
                             onChangeText={(value) => {
-                              const inputKey = `${log?.id || 'new'}-am`;
-                              console.log('AM input changed:', { value, inputKey, logId: log?.id });
-                              setInputValues(prev => ({ ...prev, [inputKey]: value }));
+                              // Only allow numbers and decimal point
+                              const numericValue = value.replace(/[^0-9.-]/g, '');
+                              const inputKey = `${log?.id || `placeholder-${fridgeName}`}-am`;
+                              console.log('AM input changed:', { value: numericValue, inputKey, logId: log?.id, fridgeName });
+                              setInputValues(prev => ({ ...prev, [inputKey]: numericValue }));
                             }}
-                            placeholder="Enter AM temp"
+                            placeholder="0"
                             placeholderTextColor={Colors.gray400}
-                            keyboardType="numeric"
+                            keyboardType="decimal-pad"
+                            inputMode="decimal"
                           />
                           <Text style={styles.tempUnit}>°C</Text>
                         </View>
@@ -375,15 +378,18 @@ export default function FridgeTempLogsScreen({ navigation }) {
                         <View style={styles.tempInputContainer}>
                           <TextInput
                             style={styles.tempInput}
-                            value={inputValues[`${log?.id || 'new'}-pm`] !== undefined ? inputValues[`${log?.id || 'new'}-pm`] : (log?.temps?.pm || '')}
+                            value={inputValues[`${log?.id || `placeholder-${fridgeName}`}-pm`] !== undefined ? inputValues[`${log?.id || `placeholder-${fridgeName}`}-pm`] : (log?.temps?.pm || '')}
                             onChangeText={(value) => {
-                              const inputKey = `${log?.id || 'new'}-pm`;
-                              console.log('PM input changed:', { value, inputKey, logId: log?.id });
-                              setInputValues(prev => ({ ...prev, [inputKey]: value }));
+                              // Only allow numbers and decimal point
+                              const numericValue = value.replace(/[^0-9.-]/g, '');
+                              const inputKey = `${log?.id || `placeholder-${fridgeName}`}-pm`;
+                              console.log('PM input changed:', { value: numericValue, inputKey, logId: log?.id, fridgeName });
+                              setInputValues(prev => ({ ...prev, [inputKey]: numericValue }));
                             }}
-                            placeholder="Enter PM temp"
+                            placeholder="0"
                             placeholderTextColor={Colors.gray400}
-                            keyboardType="numeric"
+                            keyboardType="decimal-pad"
+                            inputMode="decimal"
                           />
                           <Text style={styles.tempUnit}>°C</Text>
                         </View>
@@ -393,8 +399,8 @@ export default function FridgeTempLogsScreen({ navigation }) {
                       <TouchableOpacity
                         style={styles.saveButton}
                         onPress={async () => {
-                          const amValue = inputValues[`${log?.id || 'new'}-am`] || '';
-                          const pmValue = inputValues[`${log?.id || 'new'}-pm`] || '';
+                          const amValue = inputValues[`${log?.id || `placeholder-${fridgeName}`}-am`] || '';
+                          const pmValue = inputValues[`${log?.id || `placeholder-${fridgeName}`}-pm`] || '';
                           
                           // Get original values for comparison
                           const originalAm = log?.temps?.am || '';
@@ -483,8 +489,9 @@ export default function FridgeTempLogsScreen({ navigation }) {
                                 // Clear input values
                                 setInputValues(prev => {
                                   const newValues = { ...prev };
-                                  delete newValues[`${currentLogId}-am`];
-                                  delete newValues[`${currentLogId}-pm`];
+                                  const keyBase = currentLogId || `placeholder-${fridgeName}`;
+                                  delete newValues[`${keyBase}-am`];
+                                  delete newValues[`${keyBase}-pm`];
                                   return newValues;
                                 });
                               }
@@ -498,7 +505,7 @@ export default function FridgeTempLogsScreen({ navigation }) {
                         <Text style={styles.saveButtonText}>Save Log</Text>
                       </TouchableOpacity>
 
-                      {/* Current Values Display */}
+                      {/* Current Values Display For Debuggine Purposes
                       {(log?.temps?.am || log?.temps?.pm) && (
                         <View style={styles.currentValues}>
                           <Text style={styles.currentValuesTitle}>Current Values:</Text>
@@ -517,7 +524,7 @@ export default function FridgeTempLogsScreen({ navigation }) {
                             )}
                           </View>
                         </View>
-                      )}
+                      )} */}
                     </View>
                   )}
                 </View>

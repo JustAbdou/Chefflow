@@ -225,7 +225,7 @@ const DashboardScreen = ({ navigation }) => {
       screen: 'Invoices',
     },
     { 
-      title: 'Closing Checklists', 
+      title: 'Closing Checklist', 
       value: closingChecklistCount.toString(), 
       subtitle: 'Tasks pending',
       iconUri: 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/cleaning-icon.png',
@@ -523,6 +523,8 @@ const styles = StyleSheet.create({
     fontSize: Typography.base,
     fontFamily: Typography.fontMedium,
     color: Colors.textPrimary,
+    flexWrap: 'wrap',
+    flex: 1,
   },
   statValue: {
     fontSize: 28,
