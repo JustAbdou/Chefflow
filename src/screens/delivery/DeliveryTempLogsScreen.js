@@ -400,7 +400,7 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                       {
                         height: getAnimationValue(supplierName).interpolate({
                           inputRange: [0, 1],
-                          outputRange: [0, 380], // Height for delivery temp inputs with current values
+                          outputRange: [0, 280], // Height for delivery temp inputs without current values
                         }),
                         opacity: getAnimationValue(supplierName),
                         overflow: 'hidden',
@@ -526,7 +526,7 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                         <Text style={styles.saveButtonText}>Save Log</Text>
                       </TouchableOpacity>
 
-                      {/* Current Values Display */}
+                      {/* Current Values Display
                       {(log?.temps?.frozen || log?.temps?.chilled) && (
                         <View style={styles.currentValues}>
                           <Text style={styles.currentValuesTitle}>Current Values:</Text>
@@ -545,7 +545,7 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                             )}
                           </View>
                         </View>
-                      )}
+                      )} */}
                   </Animated.View>
                 </TouchableOpacity>
               );
@@ -742,18 +742,18 @@ const styles = StyleSheet.create({
     fontSize: 22,
     color: "#8B96A5",
   },
-  currentValues: {
-    marginTop: 18,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#e0e0e0",
-  },
-  currentValuesTitle: {
-    fontFamily: Typography.fontBold,
-    fontSize: 16,
-    color: "#222",
-    marginBottom: 8,
-  },
+  // currentValues: {
+  //   marginTop: 18,
+  //   paddingTop: 12,
+  //   borderTopWidth: 1,
+  //   borderTopColor: "#e0e0e0",
+  // },
+  // currentValuesTitle: {
+  //   fontFamily: Typography.fontBold,
+  //   fontSize: 16,
+  //   color: "#222",
+  //   marginBottom: 8,
+  // },
   valuesRow: {
     flexDirection: "row",
     flexWrap: "wrap",

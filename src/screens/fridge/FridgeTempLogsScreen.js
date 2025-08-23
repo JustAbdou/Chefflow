@@ -378,7 +378,7 @@ export default function FridgeTempLogsScreen({ navigation }) {
                       {
                         height: getAnimationValue(fridgeName).interpolate({
                           inputRange: [0, 1],
-                          outputRange: [0, 320], // Universal height that works on all devices
+                          outputRange: [0, 280], // Universal height that works on all devices
                         }),
                         opacity: getAnimationValue(fridgeName),
                         overflow: 'hidden',
