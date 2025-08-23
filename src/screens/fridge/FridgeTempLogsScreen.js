@@ -280,19 +280,6 @@ export default function FridgeTempLogsScreen({ navigation }) {
     }
   };
 
-  // Render right action for swipe-to-delete
-  const renderRightActions = (logId) => (
-    <View style={styles.swipeActionContainer}>
-      <TouchableOpacity
-        style={styles.deleteAction}
-        onPress={() => deleteLog(logId)}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="trash-outline" size={24} color="white" />
-        <Text style={styles.deleteActionText}>Delete</Text>
-      </TouchableOpacity>
-    </View>
-  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -457,17 +444,9 @@ export default function FridgeTempLogsScreen({ navigation }) {
                           const originalAm = log?.temps?.am || '';
                           const originalPm = log?.temps?.pm || '';
                           
-                          // Debug logging
-                          console.log('Save button pressed:');
-                          console.log('Input values:', { am: amValue, pm: pmValue });
-                          console.log('Original values:', { am: originalAm, pm: originalPm });
-                          console.log('Log ID:', log?.id);
-                          
-                          // Check if any values have actually changed (including being cleared)
+                          // Check if any values have actually changed
                           const amChanged = amValue !== originalAm;
                           const pmChanged = pmValue !== originalPm;
-                          
-                          console.log('Changes detected:', { amChanged, pmChanged });
                           
                           // Allow saving if there are any changes OR if we're creating a new log
                           if (amChanged || pmChanged || !log?.id) {
@@ -501,51 +480,23 @@ export default function FridgeTempLogsScreen({ navigation }) {
                                 setLogs(prev => [...prev, newLog]);
                               }
                               
-                              // Now update changed values in a single operation
-                              const updateData = {};
-                              if (amChanged) {
-                                if (amValue !== '') {
-                                  updateData['temps.am'] = amValue;
-                                } else {
-                                  // Value was cleared, update to empty string
-                                  updateData['temps.am'] = '';
-                                }
-                              }
-                              if (pmChanged) {
-                                if (pmValue !== '') {
-                                  updateData['temps.pm'] = pmValue;
-                                } else {
-                                  // Value was cleared, update to empty string
-                                  updateData['temps.pm'] = '';
-                                }
+                              // Use handleSetTemp for each changed value
+                              if (amChanged && currentLogId) {
+                                await handleSetTemp(fridgeName, currentLogId, 'am', amValue);
                               }
                               
-                              if (Object.keys(updateData).length > 0) {
-                                await updateDoc(getRestaurantDoc(restaurantId, "fridgelogs", currentLogId), updateData);
-                                
-                                // Update local state
-                                setLogs(prev =>
-                                  prev.map(l =>
-                                    l.id === currentLogId ? { 
-                                      ...l, 
-                                      temps: { 
-                                        ...l.temps, 
-                                        ...(amChanged ? { am: amValue !== '' ? amValue : '' } : {}),
-                                        ...(pmChanged ? { pm: pmValue !== '' ? pmValue : '' } : {})
-                                      } 
-                                    } : l
-                                  )
-                                );
-                                
-                                // Clear input values
-                                setInputValues(prev => {
-                                  const newValues = { ...prev };
-                                  const keyBase = currentLogId || `placeholder-${fridgeName}`;
-                                  delete newValues[`${keyBase}-am`];
-                                  delete newValues[`${keyBase}-pm`];
-                                  return newValues;
-                                });
+                              if (pmChanged && currentLogId) {
+                                await handleSetTemp(fridgeName, currentLogId, 'pm', pmValue);
                               }
+                              
+                              // Clear input values
+                              setInputValues(prev => {
+                                const newValues = { ...prev };
+                                const keyBase = currentLogId || `placeholder-${fridgeName}`;
+                                delete newValues[`${keyBase}-am`];
+                                delete newValues[`${keyBase}-pm`];
+                                return newValues;
+                              });
                             } catch (error) {
                               console.error("Error saving fridge log:", error);
                             }

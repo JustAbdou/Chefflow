@@ -450,17 +450,9 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                           const originalFrozen = log?.temps?.frozen || '';
                           const originalChilled = log?.temps?.chilled || '';
                           
-                          // Debug logging
-                          console.log('Save button pressed:');
-                          console.log('Input values:', { frozen: frozenValue, chilled: chilledValue });
-                          console.log('Original values:', { frozen: originalFrozen, chilled: originalChilled });
-                          console.log('Log ID:', log?.id);
-                          
-                          // Check if any values have actually changed (including being cleared)
+                          // Check if any values have actually changed
                           const frozenChanged = frozenValue !== originalFrozen;
                           const chilledChanged = chilledValue !== originalChilled;
-                          
-                          console.log('Changes detected:', { frozenChanged, chilledChanged });
                           
                           // Allow saving if there are any changes OR if we're creating a new log
                           if (frozenChanged || chilledChanged || !log?.id) {
@@ -469,76 +461,31 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                               
                               // If no existing log, create one first
                               if (!currentLogId) {
-                                const selectedDateTimestamp = new Date(selectedDate);
-                                selectedDateTimestamp.setHours(12, 0, 0, 0);
-                                
-                                const newLogRef = await addDoc(getRestaurantCollection(restaurantId, "deliverylogs"), {
-                                  supplier: supplierName,
-                                  createdAt: selectedDateTimestamp,
-                                  temps: { frozen: "", chilled: "" },
-                                  isPlaceholder: false,
-                                });
-                                
-                                currentLogId = newLogRef.id;
-                                
-                                // Add the new log to local state
-                                const newLog = {
-                                  id: newLogRef.id,
-                                  supplier: supplierName,
-                                  createdAt: selectedDateTimestamp,
-                                  temps: { frozen: "", chilled: "" },
-                                  isPlaceholder: false,
-                                };
-                                
-                                setLogs(prev => [...prev, newLog]);
+                                await handleCreateOrUpdateLog(supplierName);
+                                // Refresh to get the newly created log
+                                await fetchLogs();
+                                const newLog = logs.find(l => l.supplier === supplierName);
+                                currentLogId = newLog?.id;
                               }
                               
-                              // Now update changed values in a single operation
-                              const updateData = {};
-                              if (frozenChanged) {
-                                if (frozenValue !== '') {
-                                  const processedFrozenValue = frozenValue.startsWith('-') ? frozenValue : `-${frozenValue}`;
-                                  updateData['temps.frozen'] = processedFrozenValue;
-                                } else {
-                                  // Value was cleared, update to empty string
-                                  updateData['temps.frozen'] = '';
-                                }
-                              }
-                              if (chilledChanged) {
-                                if (chilledValue !== '') {
-                                  updateData['temps.chilled'] = chilledValue;
-                                } else {
-                                  // Value was cleared, update to empty string
-                                  updateData['temps.chilled'] = '';
-                                }
+                              // Use handleSetTemp for each changed value
+                              if (frozenChanged && currentLogId) {
+                                const processedFrozenValue = frozenValue !== '' ? (frozenValue.startsWith('-') ? frozenValue : `-${frozenValue}`) : '';
+                                await handleSetTemp(supplierName, currentLogId, 'frozen', processedFrozenValue);
                               }
                               
-                              if (Object.keys(updateData).length > 0) {
-                                await updateDoc(getRestaurantDoc(restaurantId, "deliverylogs", currentLogId), updateData);
-                                
-                                // Update local state
-                                setLogs(prev =>
-                                  prev.map(l =>
-                                    l.id === currentLogId ? { 
-                                      ...l, 
-                                      temps: { 
-                                        ...l.temps, 
-                                        ...(frozenChanged ? { frozen: frozenValue !== '' ? (frozenValue.startsWith('-') ? frozenValue : `-${frozenValue}`) : '' } : {}),
-                                        ...(chilledChanged ? { chilled: chilledValue !== '' ? chilledValue : '' } : {})
-                                      } 
-                                    } : l
-                                  )
-                                );
-                                
-                                // Clear input values
-                                setInputValues(prev => {
-                                  const newValues = { ...prev };
-                                  const keyBase = currentLogId || `placeholder-${supplierName}`;
-                                  delete newValues[`${keyBase}-frozen`];
-                                  delete newValues[`${keyBase}-chilled`];
-                                  return newValues;
-                                });
+                              if (chilledChanged && currentLogId) {
+                                await handleSetTemp(supplierName, currentLogId, 'chilled', chilledValue);
                               }
+                              
+                              // Clear input values
+                              setInputValues(prev => {
+                                const newValues = { ...prev };
+                                const keyBase = currentLogId || `placeholder-${supplierName}`;
+                                delete newValues[`${keyBase}-frozen`];
+                                delete newValues[`${keyBase}-chilled`];
+                                return newValues;
+                              });
                             } catch (error) {
                               console.error("Error saving delivery log:", error);
                             }
