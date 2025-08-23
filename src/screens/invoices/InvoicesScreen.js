@@ -71,12 +71,6 @@ const InvoicesScreen = ({ navigation }) => {
       </View>
       <View style={styles.invoiceRight}>
         <Text style={styles.amount}>£{item.amount}</Text>
-        {item.images && item.images.length > 0 && (
-          <View style={styles.photoIndicator}>
-            <Ionicons name="camera" size={16} color={Colors.primary} />
-            <Text style={styles.photoCount}>{item.images.length}</Text>
-          </View>
-        )}
       </View>
     </TouchableOpacity>
   );
@@ -232,16 +226,6 @@ const styles = StyleSheet.create({
     ...Typography.h4,
     color: Colors.textPrimary,
     fontWeight: '500',
-  },
-  photoIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  photoCount: {
-    ...Typography.body,
-    color: Colors.gray400,
-    marginLeft: 4,
   },
   fab: {
     position: "absolute",

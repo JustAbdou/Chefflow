@@ -5,7 +5,6 @@ import {
   StyleSheet,
   SafeAreaView,
   TouchableOpacity,
-  Image,
   TextInput,
   KeyboardAvoidingView,
   Platform,
@@ -15,7 +14,6 @@ import {
   Animated,
   Alert,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, Typography } from '../../constants';
 import Button from '../../components/ui/Button';
@@ -27,7 +25,6 @@ import DateTimePickerModal from "react-native-modal-datetime-picker";
 
 const InvoiceUploadScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
-  const [images, setImages] = useState([]); // Changed from single image to array
   const [uploading, setUploading] = useState(false);
 
   // Invoice details state
@@ -106,94 +103,7 @@ const InvoiceUploadScreen = ({ navigation }) => {
     fetchSuppliers();
   }, [restaurantId]);
 
-  const pickImage = async () => {
-    try {
-      console.log('📸 Launching image picker...');
-      
-      // Check permissions first
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        console.log('❌ Photo library permission denied:', status);
-        Alert.alert(
-          'Permission Required',
-          'This app needs access to your photo library to select images for invoices.',
-          [{ text: 'OK' }]
-        );
-        return;
-      }
-      
-      console.log('✅ Photo library permission granted');
-      
-      let result = await ImagePicker.launchImageLibraryAsync({
-        allowsEditing: false,
-        quality: 0.7,
-        allowsMultipleSelection: true,
-      });
 
-      console.log('📱 Image picker result:', result);
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const newImages = result.assets.map(asset => asset.uri);
-        console.log('🖼️ Selected images:', newImages);
-        setImages(prev => [...prev, ...newImages]);
-      } else {
-        console.log('ℹ️ No images selected or picker was canceled');
-      }
-    } catch (error) {
-      console.error('❌ Error in pickImage:', error);
-      Alert.alert(
-        'Error',
-        'Failed to open photo library. Please try again.',
-        [{ text: 'OK' }]
-      );
-    }
-  };
-
-  const takePhoto = async () => {
-    try {
-      console.log('📷 Launching camera...');
-      
-      // Check camera permissions first
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        console.log('❌ Camera permission denied:', status);
-        Alert.alert(
-          'Permission Required',
-          'This app needs access to your camera to take photos for invoices.',
-          [{ text: 'OK' }]
-        );
-        return;
-      }
-      
-      console.log('✅ Camera permission granted');
-      
-      let result = await ImagePicker.launchCameraAsync({
-        allowsEditing: false,
-        quality: 0.7,
-      });
-
-      console.log('📱 Camera result:', result);
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const newImageUri = result.assets[0].uri;
-        console.log('🖼️ Captured image:', newImageUri);
-        setImages(prev => [...prev, newImageUri]);
-      } else {
-        console.log('ℹ️ No photo taken or camera was canceled');
-      }
-    } catch (error) {
-      console.error('❌ Error in takePhoto:', error);
-      Alert.alert(
-        'Error',
-        'Failed to open camera. Please try again.',
-        [{ text: 'OK' }]
-      );
-    }
-  };
-
-  const removeImage = (index) => {
-    setImages(prev => prev.filter((_, i) => i !== index));
-  };
 
   const handleUpload = async () => {
     if (!restaurantId) return;
@@ -206,7 +116,6 @@ const InvoiceUploadScreen = ({ navigation }) => {
         amount: parseFloat(amount.replace(/[£,]/g, "")),
         supplier,
         createdAt: serverTimestamp(),
-        images: images, // Changed from image to images array
       });
       setUploading(false);
       navigation.goBack();
@@ -214,10 +123,6 @@ const InvoiceUploadScreen = ({ navigation }) => {
       setUploading(false);
       console.error(error);
     }
-  };
-
-  const handleRetake = () => {
-    setImages([]); // Clear all images
   };
 
   // Helper to format date as YYYY-MM-DD
@@ -263,45 +168,7 @@ const InvoiceUploadScreen = ({ navigation }) => {
             <View style={{ width: 28 }} />
           </View>
 
-          {/* Photo Management Section */}
-          <Text style={styles.sectionTitle}>Invoice Photos</Text>
-          <View style={styles.photoSection}>
-            {/* Photo Buttons */}
-            <View style={styles.photoButtons}>
-              <TouchableOpacity style={styles.photoButton} onPress={takePhoto}>
-                <Ionicons name="camera-outline" size={24} color={Colors.primary} />
-                <Text style={styles.photoButtonText}>Take Photo</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.photoButton} onPress={pickImage}>
-                <Ionicons name="images-outline" size={24} color={Colors.primary} />
-                <Text style={styles.photoButtonText}>Add Photos</Text>
-              </TouchableOpacity>
-            </View>
 
-            {/* Image Previews */}
-            {images.length > 0 && (
-              <View style={styles.imageGrid}>
-                {images.map((imageUri, index) => (
-                  <View key={index} style={styles.imageContainer}>
-                    <Image source={{ uri: imageUri }} style={styles.imagePreview} />
-                    <TouchableOpacity 
-                      style={styles.removeButton} 
-                      onPress={() => removeImage(index)}
-                    >
-                      <Ionicons name="close-circle" size={24} color={Colors.error} />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {/* Photo Count */}
-            {images.length > 0 && (
-              <Text style={styles.photoCount}>
-                {images.length} photo{images.length === 1 ? '' : 's'} attached
-              </Text>
-            )}
-          </View>
 
           {/* Invoice Details */}
           <Text style={styles.sectionTitle}>Invoice Details</Text>
@@ -443,34 +310,7 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: 2,
   },
-  uploadBox: {
-    width: '100%',
-    aspectRatio: 1.6,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: Colors.gray200,
-    backgroundColor: Colors.gray100,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.xl,
-    overflow: 'hidden',
-    alignSelf: 'center',
-  },
-  uploadPlaceholder: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  uploadText: {
-    marginTop: Spacing.md,
-    color: Colors.gray400,
-    ...Typography.body,
-    textAlign: 'center',
-  },
-  preview: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
+
   sectionTitle: {
     fontFamily: Typography.fontBold,
     fontSize: Typography.xl,
@@ -530,18 +370,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: Spacing.md,
   },
-  retakeButton: {
-    borderWidth: 1,
-    borderColor: Colors.gray200,
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    backgroundColor: Colors.backgroundPrimary,
-  },
-  retakeText: {
-    color: Colors.gray500,
-    ...Typography.body,
-  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
@@ -576,72 +404,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginTop: Spacing.sm,
     elevation: 2,
-  },
-  photoSection: {
-    marginBottom: Spacing.lg,
-    padding: Spacing.md,
-    backgroundColor: Colors.gray100,
-    borderRadius: 16,
-  },
-  photoButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: Spacing.md,
-  },
-  photoButton: {
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    borderRadius: 12,
-    backgroundColor: Colors.gray200,
-    minWidth: 120,
-  },
-  photoButtonText: {
-    marginTop: Spacing.xs,
-    color: Colors.textPrimary,
-    ...Typography.body,
-    fontWeight: '500',
-  },
-  imageGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: Spacing.md,
-  },
-  imageContainer: {
-    width: '32%', // Adjust as needed for 3 columns
-    aspectRatio: 1,
-    borderRadius: 12,
-    marginBottom: Spacing.sm,
-    position: 'relative',
-    backgroundColor: Colors.gray200,
-  },
-  imagePreview: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 12,
-  },
-  removeButton: {
-    position: 'absolute',
-    top: 5,
-    right: 5,
-    backgroundColor: Colors.gray100,
-    borderRadius: 15,
-    padding: 5,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  photoCount: {
-    ...Typography.body,
-    color: Colors.gray400,
-    textAlign: 'center',
-    fontWeight: '500',
   },
 });
 

@@ -248,15 +248,13 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
             <th>Supplier</th>
             <th>Amount</th>
             <th>Date</th>
-            <th>Photos</th>
           </tr>
           ${invoices.map(inv => `
             <tr>
               <td>${inv.invoiceNumber || 'N/A'}</td>
               <td>${inv.supplier || 'Unknown'}</td>
               <td>£${inv.amount || '0.00'}</td>
-              <td>${inv.createdAt ? new Date(inv.createdAt).toLocaleDateString() : 'N/A'}</td>
-              <td>${inv.images && inv.images.length > 0 ? `${inv.images.length} photo${inv.images.length === 1 ? '' : 's'}` : 'No photos'}</td>
+              <td>${inv.date ? new Date(inv.date).toLocaleDateString() : 'N/A'}</td>
             </tr>
           `).join('')}
         </table>

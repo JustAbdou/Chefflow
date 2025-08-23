@@ -1,24 +1,19 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
   SafeAreaView,
   TouchableOpacity,
-  Image,
   ScrollView,
-  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, Typography } from '../../constants';
 import { getAndroidTitleMargin } from '../../utils/responsive';
 import useNavigationBar from '../../hooks/useNavigationBar';
 
-const { width: screenWidth } = Dimensions.get('window');
-
 const InvoiceDetailScreen = ({ route, navigation }) => {
   const { invoice } = route.params;
-  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
   // Hide Android navigation bar
   const navigationBar = useNavigationBar();
@@ -50,62 +45,6 @@ const InvoiceDetailScreen = ({ route, navigation }) => {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Main Photo Display */}
-        {invoice.images && invoice.images.length > 0 && (
-          <View style={styles.mainPhotoContainer}>
-            <Image 
-              source={{ uri: invoice.images[selectedImageIndex] }} 
-              style={styles.mainPhoto}
-              resizeMode="contain"
-            />
-            
-            {/* Photo Navigation */}
-            {invoice.images.length > 1 && (
-              <View style={styles.photoNavigation}>
-                <TouchableOpacity 
-                  style={[styles.navButton, selectedImageIndex === 0 && styles.navButtonDisabled]}
-                  onPress={() => setSelectedImageIndex(prev => Math.max(0, prev - 1))}
-                  disabled={selectedImageIndex === 0}
-                >
-                  <Ionicons name="chevron-back" size={24} color={selectedImageIndex === 0 ? Colors.gray400 : Colors.primary} />
-                </TouchableOpacity>
-                
-                <Text style={styles.photoCounter}>
-                  {selectedImageIndex + 1} of {invoice.images.length}
-                </Text>
-                
-                <TouchableOpacity 
-                  style={[styles.navButton, selectedImageIndex === invoice.images.length - 1 && styles.navButtonDisabled]}
-                  onPress={() => setSelectedImageIndex(prev => Math.min(invoice.images.length - 1, prev + 1))}
-                  disabled={selectedImageIndex === invoice.images.length - 1}
-                >
-                  <Ionicons name="chevron-forward" size={24} color={selectedImageIndex === invoice.images.length - 1 ? Colors.gray400 : Colors.primary} />
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        )}
-
-        {/* Thumbnail Gallery */}
-        {invoice.images && invoice.images.length > 1 && (
-          <View style={styles.thumbnailContainer}>
-            <Text style={styles.sectionTitle}>All Photos</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbnailScroll}>
-              {invoice.images.map((imageUri, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={[
-                    styles.thumbnail,
-                    selectedImageIndex === index && styles.selectedThumbnail
-                  ]}
-                  onPress={() => setSelectedImageIndex(index)}
-                >
-                  <Image source={{ uri: imageUri }} style={styles.thumbnailImage} />
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        )}
 
         {/* Invoice Details */}
         <View style={styles.detailsSection}>
@@ -175,65 +114,11 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: Spacing.md,
   },
-  mainPhotoContainer: {
-    marginBottom: Spacing.lg,
-    backgroundColor: Colors.gray100,
-    borderRadius: 16,
-    padding: Spacing.md,
-  },
-  mainPhoto: {
-    width: '100%',
-    height: 300,
-    borderRadius: 12,
-    backgroundColor: Colors.gray200,
-  },
-  photoNavigation: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: Spacing.md,
-    paddingHorizontal: Spacing.md,
-  },
-  navButton: {
-    padding: Spacing.sm,
-    borderRadius: 20,
-    backgroundColor: Colors.gray200,
-  },
-  navButtonDisabled: {
-    opacity: 0.5,
-  },
-  photoCounter: {
-    ...Typography.body,
-    color: Colors.gray600,
-    fontWeight: '500',
-  },
-  thumbnailContainer: {
-    marginBottom: Spacing.lg,
-  },
   sectionTitle: {
     ...Typography.h4,
     color: Colors.textPrimary,
     fontWeight: '600',
     marginBottom: Spacing.sm,
-  },
-  thumbnailScroll: {
-    flexDirection: 'row',
-  },
-  thumbnail: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
-    marginRight: Spacing.sm,
-    borderWidth: 2,
-    borderColor: Colors.gray300,
-  },
-  selectedThumbnail: {
-    borderColor: Colors.primary,
-  },
-  thumbnailImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 6,
   },
   detailsSection: {
     backgroundColor: Colors.gray100,
