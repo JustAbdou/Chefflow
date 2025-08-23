@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   RefreshControl,
   KeyboardAvoidingView,
   Platform,
+  Animated,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Swipeable } from "react-native-gesture-handler";
@@ -35,6 +36,7 @@ export default function FridgeTempLogsScreen({ navigation }) {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [inputValues, setInputValues] = useState({});
+  const animationRefs = useRef({});
 
   // Hide Android navigation bar
   const navigationBar = useNavigationBar();
@@ -126,6 +128,28 @@ export default function FridgeTempLogsScreen({ navigation }) {
     setShowDatePicker(true);
   };
 
+  // Get or create animation value for a fridge
+  const getAnimationValue = (fridgeName) => {
+    if (!animationRefs.current[fridgeName]) {
+      animationRefs.current[fridgeName] = new Animated.Value(0);
+    }
+    return animationRefs.current[fridgeName];
+  };
+
+  // Toggle fridge expansion with animation
+  const toggleFridgeExpansion = (fridgeName) => {
+    const isCurrentlyExpanded = expanded[fridgeName];
+    const animationValue = getAnimationValue(fridgeName);
+    
+    setExpanded(prev => ({ ...prev, [fridgeName]: !isCurrentlyExpanded }));
+    
+    Animated.timing(animationValue, {
+      toValue: isCurrentlyExpanded ? 0 : 1,
+      duration: 250,
+      useNativeDriver: false,
+    }).start();
+  };
+
   // Initialize input values when logs change
   useEffect(() => {
     const newInputValues = {};
@@ -139,6 +163,13 @@ export default function FridgeTempLogsScreen({ navigation }) {
     });
     setInputValues(prev => ({ ...prev, ...newInputValues }));
   }, [logs]);
+
+  // Initialize animation values when fridges are loaded
+  useEffect(() => {
+    fridgeNames.forEach(fridgeName => {
+      getAnimationValue(fridgeName);
+    });
+  }, [fridgeNames]);
 
   // Fetch data from Firestore
   useEffect(() => {
@@ -315,13 +346,14 @@ export default function FridgeTempLogsScreen({ navigation }) {
               const isExpanded = expanded[fridgeName];
               
               return (
-                <View key={index} style={styles.fridgeCard}>
+                <TouchableOpacity 
+                  key={index} 
+                  style={styles.fridgeCard}
+                  onPress={() => toggleFridgeExpansion(fridgeName)}
+                  activeOpacity={0.8}
+                >
                   {/* Fridge Header */}
-                  <TouchableOpacity
-                    style={styles.fridgeHeader}
-                    onPress={() => setExpanded(prev => ({ ...prev, [fridgeName]: !prev[fridgeName] }))}
-                    activeOpacity={0.8}
-                  >
+                  <View style={styles.fridgeHeader}>
                     <View style={styles.fridgeInfo}>
                       <Ionicons name="thermometer-outline" size={24} color={Colors.primary} />
                       <Text style={styles.fridgeName}>{fridgeName}</Text>
@@ -344,11 +376,23 @@ export default function FridgeTempLogsScreen({ navigation }) {
                         color={Colors.gray400} 
                       />
                     </View>
-                  </TouchableOpacity>
+                  </View>
 
                   {/* Expanded Temperature Inputs */}
-                  {isExpanded && (
-                    <View style={styles.temperatureInputs}>
+                  <Animated.View 
+                    style={[
+                      styles.temperatureInputs,
+                      {
+                        height: getAnimationValue(fridgeName).interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, 320], // Universal height that works on all devices
+                        }),
+                        opacity: getAnimationValue(fridgeName),
+                        overflow: 'hidden',
+                      }
+                    ]}
+                    onStartShouldSetResponder={() => true}
+                  >
                       {/* AM Temperature */}
                       <View style={styles.tempInputGroup}>
                         <Text style={styles.tempLabel}>AM Temperature</Text>
@@ -398,7 +442,8 @@ export default function FridgeTempLogsScreen({ navigation }) {
                       {/* Save Button */}
                       <TouchableOpacity
                         style={styles.saveButton}
-                        onPress={async () => {
+                        onPress={async (e) => {
+                          e.stopPropagation();
                           const amValue = inputValues[`${log?.id || `placeholder-${fridgeName}`}-am`] || '';
                           const pmValue = inputValues[`${log?.id || `placeholder-${fridgeName}`}-pm`] || '';
                           
@@ -525,9 +570,8 @@ export default function FridgeTempLogsScreen({ navigation }) {
                           </View>
                         </View>
                       )} */}
-                    </View>
-                  )}
-                </View>
+                  </Animated.View>
+                </TouchableOpacity>
               );
             })
           )}
