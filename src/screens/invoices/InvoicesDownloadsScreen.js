@@ -237,32 +237,235 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
       // Generate unique filename
       const fileName = generatePdfFileName('invoice', startDate, endDate);
 
+      // Calculate totals
+      const totalAmount = invoices.reduce((sum, inv) => sum + (parseFloat(inv.amount) || 0), 0);
+      
       let html = `
-        <h1>Invoice Records</h1>
-        <p>Generated on: ${new Date().toLocaleDateString()}</p>
-        <p>Period: ${startDate ? startDate.toLocaleDateString() : ''} to ${endDate ? endDate.toLocaleDateString() : ''}</p>
-        
-        <table border="1" cellspacing="0" cellpadding="8" style="width: 100%; border-collapse: collapse;">
-          <tr style="background-color: #f5f5f5;">
-            <th>Invoice Number</th>
-            <th>Supplier</th>
-            <th>Amount</th>
-            <th>Date</th>
-          </tr>
-          ${invoices.map(inv => `
-            <tr>
-              <td>${inv.invoiceNumber || 'N/A'}</td>
-              <td>${inv.supplier || 'Unknown'}</td>
-              <td>£${inv.amount || '0.00'}</td>
-              <td>${inv.date ? new Date(inv.date).toLocaleDateString() : 'N/A'}</td>
-            </tr>
-          `).join('')}
-        </table>
-        
-        <p style="margin-top: 20px; font-size: 12px; color: #666;">
-          Total Invoices: ${invoices.length}<br>
-          Total Amount: £${invoices.reduce((sum, inv) => sum + (parseFloat(inv.amount) || 0), 0).toFixed(2)}
-        </p>
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Invoice Records</title>
+          <style>
+            body { 
+              font-family: 'Helvetica', Arial, sans-serif; 
+              margin: 20px; 
+              color: #333; 
+              line-height: 1.4;
+            }
+            .logo-section {
+              text-align: center;
+              margin-bottom: 25px;
+              padding: 15px 0;
+            }
+            .chefflow-logo {
+              display: inline-block;
+              font-size: 36px;
+              font-weight: 700;
+              color: #2563eb;
+              text-decoration: none;
+              font-family: 'Helvetica', Arial, sans-serif;
+              letter-spacing: -1px;
+              margin-bottom: 8px;
+            }
+            .chef-icon {
+              font-size: 32px;
+              margin-right: 8px;
+              vertical-align: middle;
+            }
+            .tagline {
+              color: #6b7280;
+              font-size: 12px;
+              font-style: italic;
+              margin-top: 5px;
+            }
+            .header { 
+              text-align: center; 
+              margin-bottom: 30px; 
+              border-bottom: 2px solid #2563eb;
+              padding: 20px 0;
+              background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+              border-radius: 8px;
+            }
+            .header h1 { 
+              color: #2563eb; 
+              font-size: 28px; 
+              margin: 15px 0 10px 0;
+              font-weight: 600;
+            }
+            .header-info { 
+              color: #666; 
+              font-size: 14px; 
+            }
+            .summary-box {
+              background-color: #f8fafc;
+              border: 1px solid #e2e8f0;
+              border-radius: 8px;
+              padding: 15px;
+              margin: 20px 0;
+              text-align: center;
+            }
+            .summary-box h3 {
+              color: #2563eb;
+              margin: 0 0 10px 0;
+              font-size: 18px;
+            }
+            .invoice-table { 
+              width: 100%; 
+              border-collapse: collapse; 
+              margin: 20px 0;
+              box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+              border-radius: 8px;
+              overflow: hidden;
+            }
+            .invoice-table th { 
+              background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+              color: white; 
+              font-weight: 600; 
+              font-size: 16px;
+              padding: 18px 14px; 
+              text-align: center;
+              border: none;
+            }
+            .invoice-table th:first-child { 
+              text-align: left;
+              border-radius: 8px 0 0 0; 
+            }
+            .invoice-table th:last-child { border-radius: 0 8px 0 0; }
+            .invoice-table td { 
+              padding: 14px 12px; 
+              border-bottom: 1px solid #f1f5f9;
+              font-size: 15px;
+              text-align: center;
+            }
+            .invoice-table td:first-child {
+              text-align: left;
+            }
+            .invoice-table tr:nth-child(even) { 
+              background-color: #f8fafc; 
+            }
+            .invoice-table tr:hover { 
+              background-color: #e0f2fe; 
+            }
+            .amount-cell { 
+              text-align: center; 
+              font-weight: 600; 
+              color: #059669;
+              font-size: 16px;
+            }
+            .date-cell { 
+              color: #6b7280;
+              font-size: 14px;
+              text-align: center;
+            }
+            .supplier-cell {
+              font-weight: 500;
+              color: #374151;
+              text-align: center;
+              font-size: 15px;
+            }
+            .invoice-number {
+              font-family: 'Courier New', monospace;
+              background-color: #eff6ff;
+              padding: 6px 10px;
+              border-radius: 4px;
+              font-size: 14px;
+              color: #1d4ed8;
+              font-weight: 600;
+            }
+            .totals-row { 
+              background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+              color: white; 
+              font-weight: 700;
+              border-top: 3px solid #15803d;
+            }
+            .totals-row td { 
+              padding: 16px 12px;
+              border: none;
+              font-size: 15px;
+            }
+            .total-amount {
+              font-size: 20px;
+              text-align: center;
+            }
+            .footer {
+              margin-top: 30px;
+              padding-top: 20px;
+              border-top: 1px solid #e5e7eb;
+              text-align: center;
+              color: #6b7280;
+              font-size: 12px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="logo-section">
+            <div class="chefflow-logo">
+              <span class="chef-icon">👨‍🍳</span>ChefFlow
+            </div>
+            <div class="tagline">Restaurant Management System</div>
+          </div>
+          
+          <div class="header">
+            <h1>📋 Invoice Records Report</h1>
+            <div class="header-info">
+              <strong>Generated:</strong> ${new Date().toLocaleDateString('en-GB', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              })}<br>
+              <strong>Period:</strong> ${startDate ? startDate.toLocaleDateString('en-GB') : ''} - ${endDate ? endDate.toLocaleDateString('en-GB') : ''}
+            </div>
+          </div>
+
+          <div class="summary-box">
+            <h3>📊 Summary</h3>
+            <p><strong>${invoices.length}</strong> invoice${invoices.length === 1 ? '' : 's'} • Total Value: <strong style="color: #16a34a;">£${totalAmount.toFixed(2)}</strong></p>
+          </div>
+
+          <table class="invoice-table">
+            <thead>
+              <tr>
+                <th style="width: 30%;">Invoice Number</th>
+                <th style="width: 35%;">Supplier</th>
+                <th style="width: 20%;">Amount</th>
+                <th style="width: 15%;">Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${invoices.map((inv, index) => `
+                <tr>
+                  <td><span class="invoice-number">${inv.invoiceNumber || `INV-${String(index + 1).padStart(3, '0')}`}</span></td>
+                  <td class="supplier-cell">${inv.supplier || 'Unknown Supplier'}</td>
+                  <td class="amount-cell">£${parseFloat(inv.amount || 0).toFixed(2)}</td>
+                  <td class="date-cell">${inv.date ? new Date(inv.date).toLocaleDateString('en-GB', { 
+                    day: '2-digit', 
+                    month: 'short', 
+                    year: 'numeric' 
+                  }) : 'N/A'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="2" style="text-align: right; font-size: 18px;">
+                  <strong>📋 GRAND TOTAL (${invoices.length} invoice${invoices.length === 1 ? '' : 's'})</strong>
+                </td>
+                <td class="total-amount" style="font-size: 20px;">
+                  <strong>£${totalAmount.toFixed(2)}</strong>
+                </td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <div class="footer">
+            <p>This report was automatically generated by <strong>ChefFlow</strong> restaurant management system.<br>
+            All amounts are in British Pounds (GBP). Report generated at ${new Date().toLocaleTimeString('en-GB')}.</p>
+          </div>
+        </body>
+        </html>
       `;
 
       // Generate PDF locally first
