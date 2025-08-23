@@ -480,13 +480,31 @@ export default function FridgeTempLogsScreen({ navigation }) {
                                 setLogs(prev => [...prev, newLog]);
                               }
                               
-                              // Use handleSetTemp for each changed value
-                              if (amChanged && currentLogId) {
-                                await handleSetTemp(fridgeName, currentLogId, 'am', amValue);
+                              // Update both values in a single operation to avoid race conditions
+                              const updateData = {};
+                              if (amChanged) {
+                                updateData['temps.am'] = amValue;
+                              }
+                              if (pmChanged) {
+                                updateData['temps.pm'] = pmValue;
                               }
                               
-                              if (pmChanged && currentLogId) {
-                                await handleSetTemp(fridgeName, currentLogId, 'pm', pmValue);
+                              if (Object.keys(updateData).length > 0 && currentLogId) {
+                                await updateDoc(getRestaurantDoc(restaurantId, "fridgelogs", currentLogId), updateData);
+                                
+                                // Update local state
+                                setLogs(prev =>
+                                  prev.map(l =>
+                                    l.id === currentLogId ? { 
+                                      ...l, 
+                                      temps: { 
+                                        ...l.temps, 
+                                        ...(amChanged ? { am: amValue !== '' ? amValue : '' } : {}),
+                                        ...(pmChanged ? { pm: pmValue !== '' ? pmValue : '' } : {})
+                                      } 
+                                    } : l
+                                  )
+                                );
                               }
                               
                               // Clear input values

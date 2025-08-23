@@ -162,7 +162,7 @@ export default function DeliveryTempLogsScreen({ navigation }) {
 
   // Create or update delivery log for a supplier
   const handleCreateOrUpdateLog = async (supplierName) => {
-    if (!restaurantId || !auth.currentUser) return;
+    if (!restaurantId || !auth.currentUser) return null;
     
     try {
       // Check if a log already exists for this supplier today
@@ -170,19 +170,35 @@ export default function DeliveryTempLogsScreen({ navigation }) {
       
       if (!existingLog) {
         // Create new log
-        await addDoc(getRestaurantCollection(restaurantId, "deliverylogs"), {
+        const selectedDateTimestamp = new Date(selectedDate);
+        selectedDateTimestamp.setHours(12, 0, 0, 0);
+        
+        const newLogRef = await addDoc(getRestaurantCollection(restaurantId, "deliverylogs"), {
           supplier: supplierName,
-          createdAt: serverTimestamp(),
+          createdAt: selectedDateTimestamp,
           createdBy: auth.currentUser.uid,
           restaurantId: restaurantId,
           temps: { frozen: "", chilled: "" },
         });
         
-        // Refresh logs
-        await fetchLogs();
+        // Add the new log to local state immediately
+        const newLog = {
+          id: newLogRef.id,
+          supplier: supplierName,
+          createdAt: selectedDateTimestamp,
+          temps: { frozen: "", chilled: "" },
+          isPlaceholder: false,
+        };
+        
+        setLogs(prev => [...prev, newLog]);
+        
+        return newLogRef.id; // Return the new log ID
       }
+      
+      return existingLog.id; // Return existing log ID
     } catch (error) {
       console.error("Error creating delivery log:", error);
+      return null;
     }
   };
 
@@ -461,21 +477,35 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                               
                               // If no existing log, create one first
                               if (!currentLogId) {
-                                await handleCreateOrUpdateLog(supplierName);
-                                // Refresh to get the newly created log
-                                await fetchLogs();
-                                const newLog = logs.find(l => l.supplier === supplierName);
-                                currentLogId = newLog?.id;
+                                currentLogId = await handleCreateOrUpdateLog(supplierName);
                               }
                               
-                              // Use handleSetTemp for each changed value
-                              if (frozenChanged && currentLogId) {
+                              // Update both values in a single operation to avoid race conditions
+                              const updateData = {};
+                              if (frozenChanged) {
                                 const processedFrozenValue = frozenValue !== '' ? (frozenValue.startsWith('-') ? frozenValue : `-${frozenValue}`) : '';
-                                await handleSetTemp(supplierName, currentLogId, 'frozen', processedFrozenValue);
+                                updateData['temps.frozen'] = processedFrozenValue;
+                              }
+                              if (chilledChanged) {
+                                updateData['temps.chilled'] = chilledValue;
                               }
                               
-                              if (chilledChanged && currentLogId) {
-                                await handleSetTemp(supplierName, currentLogId, 'chilled', chilledValue);
+                              if (Object.keys(updateData).length > 0 && currentLogId) {
+                                await updateDoc(getRestaurantDoc(restaurantId, "deliverylogs", currentLogId), updateData);
+                                
+                                // Update local state
+                                setLogs(prev =>
+                                  prev.map(l =>
+                                    l.id === currentLogId ? { 
+                                      ...l, 
+                                      temps: { 
+                                        ...l.temps, 
+                                        ...(frozenChanged ? { frozen: frozenValue !== '' ? (frozenValue.startsWith('-') ? frozenValue : `-${frozenValue}`) : '' } : {}),
+                                        ...(chilledChanged ? { chilled: chilledValue !== '' ? chilledValue : '' } : {})
+                                      } 
+                                    } : l
+                                  )
+                                );
                               }
                               
                               // Clear input values
