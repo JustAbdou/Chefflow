@@ -161,8 +161,14 @@ export default function FridgeTempLogsScreen({ navigation }) {
         newInputValues[`${log.id}-pm`] = log.temps.pm;
       }
     });
-    setInputValues(prev => ({ ...prev, ...newInputValues }));
+    // Replace completely instead of merging to avoid stale values
+    setInputValues(newInputValues);
   }, [logs]);
+
+  // Clear input values when date changes
+  useEffect(() => {
+    setInputValues({});
+  }, [selectedDate]);
 
   // Initialize animation values when fridges are loaded
   useEffect(() => {

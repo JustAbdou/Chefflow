@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   RefreshControl,
   KeyboardAvoidingView,
   Platform,
+  Animated,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Swipeable } from "react-native-gesture-handler";
@@ -35,17 +36,21 @@ export default function DeliveryTempLogsScreen({ navigation }) {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [inputValues, setInputValues] = useState({});
+  const animationRefs = useRef({});
 
   // Hide Android navigation bar
   const navigationBar = useNavigationBar();
   navigationBar.useHidden(); // Use hidden mode for complete immersion
 
   // Date formatting
-  const today = new Date();
-  const dayName = today.toLocaleDateString(undefined, { weekday: "long" });
-  const monthName = today.toLocaleDateString(undefined, { month: "long" });
-  const dayNum = today.getDate();
-  const todayString = `${dayName}, ${monthName} ${dayNum}`;
+  const formatSelectedDate = (date) => {
+    const dayName = date.toLocaleDateString(undefined, { weekday: "long" });
+    const monthName = date.toLocaleDateString(undefined, { month: "long" });
+    const dayNum = date.getDate();
+    return `${dayName}, ${monthName} ${dayNum}`;
+  };
+
+  const todayString = formatSelectedDate(selectedDate);
 
   // Fetch suppliers from Firestore
   const fetchSuppliers = async () => {
@@ -121,8 +126,21 @@ export default function DeliveryTempLogsScreen({ navigation }) {
         newInputValues[`${log.id}-chilled`] = log.temps.chilled;
       }
     });
-    setInputValues(prev => ({ ...prev, ...newInputValues }));
+    // Replace completely instead of merging to avoid stale values
+    setInputValues(newInputValues);
   }, [logs]);
+
+  // Clear input values when date changes
+  useEffect(() => {
+    setInputValues({});
+  }, [selectedDate]);
+
+  // Initialize animation values when suppliers are loaded
+  useEffect(() => {
+    suppliers.forEach(supplierName => {
+      getAnimationValue(supplierName);
+    });
+  }, [suppliers]);
 
   // Fetch data from Firestore
   useEffect(() => {
@@ -247,6 +265,28 @@ export default function DeliveryTempLogsScreen({ navigation }) {
     setShowDatePicker(false);
   };
 
+  // Get or create animation value for a supplier
+  const getAnimationValue = (supplierName) => {
+    if (!animationRefs.current[supplierName]) {
+      animationRefs.current[supplierName] = new Animated.Value(0);
+    }
+    return animationRefs.current[supplierName];
+  };
+
+  // Toggle supplier expansion with animation
+  const toggleSupplierExpansion = (supplierName) => {
+    const isCurrentlyExpanded = expanded[supplierName];
+    const animationValue = getAnimationValue(supplierName);
+    
+    setExpanded(prev => ({ ...prev, [supplierName]: !isCurrentlyExpanded }));
+    
+    Animated.timing(animationValue, {
+      toValue: isCurrentlyExpanded ? 0 : 1,
+      duration: 250,
+      useNativeDriver: false,
+    }).start();
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView 
@@ -272,17 +312,18 @@ export default function DeliveryTempLogsScreen({ navigation }) {
           <TouchableOpacity
             style={styles.dateSelector}
             onPress={() => setShowDatePicker(true)}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
           >
-            <Ionicons name="calendar-outline" size={20} color={Colors.primary} />
-            <Text style={styles.dateText}>
-              {selectedDate.toLocaleDateString(undefined, { 
-                weekday: "long", 
-                month: "long", 
-                day: "numeric" 
-              })}
-            </Text>
-            <Ionicons name="chevron-down" size={16} color={Colors.gray400} />
+            <View style={styles.dateIconContainer}>
+              <Ionicons name="calendar" size={22} color={Colors.primary} />
+            </View>
+            <View style={styles.dateContent}>
+              <Text style={styles.dateLabel}>Selected Date</Text>
+              <Text style={styles.dateText}>{todayString}</Text>
+            </View>
+            <View style={styles.chevronContainer}>
+              <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
+            </View>
           </TouchableOpacity>
         </View>
 
@@ -304,13 +345,14 @@ export default function DeliveryTempLogsScreen({ navigation }) {
               const isExpanded = expanded[supplierName];
               
               return (
-                <View key={index} style={styles.supplierCard}>
+                <TouchableOpacity 
+                  key={index} 
+                  style={styles.supplierCard}
+                  onPress={() => toggleSupplierExpansion(supplierName)}
+                  activeOpacity={0.8}
+                >
                   {/* Supplier Header */}
-                  <TouchableOpacity
-                    style={styles.supplierHeader}
-                    onPress={() => setExpanded(prev => ({ ...prev, [supplierName]: !prev[supplierName] }))}
-                    activeOpacity={0.8}
-                  >
+                  <View style={styles.supplierHeader}>
                     <View style={styles.supplierInfo}>
                                                   <Ionicons name="car-outline" size={24} color={Colors.primary} />
                       <Text style={styles.supplierName}>{supplierName}</Text>
@@ -333,26 +375,41 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                         color={Colors.gray400} 
                       />
                     </View>
-                  </TouchableOpacity>
+                  </View>
 
                   {/* Expanded Temperature Inputs */}
-                  {isExpanded && (
-                    <View style={styles.temperatureInputs}>
+                  <Animated.View 
+                    style={[
+                      styles.temperatureInputs,
+                      {
+                        height: getAnimationValue(supplierName).interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, 380], // Height for delivery temp inputs with current values
+                        }),
+                        opacity: getAnimationValue(supplierName),
+                        overflow: 'hidden',
+                      }
+                    ]}
+                    onStartShouldSetResponder={() => true}
+                  >
                       {/* Frozen Items Temperature */}
                       <View style={styles.tempInputGroup}>
                         <Text style={styles.tempLabel}>Frozen Items Temperature</Text>
                         <View style={styles.tempInputContainer}>
                           <TextInput
                             style={styles.tempInput}
-                            value={inputValues[`${log?.id || 'new'}-frozen`] !== undefined ? inputValues[`${log?.id || 'new'}-frozen`] : (log?.temps?.frozen || '')}
+                            value={inputValues[`${log?.id || `placeholder-${supplierName}`}-frozen`] !== undefined ? inputValues[`${log?.id || `placeholder-${supplierName}`}-frozen`] : (log?.temps?.frozen || '')}
                             onChangeText={(value) => {
-                              const inputKey = `${log?.id || 'new'}-frozen`;
-                              console.log('Frozen input changed:', { value, inputKey, logId: log?.id });
-                              setInputValues(prev => ({ ...prev, [inputKey]: value }));
+                              // Only allow numbers, decimal point, and negative sign
+                              const numericValue = value.replace(/[^0-9.-]/g, '');
+                              const inputKey = `${log?.id || `placeholder-${supplierName}`}-frozen`;
+                              console.log('Frozen input changed:', { value: numericValue, inputKey, logId: log?.id, supplierName });
+                              setInputValues(prev => ({ ...prev, [inputKey]: numericValue }));
                             }}
-                            placeholder="Enter frozen temp"
+                            placeholder="0"
                             placeholderTextColor={Colors.gray400}
-                            keyboardType="numeric"
+                            keyboardType="decimal-pad"
+                            inputMode="decimal"
                           />
                           <Text style={styles.tempUnit}>°C</Text>
                         </View>
@@ -364,15 +421,18 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                         <View style={styles.tempInputContainer}>
                           <TextInput
                             style={styles.tempInput}
-                            value={inputValues[`${log?.id || 'new'}-chilled`] !== undefined ? inputValues[`${log?.id || 'new'}-chilled`] : (log?.temps?.chilled || '')}
+                            value={inputValues[`${log?.id || `placeholder-${supplierName}`}-chilled`] !== undefined ? inputValues[`${log?.id || `placeholder-${supplierName}`}-chilled`] : (log?.temps?.chilled || '')}
                             onChangeText={(value) => {
-                              const inputKey = `${log?.id || 'new'}-chilled`;
-                              console.log('Chilled input changed:', { value, inputKey, logId: log?.id });
-                              setInputValues(prev => ({ ...prev, [inputKey]: value }));
+                              // Only allow numbers, decimal point, and negative sign
+                              const numericValue = value.replace(/[^0-9.-]/g, '');
+                              const inputKey = `${log?.id || `placeholder-${supplierName}`}-chilled`;
+                              console.log('Chilled input changed:', { value: numericValue, inputKey, logId: log?.id, supplierName });
+                              setInputValues(prev => ({ ...prev, [inputKey]: numericValue }));
                             }}
-                            placeholder="Enter chilled temp"
+                            placeholder="0"
                             placeholderTextColor={Colors.gray400}
-                            keyboardType="numeric"
+                            keyboardType="decimal-pad"
+                            inputMode="decimal"
                           />
                           <Text style={styles.tempUnit}>°C</Text>
                         </View>
@@ -381,9 +441,10 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                       {/* Save Button */}
                       <TouchableOpacity
                         style={styles.saveButton}
-                        onPress={async () => {
-                          const frozenValue = inputValues[`${log?.id || 'new'}-frozen`] || '';
-                          const chilledValue = inputValues[`${log?.id || 'new'}-chilled`] || '';
+                        onPress={async (e) => {
+                          e.stopPropagation();
+                          const frozenValue = inputValues[`${log?.id || `placeholder-${supplierName}`}-frozen`] || '';
+                          const chilledValue = inputValues[`${log?.id || `placeholder-${supplierName}`}-chilled`] || '';
                           
                           // Get original values for comparison
                           const originalFrozen = log?.temps?.frozen || '';
@@ -472,8 +533,9 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                                 // Clear input values
                                 setInputValues(prev => {
                                   const newValues = { ...prev };
-                                  delete newValues[`${currentLogId}-frozen`];
-                                  delete newValues[`${currentLogId}-chilled`];
+                                  const keyBase = currentLogId || `placeholder-${supplierName}`;
+                                  delete newValues[`${keyBase}-frozen`];
+                                  delete newValues[`${keyBase}-chilled`];
                                   return newValues;
                                 });
                               }
@@ -507,9 +569,8 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                           </View>
                         </View>
                       )}
-                    </View>
-                  )}
-                </View>
+                  </Animated.View>
+                </TouchableOpacity>
               );
             })
           )}
@@ -565,21 +626,60 @@ const styles = StyleSheet.create({
   },
   dateSection: {
     paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.md,
+    paddingBottom: Spacing.lg,
   },
   dateSelector: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f0f2f5",
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    backgroundColor: "#f8fafc",
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.md,
+    borderRadius: 16,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  dateIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  dateContent: {
+    flex: 1,
+    marginLeft: Spacing.md,
+  },
+  dateLabel: {
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+    fontFamily: Typography.fontRegular,
+    marginBottom: 2,
   },
   dateText: {
-    fontSize: Typography.md,
+    fontSize: Typography.lg,
     color: Colors.textPrimary,
-    marginLeft: Spacing.sm,
-    marginRight: Spacing.sm,
+    fontFamily: Typography.fontBold,
+  },
+  chevronContainer: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
   },
   suppliersSection: {
     paddingHorizontal: Spacing.lg,
