@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, RefreshControl, Alert } from "react-native";
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, RefreshControl, Alert, Modal } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Swipeable } from "react-native-gesture-handler";
 import { Colors } from "../../constants/Colors";
@@ -20,6 +20,8 @@ export default function PrepListsScreen() {
   const navigation = useNavigation();
   const [prepItems, setPrepItems] = useState([]);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showFlagModal, setShowFlagModal] = useState(false);
+  const [selectedItemId, setSelectedItemId] = useState(null);
   const [currentDate, setCurrentDate] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -214,11 +216,12 @@ export default function PrepListsScreen() {
       const docRef = await addDoc(getRestaurantCollection(restaurantId, "preplist"), {
         name: itemName,
         done: false, // Default to not done
+        flagColor: null, // Default to no flag
         createdAt: serverTimestamp(),
         createdBy: userInfo,
       });
       setPrepItems((items) => [
-        { id: docRef.id, name: itemName, done: false, completed: false, flagged: false, createdBy: userInfo },
+        { id: docRef.id, name: itemName, done: false, completed: false, flagColor: null, createdBy: userInfo },
         ...items,
       ]);
       setShowAddModal(false);
@@ -228,20 +231,30 @@ export default function PrepListsScreen() {
   };
 
   // Toggle urgent flag in state and Firestore
-  const toggleUrgent = async (id, currentUrgent) => {
+  const setFlag = async (itemId, flagColor) => {
     if (!restaurantId) return;
     
     setPrepItems((items) =>
       items.map((item) =>
-        item.id === id ? { ...item, urgent: !currentUrgent } : item
+        item.id === itemId ? { ...item, flagColor: flagColor } : item
       )
     );
+    
     try {
-      const itemRef = getRestaurantDoc(restaurantId, "preplist", id);
-      await updateDoc(itemRef, { urgent: !currentUrgent });
+      const itemRef = getRestaurantDoc(restaurantId, "preplist", itemId);
+      await updateDoc(itemRef, { flagColor: flagColor });
     } catch (error) {
-      console.error("Error updating urgent flag:", error);
+      console.error("Error updating flag:", error);
     }
+    
+    setShowFlagModal(false);
+    setSelectedItemId(null);
+  };
+
+  // Open flag selection modal
+  const openFlagSelector = (itemId) => {
+    setSelectedItemId(itemId);
+    setShowFlagModal(true);
   };
 
   // Delete individual item
@@ -272,7 +285,6 @@ export default function PrepListsScreen() {
             if (!restaurantId) return;
             
             try {
-              // Delete all items from Firestore
               const deletePromises = prepItems.map(item =>
                 deleteDoc(getRestaurantDoc(restaurantId, "preplist", item.id))
               );
@@ -331,14 +343,16 @@ export default function PrepListsScreen() {
           style={styles.flagContainer}
           onPress={(e) => {
             e.stopPropagation();
-            toggleUrgent(item.id, item.urgent);
+            openFlagSelector(item.id);
           }} 
           activeOpacity={0.7}
         >
           <Text
             style={[
               styles.flagIcon,
-              { color: item.urgent ? "#F7B801" : Colors.gray200 }
+              { color: item.flagColor === 'red' ? "#FF3B30" : 
+                       item.flagColor === 'orange' ? "#F7B801" : 
+                       Colors.gray200 }
             ]}
           >
             ⚑
@@ -348,14 +362,9 @@ export default function PrepListsScreen() {
     </Swipeable>
   );
 
-  // Sort prep items: urgent items first, then by creation date (newest first)
+  // Sort prep items by creation date (newest first) - removed urgent priority
   const sortedPrepItems = [...prepItems].sort((a, b) => {
-    // First priority: urgent items
-    if (a.urgent !== b.urgent) {
-      return a.urgent ? -1 : 1;
-    }
-    
-    // Second priority: creation date and time (newest first)
+    // Sort by creation date and time (newest first)
     let aTime, bTime;
     
     // Handle Firestore timestamps properly
@@ -462,6 +471,7 @@ export default function PrepListsScreen() {
       <TouchableOpacity style={styles.fab} onPress={() => setShowAddModal(true)} activeOpacity={0.85}>
         <Ionicons name="add" size={38} color="#fff" />
       </TouchableOpacity>
+      
       {/* Add Item Modal */}
       {showAddModal && (
         <AddPrepItemModal
@@ -470,6 +480,60 @@ export default function PrepListsScreen() {
           onAdd={addNewItem}
           date={currentDate}
         />
+      )}
+
+      {/* Flag Selection Modal */}
+      {showFlagModal && (
+        <Modal visible={showFlagModal} transparent animationType="slide" onRequestClose={() => setShowFlagModal(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableOpacity 
+              style={styles.modalBackdrop} 
+              onPress={() => setShowFlagModal(false)} 
+              activeOpacity={1} 
+            />
+            <View style={styles.flagModal}>
+              <View style={styles.flagModalHeader}>
+                <Text style={styles.flagModalTitle}>Select Flag Color</Text>
+                <TouchableOpacity 
+                  style={styles.flagModalClose} 
+                  onPress={() => setShowFlagModal(false)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.flagModalCloseText}>×</Text>
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.flagOptions}>
+                <TouchableOpacity 
+                  style={styles.flagOption}
+                  onPress={() => setFlag(selectedItemId, 'red')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.flagIcon, { color: "#FF3B30" }]}>⚑</Text>
+                  <Text style={styles.flagOptionText}>x86</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.flagOption}
+                  onPress={() => setFlag(selectedItemId, 'orange')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.flagIcon, { color: "#F7B801" }]}>⚑</Text>
+                  <Text style={styles.flagOptionText}>x85</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.flagOption}
+                  onPress={() => setFlag(selectedItemId, null)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.flagIcon, { color: Colors.gray200 }]}>⚑</Text>
+                  <Text style={styles.flagOptionText}>No Flag</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       )}
     </SafeAreaView>
   );
@@ -652,5 +716,63 @@ const styles = StyleSheet.create({
     fontSize: Typography.sm,
     fontWeight: Typography.bold,
     marginTop: 4,
+  },
+  // Flag Modal Styles
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  modalBackdrop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
+  flagModal: {
+    backgroundColor: Colors.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.xl,
+    minHeight: 280,
+  },
+  flagModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.xl,
+  },
+  flagModalTitle: {
+    fontSize: Typography.lg,
+    fontWeight: Typography.bold,
+    color: Colors.textPrimary,
+  },
+  flagModalClose: {
+    padding: Spacing.xs,
+  },
+  flagModalCloseText: {
+    fontSize: 24,
+    color: Colors.textSecondary,
+    fontWeight: "300",
+  },
+  flagOptions: {
+    gap: Spacing.md,
+  },
+  flagOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.md,
+    backgroundColor: Colors.gray50,
+    borderRadius: 12,
+  },
+  flagOptionText: {
+    fontSize: Typography.base,
+    color: Colors.textPrimary,
+    marginLeft: Spacing.md,
+    fontWeight: Typography.medium,
   },
 });

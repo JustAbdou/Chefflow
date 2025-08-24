@@ -191,11 +191,18 @@ const CoolingReheatingScreen = ({ navigation }) => {
           <TouchableOpacity
             style={styles.dateSelector}
             onPress={() => setShowDatePicker(true)}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
           >
-            <Ionicons name="calendar-outline" size={20} color={Colors.primary} />
-            <Text style={styles.dateText}>{todayString}</Text>
-            <Ionicons name="chevron-down" size={16} color={Colors.gray400} />
+            <View style={styles.dateIconContainer}>
+              <Ionicons name="calendar" size={22} color={Colors.primary} />
+            </View>
+            <View style={styles.dateContent}>
+              <Text style={styles.dateLabel}>Selected Date</Text>
+              <Text style={styles.dateText}>{todayString}</Text>
+            </View>
+            <View style={styles.chevronContainer}>
+              <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
+            </View>
           </TouchableOpacity>
         </View>
 
@@ -359,62 +366,91 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.md + getAndroidTitleMargin(),
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gray200,
+    paddingTop: Spacing.lg + getAndroidTitleMargin(),
   },
   backButton: {
-    padding: Spacing.sm,
-    marginLeft: -Spacing.sm,
+    padding: Spacing.xs,
   },
   backArrow: {
-    fontSize: 32,
+    fontSize: 35,
     color: Colors.textPrimary,
-    fontWeight: 'bold',
+    fontWeight: "300",
   },
   headerInfo: {
     flex: 1,
-    alignItems: 'center',
+    marginLeft: Spacing.md,
   },
   title: {
-    ...Typography.h3,
+    fontSize: 22,
+    fontFamily: Typography.fontBold,
     color: Colors.textPrimary,
-    fontWeight: '600',
   },
   subtitle: {
-    ...Typography.body,
-    color: Colors.gray400,
-    marginTop: 2,
+    fontSize: Typography.md,
+    color: Colors.textSecondary,
+    marginTop: Spacing.xs,
   },
   dateSection: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.lg,
   },
   dateSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.white,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.md,
     borderRadius: 16,
-    borderWidth: 2,
-    borderColor: Colors.primary,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  dateIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  dateContent: {
+    flex: 1,
+    marginLeft: Spacing.md,
+  },
+  dateLabel: {
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+    fontFamily: Typography.fontRegular,
+    marginBottom: 2,
   },
   dateText: {
-    ...Typography.h4,
+    fontSize: Typography.lg,
     color: Colors.textPrimary,
-    fontWeight: '600',
-    marginHorizontal: Spacing.sm,
+    fontFamily: Typography.fontBold,
+  },
+  chevronContainer: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
   },
   formCard: {
     backgroundColor: Colors.white,

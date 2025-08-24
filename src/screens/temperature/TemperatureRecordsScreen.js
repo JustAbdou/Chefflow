@@ -30,25 +30,53 @@ const TemperatureRecordsScreen = ({ navigation }) => {
     
     setLoading(true);
     try {
-      // Fetch fridge logs
-      const fridgeQuery = query(getRestaurantCollection(restaurantId, "fridgelogs"), orderBy("createdAt", "desc"));
-      const fridgeSnapshot = await getDocs(fridgeQuery);
-      const fridgeItems = fridgeSnapshot.docs.map(doc => ({
-        id: doc.id,
-        type: 'fridge',
-        ...doc.data(),
-      }));
-      setFridgeLogs(fridgeItems);
+      // Fetch fridge logs using the same approach as FridgeScreen
+      const fridgeLogsCollection = getRestaurantCollection(restaurantId, 'fridgelogs');
+      const fridgeLogsSnapshot = await getDocs(fridgeLogsCollection);
+      
+      let allFridgeLogs = [];
+      fridgeLogsSnapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        allFridgeLogs.push({
+          id: docSnap.id,
+          type: 'fridge',
+          ...data,
+        });
+      });
+      
+      // Sort fridge logs by createdAt (newest first)
+      allFridgeLogs.sort((a, b) => {
+        if (a.createdAt && b.createdAt) {
+          return b.createdAt.seconds - a.createdAt.seconds;
+        }
+        return 0;
+      });
+      
+      setFridgeLogs(allFridgeLogs);
 
-      // Fetch delivery logs
-      const deliveryQuery = query(getRestaurantCollection(restaurantId, "deliverylogs"), orderBy("createdAt", "desc"));
-      const deliverySnapshot = await getDocs(deliveryQuery);
-      const deliveryItems = deliverySnapshot.docs.map(doc => ({
-        id: doc.id,
-        type: 'delivery',
-        ...doc.data(),
-      }));
-      setDeliveryLogs(deliveryItems);
+      // Fetch delivery logs using the same approach as DeliveryScreen
+      const deliveryLogsCollection = getRestaurantCollection(restaurantId, 'deliverylogs');
+      const deliveryLogsSnapshot = await getDocs(deliveryLogsCollection);
+      
+      let allDeliveryLogs = [];
+      deliveryLogsSnapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        allDeliveryLogs.push({
+          id: docSnap.id,
+          type: 'delivery',
+          ...data,
+        });
+      });
+      
+      // Sort delivery logs by createdAt (newest first)
+      allDeliveryLogs.sort((a, b) => {
+        if (a.createdAt && b.createdAt) {
+          return b.createdAt.seconds - a.createdAt.seconds;
+        }
+        return 0;
+      });
+      
+      setDeliveryLogs(allDeliveryLogs);
     } catch (error) {
       console.error("Error fetching temperature records:", error);
     } finally {
@@ -67,46 +95,62 @@ const TemperatureRecordsScreen = ({ navigation }) => {
     setRefreshing(false);
   }, []);
 
-  const renderFridgeItem = ({ item }) => (
-    <View style={styles.recordCard}>
-      <View style={styles.recordInfo}>
-        <Text style={styles.recordType}>Fridge Temperature</Text>
-        <Text style={styles.recordLocation}>{item.fridge || 'Unknown Fridge'}</Text>
-        <Text style={styles.recordDate}>
-          {item.createdAt?.seconds 
-            ? new Date(item.createdAt.seconds * 1000).toLocaleDateString()
-            : 'Unknown Date'
-          }
-        </Text>
+  const renderFridgeItem = ({ item }) => {
+    return (
+      <View style={styles.recordCard}>
+        <View style={styles.recordInfo}>
+          <Text style={styles.recordType}>Fridge Temperature</Text>
+          <Text style={styles.recordLocation}>{item.fridgeName || 'Unknown Fridge'}</Text>
+          <Text style={styles.recordDate}>
+            {item.date || (item.createdAt?.seconds 
+              ? new Date(item.createdAt.seconds * 1000).toLocaleDateString()
+              : 'Unknown Date')
+            }
+          </Text>
+        </View>
+        <View style={styles.temperatureContainer}>
+          {item.temperatureAM && (
+            <Text style={styles.temperatureValue}>AM: {item.temperatureAM}°C</Text>
+          )}
+          {item.temperaturePM && (
+            <Text style={styles.temperatureSubValue}>PM: {item.temperaturePM}°C</Text>
+          )}
+          {!item.temperatureAM && !item.temperaturePM && (
+            <Text style={styles.temperatureValue}>--°C</Text>
+          )}
+          {item.done && (
+            <Ionicons name="checkmark-circle" size={20} color="#4CAF50" style={{ marginTop: 4 }} />
+          )}
+        </View>
       </View>
-      <View style={styles.temperatureContainer}>
-        <Text style={styles.temperatureValue}>{item.temperature}°C</Text>
-        {item.checked && (
-          <Ionicons name="checkmark-circle" size={20} color="#4CAF50" style={{ marginTop: 4 }} />
-        )}
-      </View>
-    </View>
-  );
+    );
+  };
 
   const renderDeliveryItem = ({ item }) => (
     <View style={styles.recordCard}>
       <View style={styles.recordInfo}>
         <Text style={styles.recordType}>Delivery Temperature</Text>
-        <Text style={styles.recordLocation}>{item.supplier || 'Unknown Supplier'}</Text>
+        <Text style={styles.recordLocation}>{item.supplierName || item.supplier || 'Unknown Supplier'}</Text>
         <Text style={styles.recordDate}>
-          {item.createdAt?.seconds 
+          {item.date || (item.createdAt?.seconds 
             ? new Date(item.createdAt.seconds * 1000).toLocaleDateString()
-            : 'Unknown Date'
+            : 'Unknown Date')
           }
         </Text>
       </View>
       <View style={styles.temperatureContainer}>
-        <Text style={styles.temperatureValue}>
-          {item.temps?.frozen ? `${item.temps.frozen}°C` : '--°C'}
-        </Text>
-        <Text style={styles.temperatureSubValue}>
-          {item.temps?.chilled ? `${item.temps.chilled}°C` : '--°C'}
-        </Text>
+        {item.frozen && (
+          <Text style={styles.temperatureValue}>Frozen: {item.frozen}°C</Text>
+        )}
+        {item.chilled && (
+          <Text style={styles.temperatureSubValue}>Chilled: {item.chilled}°C</Text>
+        )}
+        {!item.frozen && !item.chilled && (
+          <Text style={styles.temperatureValue}>--°C</Text>
+        )}
+        {item.done && (
+          <Ionicons name="checkmark-circle" size={20} color="#4CAF50" style={{ marginTop: 4 }} />
+        )}
       </View>
     </View>
   );
@@ -127,7 +171,7 @@ const TemperatureRecordsScreen = ({ navigation }) => {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Fridge Temperature Section */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Fridge Temperature Logs</Text>
+          <Text style={styles.sectionTitle}>Fridge Temperature Logs ({fridgeLogs.length})</Text>
           <TouchableOpacity onPress={() => navigation.navigate('TemperatureDownloads')}>
             <Text style={styles.download}>Download</Text>
           </TouchableOpacity>
@@ -145,7 +189,7 @@ const TemperatureRecordsScreen = ({ navigation }) => {
 
         {/* Delivery Temperature Section */}
         <View style={[styles.sectionHeader, { marginTop: Spacing.xl }]}>
-          <Text style={styles.sectionTitle}>Delivery Temperature Logs</Text>
+          <Text style={styles.sectionTitle}>Delivery Temperature Logs ({deliveryLogs.length})</Text>
         </View>
         
         <FlatList

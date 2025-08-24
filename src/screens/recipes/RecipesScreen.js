@@ -228,7 +228,15 @@ function RecipesScreen() {
                 activeOpacity={0.7}
                 onPress={() => navigation.navigate("RecipeDetail", { recipeId: recipe.id, category: recipe.category })}
               >
-                <Image source={{ uri: recipe.image }} style={styles.recipeImage} resizeMode="cover" />
+                <Image 
+                  source={{ 
+                    uri: Array.isArray(recipe.image) && recipe.image.length > 0 
+                      ? recipe.image[0] 
+                      : recipe.image || "https://placehold.co/200x200?text=No+Image" 
+                  }} 
+                  style={styles.recipeImage} 
+                  resizeMode="cover" 
+                />
                 <View style={styles.recipeInfo}>
                   <Text style={styles.recipeName}>
                     {recipe["recipe name"] || recipe.name || recipe.title || recipe.recipeName || "Untitled Recipe"}

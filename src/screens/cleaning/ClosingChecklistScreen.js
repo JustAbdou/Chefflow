@@ -10,6 +10,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from "../../constants/Colors";
 import { Typography } from "../../constants/Typography";
 import { Spacing } from "../../constants/Spacing";
@@ -63,66 +64,84 @@ export default function ClosingChecklistScreen({ navigation }) {
     }
   };
 
-  // Daily reset function - reset completed tasks after 24 hours
+  // Daily reset function - reset all tasks to false at 3 AM GMT+1 every day
   const performDailyReset = async () => {
     if (!restaurantId) return;
     
     try {
+      // Get current time in GMT+1 timezone
       const now = new Date();
-      const twentyFourHoursAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000));
+      const gmt1Now = new Date(now.getTime() + (60 * 60 * 1000)); // Add 1 hour for GMT+1
       
+      // Calculate today's 3 AM in GMT+1
+      const today3AM = new Date(gmt1Now);
+      today3AM.setHours(3, 0, 0, 0);
+      
+      // Check if we need to reset (current time is past 3 AM today)
+      const shouldReset = gmt1Now >= today3AM;
+      
+      if (!shouldReset) {
+        console.log('Daily reset not needed yet - current time is before 3 AM GMT+1');
+        return;
+      }
+      
+      // Get today's date string for tracking last reset
+      const todayDateString = today3AM.toISOString().split('T')[0]; // YYYY-MM-DD format
+      const lastResetKey = `lastClosingChecklistReset_${restaurantId}`;
+      
+      try {
+        const lastResetDate = await AsyncStorage.getItem(lastResetKey);
+        
+        // If we already reset today, don't reset again
+        if (lastResetDate === todayDateString) {
+          console.log('Daily reset already performed today');
+          return;
+        }
+      } catch (storageError) {
+        console.log('Could not read last reset date from storage, proceeding with reset');
+      }
+      
+      console.log('Performing daily reset at 3 AM GMT+1 - resetting all closing checklist tasks "done" boolean only');
+      
+      // Fetch ALL tasks directly from Firestore to ensure we reset everything
+      const snapshot = await getDocs(getRestaurantCollection(restaurantId, "closinglist"));
       const resetPromises = [];
       
-      for (const task of tasks) {
-        if (task.done && task.completedAt) {
-          let completedDate;
-          
-          // Handle different timestamp formats
-          if (task.completedAt.toDate) {
-            completedDate = task.completedAt.toDate();
-          } else if (task.completedAt.seconds) {
-            completedDate = new Date(task.completedAt.seconds * 1000);
-          } else {
-            completedDate = new Date(task.completedAt);
-          }
-          
-          // If task was completed more than 24 hours ago, reset it
-          if (completedDate < twentyFourHoursAgo) {
-            console.log(`Resetting cleaning task: ${task.title}`);
-            const resetPromise = updateDoc(getRestaurantDoc(restaurantId, "closinglist", task.id), {
-              done: false,
-              completedAt: null,
-            });
-            resetPromises.push(resetPromise);
-          }
+      // Reset ALL tasks to done: false (only reset the "done" boolean, keep the items)
+      snapshot.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.done) {
+          console.log(`Resetting closing checklist task "done" boolean: ${data.name || docSnap.id}`);
+          const resetPromise = updateDoc(getRestaurantDoc(restaurantId, "closinglist", docSnap.id), {
+            done: false,
+            completedAt: null,
+          });
+          resetPromises.push(resetPromise);
         }
-      }
+      });
       
       if (resetPromises.length > 0) {
         await Promise.all(resetPromises);
-        console.log(`Reset ${resetPromises.length} cleaning tasks`);
+        console.log(`Daily reset completed: Reset "done" boolean for ${resetPromises.length} closing checklist tasks to false`);
         
-        // Update local state
+        // Update local state - reset all tasks to not done (only change "done" boolean)
         setTasks(prevTasks =>
-          prevTasks.map(task => {
-            if (task.done && task.completedAt) {
-              let completedDate;
-              if (task.completedAt.toDate) {
-                completedDate = task.completedAt.toDate();
-              } else if (task.completedAt.seconds) {
-                completedDate = new Date(task.completedAt.seconds * 1000);
-              } else {
-                completedDate = new Date(task.completedAt);
-              }
-              
-              if (completedDate < twentyFourHoursAgo) {
-                return { ...task, done: false, completedAt: null };
-              }
-            }
-            return task;
-          })
+          prevTasks.map(task => ({
+            ...task,
+            done: false,
+            completedAt: null
+          }))
         );
       }
+      
+      // Store today's date as the last reset date
+      try {
+        await AsyncStorage.setItem(lastResetKey, todayDateString);
+        console.log(`Stored last reset date: ${todayDateString}`);
+      } catch (storageError) {
+        console.error('Could not store last reset date:', storageError);
+      }
+      
     } catch (error) {
       console.error('Error performing daily reset:', error);
     }

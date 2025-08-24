@@ -52,21 +52,33 @@ export default function DeliveryTempLogsScreen({ navigation }) {
 
   const todayString = formatSelectedDate(selectedDate);
 
-  // Fetch suppliers from Firestore
+  // Fetch suppliers from existing deliverylogs documents
   const fetchSuppliers = async () => {
     if (!restaurantId) return;
     
     try {
-      const suppliersDocRef = getRestaurantDoc(restaurantId, "suppliers", "suppliers");
-      const suppliersDoc = await getDoc(suppliersDocRef);
+      const deliveryLogsCollection = getRestaurantCollection(restaurantId, 'deliverylogs');
+      const logsSnapshot = await getDocs(deliveryLogsCollection);
       
-      if (suppliersDoc.exists() && suppliersDoc.data().names) {
-        setSuppliers(suppliersDoc.data().names);
-      } else {
-        setSuppliers([]);
-      }
+      // Extract unique supplier names from all logs
+      const uniqueSupplierNames = new Set();
+      logsSnapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.supplierName) {
+          uniqueSupplierNames.add(data.supplierName);
+        }
+        // Also check for legacy 'supplier' field
+        if (data.supplier) {
+          uniqueSupplierNames.add(data.supplier);
+        }
+      });
+      
+      // Convert Set to Array and sort alphabetically
+      const supplierNamesArray = Array.from(uniqueSupplierNames).sort();
+      console.log('Fetched supplier names from logs:', supplierNamesArray);
+      setSuppliers(supplierNamesArray);
     } catch (error) {
-      console.error("Error fetching suppliers:", error);
+      console.error("Error fetching supplier names from logs:", error);
       setSuppliers([]);
     }
   };
@@ -88,25 +100,36 @@ export default function DeliveryTempLogsScreen({ navigation }) {
         });
       });
       
+      console.log('All delivery logs fetched:', allLogs.length, allLogs);
+      
       // Filter logs for the selected date
-      const selectedDateStart = new Date(selectedDate);
-      selectedDateStart.setHours(0, 0, 0, 0);
-      const selectedDateEnd = new Date(selectedDate);
-      selectedDateEnd.setHours(23, 59, 59, 999);
+      const selectedDateString = selectedDate.toISOString().split('T')[0]; // Get YYYY-MM-DD format
+      console.log('Filtering for date:', selectedDateString);
       
       const filteredLogs = allLogs.filter(log => {
-        if (!log.createdAt) return false;
-        const logDate = log.createdAt.toDate ? log.createdAt.toDate() : new Date(log.createdAt.seconds * 1000);
-        const isInRange = logDate >= selectedDateStart && logDate <= selectedDateEnd;
-        return isInRange;
+        // Check if log.date matches selected date
+        if (log.date === selectedDateString) {
+          return true;
+        }
+        
+        // Fallback: check createdAt if date field is missing
+        if (!log.date && log.createdAt) {
+          const logDate = log.createdAt.toDate ? log.createdAt.toDate() : new Date(log.createdAt.seconds * 1000);
+          const logDateString = logDate.toISOString().split('T')[0];
+          return logDateString === selectedDateString;
+        }
+        
+        return false;
       });
       
-      // Sort by createdAt descending
+      console.log('Filtered delivery logs for selected date:', filteredLogs);
+      
+      // Sort logs by createdAt (newest first)
       filteredLogs.sort((a, b) => {
-        if (!a.createdAt || !b.createdAt) return 0;
-        const dateA = a.createdAt.toDate ? a.createdAt.toDate() : new Date(a.createdAt.seconds * 1000);
-        const dateB = b.createdAt.toDate ? b.createdAt.toDate() : new Date(b.createdAt.seconds * 1000);
-        return dateB - dateA;
+        if (a.createdAt && b.createdAt) {
+          return b.createdAt.seconds - a.createdAt.seconds;
+        }
+        return 0;
       });
       
       setLogs(filteredLogs);
@@ -119,11 +142,11 @@ export default function DeliveryTempLogsScreen({ navigation }) {
   useEffect(() => {
     const newInputValues = {};
     logs.forEach(log => {
-      if (log.temps?.frozen !== undefined) {
-        newInputValues[`${log.id}-frozen`] = log.temps.frozen;
+      if (log.frozen !== undefined) {
+        newInputValues[`${log.id}-frozen`] = log.frozen;
       }
-      if (log.temps?.chilled !== undefined) {
-        newInputValues[`${log.id}-chilled`] = log.temps.chilled;
+      if (log.chilled !== undefined) {
+        newInputValues[`${log.id}-chilled`] = log.chilled;
       }
     });
     // Replace completely instead of merging to avoid stale values
@@ -160,74 +183,6 @@ export default function DeliveryTempLogsScreen({ navigation }) {
     setRefreshing(false);
   };
 
-  // Create or update delivery log for a supplier
-  const handleCreateOrUpdateLog = async (supplierName) => {
-    if (!restaurantId || !auth.currentUser) return null;
-    
-    try {
-      // Check if a log already exists for this supplier today
-      const existingLog = logs.find(log => log.supplier === supplierName);
-      
-      if (!existingLog) {
-        // Create new log
-        const selectedDateTimestamp = new Date(selectedDate);
-        selectedDateTimestamp.setHours(12, 0, 0, 0);
-        
-        const newLogRef = await addDoc(getRestaurantCollection(restaurantId, "deliverylogs"), {
-          supplier: supplierName,
-          createdAt: selectedDateTimestamp,
-          createdBy: auth.currentUser.uid,
-          restaurantId: restaurantId,
-          temps: { frozen: "", chilled: "" },
-        });
-        
-        // Add the new log to local state immediately
-        const newLog = {
-          id: newLogRef.id,
-          supplier: supplierName,
-          createdAt: selectedDateTimestamp,
-          temps: { frozen: "", chilled: "" },
-          isPlaceholder: false,
-        };
-        
-        setLogs(prev => [...prev, newLog]);
-        
-        return newLogRef.id; // Return the new log ID
-      }
-      
-      return existingLog.id; // Return existing log ID
-    } catch (error) {
-      console.error("Error creating delivery log:", error);
-      return null;
-    }
-  };
-
-  // Get combined supplier data (from suppliers list and existing logs)
-  const getCombinedSupplierData = () => {
-    const supplierData = [];
-    
-    // Add all suppliers from the suppliers list
-    suppliers.forEach(supplierName => {
-      const existingLog = logs.find(log => log.supplier === supplierName);
-      
-      if (existingLog) {
-        // Use existing log data
-        supplierData.push(existingLog);
-      } else {
-        // Create placeholder data for supplier without log
-        supplierData.push({
-          id: `placeholder-${supplierName}`,
-          supplier: supplierName,
-          createdAt: null,
-          temps: { frozen: "", chilled: "" },
-          isPlaceholder: true,
-        });
-      }
-    });
-    
-    return supplierData;
-  };
-
   // Utility function for individual temperature updates (if needed elsewhere)
   const handleSetTemp = async (supplierName, logId, type, value) => {
     if (!supplierName || !type || !restaurantId || !logId || logId === 'new') {
@@ -235,14 +190,15 @@ export default function DeliveryTempLogsScreen({ navigation }) {
     }
     
     try {
+      const fieldName = type;
       await updateDoc(getRestaurantDoc(restaurantId, "deliverylogs", logId), {
-        [`temps.${type}`]: value,
+        [fieldName]: value,
       });
       
       // Update local state
       setLogs(prev =>
         prev.map(l =>
-          l.id === logId ? { ...l, temps: { ...l.temps, [type]: value } } : l
+          l.id === logId ? { ...l, [fieldName]: value } : l
         )
       );
     } catch (error) {
@@ -357,7 +313,7 @@ export default function DeliveryTempLogsScreen({ navigation }) {
             </View>
           ) : (
             suppliers.map((supplierName, index) => {
-              const log = logs.find(l => l.supplier === supplierName);
+              const log = logs.find(l => l.supplierName === supplierName || l.supplier === supplierName);
               const isExpanded = expanded[supplierName];
               
               return (
@@ -374,7 +330,7 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                       <Text style={styles.supplierName}>{supplierName}</Text>
                     </View>
                     <View style={styles.supplierStatus}>
-                      {log && log.temps && (log.temps.frozen || log.temps.chilled) ? (
+                      {log && (log.frozen || log.chilled) ? (
                         <View style={styles.statusIndicator}>
                           <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
                           <Text style={styles.statusText}>Logged</Text>
@@ -414,7 +370,7 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                         <View style={styles.tempInputContainer}>
                           <TextInput
                             style={styles.tempInput}
-                            value={inputValues[`${log?.id || `placeholder-${supplierName}`}-frozen`] !== undefined ? inputValues[`${log?.id || `placeholder-${supplierName}`}-frozen`] : (log?.temps?.frozen || '')}
+                            value={inputValues[`${log?.id || `placeholder-${supplierName}`}-frozen`] !== undefined ? inputValues[`${log?.id || `placeholder-${supplierName}`}-frozen`] : (log?.frozen || '')}
                             onChangeText={(value) => {
                               // Only allow numbers, decimal point, and negative sign
                               const numericValue = value.replace(/[^0-9.-]/g, '');
@@ -437,7 +393,7 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                         <View style={styles.tempInputContainer}>
                           <TextInput
                             style={styles.tempInput}
-                            value={inputValues[`${log?.id || `placeholder-${supplierName}`}-chilled`] !== undefined ? inputValues[`${log?.id || `placeholder-${supplierName}`}-chilled`] : (log?.temps?.chilled || '')}
+                            value={inputValues[`${log?.id || `placeholder-${supplierName}`}-chilled`] !== undefined ? inputValues[`${log?.id || `placeholder-${supplierName}`}-chilled`] : (log?.chilled || '')}
                             onChangeText={(value) => {
                               // Only allow numbers, decimal point, and negative sign
                               const numericValue = value.replace(/[^0-9.-]/g, '');
@@ -463,8 +419,8 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                           const chilledValue = inputValues[`${log?.id || `placeholder-${supplierName}`}-chilled`] || '';
                           
                           // Get original values for comparison
-                          const originalFrozen = log?.temps?.frozen || '';
-                          const originalChilled = log?.temps?.chilled || '';
+                          const originalFrozen = log?.frozen || '';
+                          const originalChilled = log?.chilled || '';
                           
                           // Check if any values have actually changed
                           const frozenChanged = frozenValue !== originalFrozen;
@@ -477,18 +433,50 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                               
                               // If no existing log, create one first
                               if (!currentLogId) {
-                                currentLogId = await handleCreateOrUpdateLog(supplierName);
+                                const selectedDateString = selectedDate.toISOString().split('T')[0];
+                                
+                                const newLogRef = await addDoc(getRestaurantCollection(restaurantId, "deliverylogs"), {
+                                  supplierName: supplierName,
+                                  date: selectedDateString,
+                                  frozen: "",
+                                  chilled: "",
+                                  done: false,
+                                  createdAt: serverTimestamp(),
+                                  createdBy: auth.currentUser.uid,
+                                  restaurantId: restaurantId,
+                                });
+                                
+                                currentLogId = newLogRef.id;
+                                
+                                // Add the new log to local state
+                                const newLog = {
+                                  id: newLogRef.id,
+                                  supplierName: supplierName,
+                                  date: selectedDateString,
+                                  frozen: "",
+                                  chilled: "",
+                                  done: false,
+                                  createdAt: new Date(),
+                                  isPlaceholder: false,
+                                };
+                                
+                                setLogs(prev => [...prev, newLog]);
                               }
                               
                               // Update both values in a single operation to avoid race conditions
                               const updateData = {};
                               if (frozenChanged) {
-                                const processedFrozenValue = frozenValue !== '' ? (frozenValue.startsWith('-') ? frozenValue : `-${frozenValue}`) : '';
-                                updateData['temps.frozen'] = processedFrozenValue;
+                                updateData['frozen'] = frozenValue;
                               }
                               if (chilledChanged) {
-                                updateData['temps.chilled'] = chilledValue;
+                                updateData['chilled'] = chilledValue;
                               }
+                              
+                              // Check if both temperatures are filled to mark as done
+                              const finalFrozenValue = frozenChanged ? frozenValue : (log?.frozen || '');
+                              const finalChilledValue = chilledChanged ? chilledValue : (log?.chilled || '');
+                              const isDone = finalFrozenValue !== '' && finalChilledValue !== '';
+                              updateData['done'] = isDone;
                               
                               if (Object.keys(updateData).length > 0 && currentLogId) {
                                 await updateDoc(getRestaurantDoc(restaurantId, "deliverylogs", currentLogId), updateData);
@@ -498,11 +486,9 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                                   prev.map(l =>
                                     l.id === currentLogId ? { 
                                       ...l, 
-                                      temps: { 
-                                        ...l.temps, 
-                                        ...(frozenChanged ? { frozen: frozenValue !== '' ? (frozenValue.startsWith('-') ? frozenValue : `-${frozenValue}`) : '' } : {}),
-                                        ...(chilledChanged ? { chilled: chilledValue !== '' ? chilledValue : '' } : {})
-                                      } 
+                                      ...(frozenChanged ? { frozen: frozenValue !== '' ? frozenValue : '' } : {}),
+                                      ...(chilledChanged ? { chilled: chilledValue !== '' ? chilledValue : '' } : {}),
+                                      done: isDone
                                     } : l
                                   )
                                 );

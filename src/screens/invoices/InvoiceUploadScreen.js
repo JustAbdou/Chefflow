@@ -77,26 +77,35 @@ const InvoiceUploadScreen = ({ navigation }) => {
       if (!restaurantId) return;
       
       try {
-        console.log('🔍 Fetching suppliers for restaurant:', restaurantId);
+        console.log('🔍 Fetching suppliers from delivery logs for restaurant:', restaurantId);
         
-        const suppliersDocRef = getRestaurantDoc(restaurantId, 'suppliers', 'suppliers');
-        const suppliersDoc = await getDoc(suppliersDocRef);
+        const deliveryLogsCollection = getRestaurantCollection(restaurantId, 'deliverylogs');
+        const logsSnapshot = await getDocs(deliveryLogsCollection);
         
-        if (suppliersDoc.exists()) {
-          const data = suppliersDoc.data();
-          const suppliersArray = data.names || [];
-          console.log('✅ Fetched suppliers:', suppliersArray);
-          setSupplierList(suppliersArray);
-          // Set first supplier as default if supplier is empty and there are suppliers
-          if (!supplier && suppliersArray.length > 0) {
-            setSupplier(suppliersArray[0]);
+        // Extract unique supplier names from all delivery logs
+        const uniqueSupplierNames = new Set();
+        logsSnapshot.forEach(docSnap => {
+          const data = docSnap.data();
+          if (data.supplierName) {
+            uniqueSupplierNames.add(data.supplierName);
           }
-        } else {
-          console.log('⚠️ Suppliers document not found, no suppliers available');
-          setSupplierList([]);
+          // Also check for legacy 'supplier' field
+          if (data.supplier) {
+            uniqueSupplierNames.add(data.supplier);
+          }
+        });
+        
+        // Convert Set to Array and sort alphabetically
+        const suppliersArray = Array.from(uniqueSupplierNames).sort();
+        console.log('✅ Fetched suppliers from delivery logs:', suppliersArray);
+        setSupplierList(suppliersArray);
+        
+        // Set first supplier as default if supplier is empty and there are suppliers
+        if (!supplier && suppliersArray.length > 0) {
+          setSupplier(suppliersArray[0]);
         }
       } catch (error) {
-        console.error('❌ Error fetching suppliers:', error);
+        console.error('❌ Error fetching suppliers from delivery logs:', error);
         setSupplierList([]);
       }
     };

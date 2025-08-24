@@ -278,7 +278,6 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
             "recent_downloads"
           ).doc(downloadToRemove.id);
           await deleteDoc(docRef);
-          console.log('Removed invalid download from Firestore:', downloadToRemove.name);
         } catch (firestoreError) {
           console.warn('Could not remove from Firestore:', firestoreError.message);
         }
@@ -318,15 +317,11 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
             <th>Date</th>
           </tr>
           ${fridgeLogs.map(log => {
-            console.log('Fridge log data:', log);
-            console.log('Temps structure:', log.temps);
-            console.log('AM temp:', log.temps?.am, 'PM temp:', log.temps?.pm);
-            
             return `
             <tr>
-              <td>${log.fridge || 'Unknown'}</td>
-              <td>${log.temps?.am && log.temps.am !== '' ? `${log.temps.am}°C` : '--'}</td>
-              <td>${log.temps?.pm && log.temps.pm !== '' ? `${log.temps.pm}°C` : '--'}</td>
+              <td>${log.fridgeName || 'Unknown'}</td>
+              <td>${log.temperatureAM && log.temperatureAM !== '' ? `${log.temperatureAM}°C` : '--'}</td>
+              <td>${log.temperaturePM && log.temperaturePM !== '' ? `${log.temperaturePM}°C` : '--'}</td>
               <td>${log.createdAt ? new Date(log.createdAt).toLocaleDateString() : ''}</td>
             </tr>
           `}).join('')}
@@ -343,8 +338,8 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
           ${deliveryLogs.map(log => `
             <tr>
               <td>${log.supplier || 'Unknown'}</td>
-              <td>${log.temps?.frozen || '--'}°C</td>
-              <td>${log.temps?.chilled || '--'}°C</td>
+              <td>${log.frozen || '--'}°C</td>
+              <td>${log.chilled || '--'}°C</td>
               <td>${log.createdAt ? new Date(log.createdAt).toLocaleDateString() : ''}</td>
             </tr>
           `).join('')}
@@ -360,9 +355,9 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
           </tr>
           ${coolingReheatingLogs.map(log => `
             <tr>
-              <td>${log.item || 'Unknown'}</td>
+              <td>${log.productName || 'Unknown'}</td>
               <td>${log.type === 'cooling' ? 'Cooling' : log.type === 'reheating' ? 'Reheating' : 'Unknown'}</td>
-              <td>${log.temperature || '--'}°C</td>
+              <td>${log.initialTemp || log.finalTemp || '--'}°C</td>
               <td>${log.createdAt ? new Date(log.createdAt).toLocaleDateString() : ''}</td>
             </tr>
           `).join('')}
@@ -376,21 +371,15 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         fileName: fileName.replace('.pdf', '') 
       });
 
-      console.log('📄 PDF generated locally:', uri);
-
       // Use temporary storage solution until Firebase Storage blob issues are resolved
       let downloadURL;
       try {
         // Try the original method first
         downloadURL = await uploadPdfToStorage(uri, fileName, restaurantId, 'temperature');
-        console.log('☁️ PDF uploaded to Firebase Storage successfully:', downloadURL);
       } catch (storageError) {
-        console.log('⚠️ Firebase Storage upload failed, using temporary local storage:', storageError.message);
-        
         // Try to use temporary local storage as fallback
         try {
           downloadURL = await uploadPdfToStorageTemporary(uri, fileName, restaurantId, 'temperature');
-          console.log('💾 PDF saved to local storage:', downloadURL);
           
           // Show warning about local storage
           Alert.alert(
@@ -414,12 +403,9 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         }
       );
 
-      console.log('💾 Download record saved to Firestore');
-
       // Clean up the original temporary file (keep the permanent copy)
       try {
         await FileSystem.deleteAsync(uri, { idempotent: true });
-        console.log('🗑️ Original temporary file cleaned up');
       } catch (cleanupError) {
         console.warn('⚠️ Could not clean up original temporary file:', cleanupError);
       }
@@ -588,7 +574,7 @@ const styles = StyleSheet.create({
   },
   titleContainer: {
     flex: 1,
-    marginTop: Spacing.xl,
+    marginTop: Spacing.md, // Reduced from Spacing.xl
   },
   title: {
     fontFamily: Typography.fontBold,

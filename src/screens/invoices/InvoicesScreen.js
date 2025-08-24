@@ -109,9 +109,9 @@ const InvoicesScreen = ({ navigation }) => {
       <TouchableOpacity 
         style={styles.fab}
         onPress={() => navigation.navigate('InvoiceUpload')}
-        activeOpacity={0.8}
+        activeOpacity={0.85}
       >
-        <Ionicons name="add" size={24} color={Colors.white} />
+        <Ionicons name="add" size={38} color="#fff" />
       </TouchableOpacity>
     </SafeAreaView>
   );
