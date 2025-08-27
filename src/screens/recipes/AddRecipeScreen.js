@@ -13,16 +13,27 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 
 export default function AddRecipeScreen({ navigation }) {
   const { restaurantId } = useRestaurant();
+
   const [date, setDate] = useState("");
+
   const [category, setCategory] = useState("");
+
   const [categories, setCategories] = useState([]);
+
   const [recipeName, setRecipeName] = useState("");
+
   const [ingredients, setIngredients] = useState([]);
+
   const [instructions, setInstructions] = useState([]);
+
   const [notes, setNotes] = useState("");
+
   const [ingredientInput, setIngredientInput] = useState("");
+
   const [instructionInput, setInstructionInput] = useState("");
+
   const [image, setImage] = useState(null);
+
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -33,10 +44,13 @@ export default function AddRecipeScreen({ navigation }) {
     // Fetch categories from Firestore
     const fetchCategories = async () => {
       if (!restaurantId) return;
+
       
       const categoriesDoc = await getDoc(getRestaurantDoc(restaurantId, "recipes", "categories"));
+
       const data = categoriesDoc.data();
       setCategories(data?.names || []);
+
       if (!category && data?.names?.length) setCategory(data.names[0]);
     };
     fetchCategories();
@@ -50,6 +64,7 @@ export default function AddRecipeScreen({ navigation }) {
       aspect: [4, 3],
       quality: 0.7,
     });
+
     if (!result.canceled && result.assets?.[0]?.uri) {
       setImage(result.assets[0].uri);
     }
@@ -98,6 +113,7 @@ export default function AddRecipeScreen({ navigation }) {
         image: image || "https://placehold.co/200x200?text=No+Image",
         createdAt: serverTimestamp(),
       };
+
       await addDoc(
         getRestaurantSubCollection(restaurantId, "recipes", "categories", category),
         recipeData
@@ -105,9 +121,7 @@ export default function AddRecipeScreen({ navigation }) {
       Alert.alert("Recipe added!");
       navigation.goBack();
     } catch (e) {
-      Alert.alert("Error", "Could not add recipe.");
-      console.error(e);
-    } finally {
+      Alert.alert("Error", "Could not add recipe.");} finally {
       setLoading(false);
     }
   };

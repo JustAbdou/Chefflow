@@ -11,21 +11,29 @@ import { Typography } from '../../constants/Typography';
 import { Spacing } from '../../constants/Spacing';
 import { useNavigation } from '@react-navigation/native';
 
+
 function HandoverCompletionScreen({ route }) {
   const navigation = useNavigation();
+
   const { handoverData } = route.params || {};
 
   // Get current date and time
   const getCurrentDateTime = () => {
     const date = new Date();
+
     const dateOptions = { weekday: 'long', month: 'long', day: 'numeric' };
+
     const timeOptions = { hour: 'numeric', minute: '2-digit', hour12: true };
+
     const dateStr = date.toLocaleDateString('en-US', dateOptions);
+
     const timeStr = date.toLocaleTimeString('en-US', timeOptions);
     return { date: dateStr, time: timeStr };
   };
 
+
   const { date, time } = getCurrentDateTime();
+
 
   const handleBackToDashboard = () => {
     // Navigate back to the main tab navigator (Dashboard)
@@ -34,6 +42,7 @@ function HandoverCompletionScreen({ route }) {
       routes: [{ name: 'Main' }],
     });
   };
+
 
   const handleViewPreviousHandovers = () => {
     // Navigate to previous handovers screen

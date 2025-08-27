@@ -11,9 +11,12 @@ import {
 import { Colors, Typography, Spacing } from '../../constants';
 import { useRestaurant } from '../../contexts/RestaurantContext';
 
+
 const RestaurantSelectionScreen = ({ navigation }) => {
   const { setRestaurantId } = useRestaurant();
+
   const [customId, setCustomId] = useState('');
+
 
   const predefinedRestaurants = [
     { id: 'restaurant-1', name: 'Main Branch' },
@@ -21,10 +24,12 @@ const RestaurantSelectionScreen = ({ navigation }) => {
     { id: 'restaurant-3', name: 'Airport Branch' },
   ];
 
+
   const handleSelectRestaurant = (restaurantId) => {
     setRestaurantId(restaurantId);
     navigation.navigate('Main');
   };
+
 
   const handleCustomId = () => {
     if (customId.trim()) {
@@ -73,6 +78,7 @@ const RestaurantSelectionScreen = ({ navigation }) => {
     </SafeAreaView>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {

@@ -12,6 +12,7 @@ import { Colors, Spacing, Typography } from '../../constants';
 import { getAndroidTitleMargin } from '../../utils/responsive';
 import useNavigationBar from '../../hooks/useNavigationBar';
 
+
 const InvoiceDetailScreen = ({ route, navigation }) => {
   const { invoice } = route.params;
 
@@ -19,8 +20,10 @@ const InvoiceDetailScreen = ({ route, navigation }) => {
   const navigationBar = useNavigationBar();
   navigationBar.useHidden();
 
+
   const formatDate = (dateString) => {
     if (!dateString) return 'Unknown Date';
+
     const date = new Date(dateString);
     return date.toLocaleDateString('en-GB', {
       weekday: 'long',
@@ -74,6 +77,7 @@ const InvoiceDetailScreen = ({ route, navigation }) => {
     </SafeAreaView>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {

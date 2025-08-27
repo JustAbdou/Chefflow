@@ -2,10 +2,12 @@ import React from 'react';
 import { View, Button, Alert } from 'react-native';
 import { migrateToRestaurantStructure } from '../utils/dataMigration';
 
+
 const MigrationTestScreen = () => {
   const handleMigration = async () => {
     try {
       Alert.alert('Migration Started', 'Check console for progress...');
+
       await migrateToRestaurantStructure();
       Alert.alert('Migration Complete', 'Check Firestore dashboard for new structure!');
     } catch (error) {

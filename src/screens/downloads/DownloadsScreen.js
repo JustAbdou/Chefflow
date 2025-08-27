@@ -19,6 +19,7 @@ export default function DownloadsScreen({ navigation }) {
   const navigationBar = useNavigationBar();
   navigationBar.useHidden();
 
+
   const downloadSections = [
     {
       title: "Temperature Records",
@@ -39,6 +40,7 @@ export default function DownloadsScreen({ navigation }) {
       description: "View and download shift handover records",
     },
   ];
+
 
   const handleNavigation = (screenName) => {
     navigation.navigate(screenName);

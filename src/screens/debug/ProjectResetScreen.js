@@ -3,8 +3,10 @@ import { View, Text, TouchableOpacity, Alert, StyleSheet } from 'react-native';
 import { resetForNewProject, quickConnectionReset } from '../utils/projectReset';
 import { Colors, Spacing, Typography } from '../constants';
 
+
 const ProjectResetScreen = () => {
   const [isResetting, setIsResetting] = useState(false);
+
 
   const handleFullReset = async () => {
     Alert.alert(
@@ -17,6 +19,7 @@ const ProjectResetScreen = () => {
           style: 'destructive',
           onPress: async () => {
             setIsResetting(true);
+
             const success = await resetForNewProject();
             setIsResetting(false);
             
@@ -32,8 +35,10 @@ const ProjectResetScreen = () => {
     );
   };
 
+
   const handleQuickReset = async () => {
     setIsResetting(true);
+
     const success = await quickConnectionReset();
     setIsResetting(false);
     
@@ -84,6 +89,7 @@ const ProjectResetScreen = () => {
     </View>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {

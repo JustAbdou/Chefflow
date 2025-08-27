@@ -6,7 +6,9 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "build:clean": "node scripts/remove-console-logs.js",
+    "build:production": "npm run build:clean && eas build --platform all --profile production"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.0",

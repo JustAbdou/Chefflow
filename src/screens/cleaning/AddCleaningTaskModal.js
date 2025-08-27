@@ -16,6 +16,7 @@ import { Spacing } from "../../constants/Spacing";
 export default function AddCleaningTaskModal({ visible, onClose, onAdd, date }) {
   const [taskName, setTaskName] = useState("");
 
+
   const handleAdd = () => {
     if (taskName.trim()) {
       onAdd(taskName.trim());

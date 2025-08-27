@@ -15,11 +15,9 @@ export const navigationBarUtils = {
     if (Platform.OS === 'android') {
       try {
         // Hide the navigation bar with immersive mode
-        await NavigationBar.setVisibilityAsync('hidden');
-        console.log('✅ Android navigation bar hidden');
-      } catch (error) {
-        console.error('❌ Error hiding navigation bar:', error);
-      }
+        await NavigationBar.setVisibilityAsync('hidden');} catch (error) {
+      // Error handling
+    }
     }
   },
 
@@ -30,11 +28,9 @@ export const navigationBarUtils = {
   showNavigationBar: async () => {
     if (Platform.OS === 'android') {
       try {
-        await NavigationBar.setVisibilityAsync('visible');
-        console.log('✅ Android navigation bar shown');
-      } catch (error) {
-        console.error('❌ Error showing navigation bar:', error);
-      }
+        await NavigationBar.setVisibilityAsync('visible');} catch (error) {
+      // Error handling
+    }
     }
   },
 
@@ -45,11 +41,9 @@ export const navigationBarUtils = {
   setLeanBackMode: async () => {
     if (Platform.OS === 'android') {
       try {
-        await NavigationBar.setVisibilityAsync('leanback');
-        console.log('✅ Android navigation bar set to lean-back mode');
-      } catch (error) {
-        console.error('❌ Error setting lean-back mode:', error);
-      }
+        await NavigationBar.setVisibilityAsync('leanback');} catch (error) {
+      // Error handling
+    }
     }
   },
 
@@ -60,11 +54,9 @@ export const navigationBarUtils = {
   setNavigationBarColor: async (color = '#000000') => {
     if (Platform.OS === 'android') {
       try {
-        await NavigationBar.setBackgroundColorAsync(color);
-        console.log(`✅ Navigation bar color set to ${color}`);
-      } catch (error) {
-        console.error('❌ Error setting navigation bar color:', error);
-      }
+        await NavigationBar.setBackgroundColorAsync(color);} catch (error) {
+      // Error handling
+    }
     }
   },
 
@@ -80,11 +72,9 @@ export const navigationBarUtils = {
         
         // Set a dark background color that matches your app
         await NavigationBar.setBackgroundColorAsync('#000000');
-        
-        console.log('✅ Navigation bar initialized for ChefFlow (hidden mode)');
       } catch (error) {
-        console.error('❌ Error initializing navigation bar:', error);
-      }
+      // Error handling
+    }
     }
   },
 

@@ -28,14 +28,23 @@ import DateTimePickerModal from "react-native-modal-datetime-picker";
 
 export default function DeliveryTempLogsScreen({ navigation }) {
   const { restaurantId } = useRestaurant();
+
   const [suppliers, setSuppliers] = useState([]);
+
   const [logs, setLogs] = useState([]);
+
   const [expanded, setExpanded] = useState({});
+
   const [loading, setLoading] = useState(true);
+
   const [refreshing, setRefreshing] = useState(false);
+
   const [showDatePicker, setShowDatePicker] = useState(false);
+
   const [selectedDate, setSelectedDate] = useState(new Date());
+
   const [inputValues, setInputValues] = useState({});
+
   const animationRefs = useRef({});
 
   // Hide Android navigation bar
@@ -45,10 +54,13 @@ export default function DeliveryTempLogsScreen({ navigation }) {
   // Date formatting
   const formatSelectedDate = (date) => {
     const dayName = date.toLocaleDateString(undefined, { weekday: "long" });
+
     const monthName = date.toLocaleDateString(undefined, { month: "long" });
+
     const dayNum = date.getDate();
     return `${dayName}, ${monthName} ${dayNum}`;
   };
+
 
   const todayString = formatSelectedDate(selectedDate);
 
@@ -58,12 +70,14 @@ export default function DeliveryTempLogsScreen({ navigation }) {
     
     try {
       const deliveryLogsCollection = getRestaurantCollection(restaurantId, 'deliverylogs');
+
       const logsSnapshot = await getDocs(deliveryLogsCollection);
       
       // Extract unique supplier names from all logs
       const uniqueSupplierNames = new Set();
       logsSnapshot.forEach(docSnap => {
         const data = docSnap.data();
+
         if (data.supplierName) {
           uniqueSupplierNames.add(data.supplierName);
         }
@@ -75,10 +89,8 @@ export default function DeliveryTempLogsScreen({ navigation }) {
       
       // Convert Set to Array and sort alphabetically
       const supplierNamesArray = Array.from(uniqueSupplierNames).sort();
-      console.log('Fetched supplier names from logs:', supplierNamesArray);
       setSuppliers(supplierNamesArray);
     } catch (error) {
-      console.error("Error fetching supplier names from logs:", error);
       setSuppliers([]);
     }
   };
@@ -89,7 +101,9 @@ export default function DeliveryTempLogsScreen({ navigation }) {
     
     try {
       const deliveryLogsCollection = getRestaurantCollection(restaurantId, 'deliverylogs');
+
       const logsSnapshot = await getDocs(deliveryLogsCollection);
+
       
       let allLogs = [];
       logsSnapshot.forEach(docSnap => {
@@ -100,12 +114,8 @@ export default function DeliveryTempLogsScreen({ navigation }) {
         });
       });
       
-      console.log('All delivery logs fetched:', allLogs.length, allLogs);
-      
       // Filter logs for the selected date
       const selectedDateString = selectedDate.toISOString().split('T')[0]; // Get YYYY-MM-DD format
-      console.log('Filtering for date:', selectedDateString);
-      
       const filteredLogs = allLogs.filter(log => {
         // Check if log.date matches selected date
         if (log.date === selectedDateString) {
@@ -115,14 +125,13 @@ export default function DeliveryTempLogsScreen({ navigation }) {
         // Fallback: check createdAt if date field is missing
         if (!log.date && log.createdAt) {
           const logDate = log.createdAt.toDate ? log.createdAt.toDate() : new Date(log.createdAt.seconds * 1000);
+
           const logDateString = logDate.toISOString().split('T')[0];
           return logDateString === selectedDateString;
         }
         
         return false;
       });
-      
-      console.log('Filtered delivery logs for selected date:', filteredLogs);
       
       // Sort logs by createdAt (newest first)
       filteredLogs.sort((a, b) => {
@@ -134,7 +143,7 @@ export default function DeliveryTempLogsScreen({ navigation }) {
       
       setLogs(filteredLogs);
     } catch (error) {
-      console.error("Error fetching delivery logs:", error);
+      // Error fetching delivery logs
     }
   };
 
@@ -169,6 +178,7 @@ export default function DeliveryTempLogsScreen({ navigation }) {
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
+
       await Promise.all([fetchSuppliers(), fetchLogs()]);
       setLoading(false);
       setRefreshing(false);
@@ -179,6 +189,7 @@ export default function DeliveryTempLogsScreen({ navigation }) {
   // Pull to refresh handler
   const onRefresh = async () => {
     setRefreshing(true);
+
     await Promise.all([fetchSuppliers(), fetchLogs()]);
     setRefreshing(false);
   };
@@ -191,6 +202,7 @@ export default function DeliveryTempLogsScreen({ navigation }) {
     
     try {
       const fieldName = type;
+
       await updateDoc(getRestaurantDoc(restaurantId, "deliverylogs", logId), {
         [fieldName]: value,
       });
@@ -202,7 +214,7 @@ export default function DeliveryTempLogsScreen({ navigation }) {
         )
       );
     } catch (error) {
-      console.error("Error updating temperature:", error);
+      // Error handling
     }
   };
 
@@ -214,7 +226,7 @@ export default function DeliveryTempLogsScreen({ navigation }) {
       await deleteDoc(getRestaurantDoc(restaurantId, "deliverylogs", logId));
       setLogs((logs) => logs.filter((log) => log.id !== logId));
     } catch (error) {
-      console.error("Error deleting delivery log:", error);
+      // Error handling
     }
   };
 
@@ -232,6 +244,7 @@ export default function DeliveryTempLogsScreen({ navigation }) {
     </View>
   );
 
+
   const handleDateConfirm = (date) => {
     setSelectedDate(date);
     setShowDatePicker(false);
@@ -248,6 +261,7 @@ export default function DeliveryTempLogsScreen({ navigation }) {
   // Toggle supplier expansion with animation
   const toggleSupplierExpansion = (supplierName) => {
     const isCurrentlyExpanded = expanded[supplierName];
+
     const animationValue = getAnimationValue(supplierName);
     
     setExpanded(prev => ({ ...prev, [supplierName]: !isCurrentlyExpanded }));
@@ -314,6 +328,7 @@ export default function DeliveryTempLogsScreen({ navigation }) {
           ) : (
             suppliers.map((supplierName, index) => {
               const log = logs.find(l => l.supplierName === supplierName || l.supplier === supplierName);
+
               const isExpanded = expanded[supplierName];
               
               return (
@@ -374,8 +389,8 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                             onChangeText={(value) => {
                               // Only allow numbers, decimal point, and negative sign
                               const numericValue = value.replace(/[^0-9.-]/g, '');
+
                               const inputKey = `${log?.id || `placeholder-${supplierName}`}-frozen`;
-                              console.log('Frozen input changed:', { value: numericValue, inputKey, logId: log?.id, supplierName });
                               setInputValues(prev => ({ ...prev, [inputKey]: numericValue }));
                             }}
                             placeholder="0"
@@ -397,8 +412,8 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                             onChangeText={(value) => {
                               // Only allow numbers, decimal point, and negative sign
                               const numericValue = value.replace(/[^0-9.-]/g, '');
+
                               const inputKey = `${log?.id || `placeholder-${supplierName}`}-chilled`;
-                              console.log('Chilled input changed:', { value: numericValue, inputKey, logId: log?.id, supplierName });
                               setInputValues(prev => ({ ...prev, [inputKey]: numericValue }));
                             }}
                             placeholder="0"
@@ -415,15 +430,19 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                         style={styles.saveButton}
                         onPress={async (e) => {
                           e.stopPropagation();
+
                           const frozenValue = inputValues[`${log?.id || `placeholder-${supplierName}`}-frozen`] || '';
+
                           const chilledValue = inputValues[`${log?.id || `placeholder-${supplierName}`}-chilled`] || '';
                           
                           // Get original values for comparison
                           const originalFrozen = log?.frozen || '';
+
                           const originalChilled = log?.chilled || '';
                           
                           // Check if any values have actually changed
                           const frozenChanged = frozenValue !== originalFrozen;
+
                           const chilledChanged = chilledValue !== originalChilled;
                           
                           // Allow saving if there are any changes OR if we're creating a new log
@@ -434,6 +453,7 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                               // If no existing log, create one first
                               if (!currentLogId) {
                                 const selectedDateString = selectedDate.toISOString().split('T')[0];
+
                                 
                                 const newLogRef = await addDoc(getRestaurantCollection(restaurantId, "deliverylogs"), {
                                   supplierName: supplierName,
@@ -465,6 +485,7 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                               
                               // Update both values in a single operation to avoid race conditions
                               const updateData = {};
+
                               if (frozenChanged) {
                                 updateData['frozen'] = frozenValue;
                               }
@@ -474,9 +495,12 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                               
                               // Check if both temperatures are filled to mark as done
                               const finalFrozenValue = frozenChanged ? frozenValue : (log?.frozen || '');
+
                               const finalChilledValue = chilledChanged ? chilledValue : (log?.chilled || '');
+
                               const isDone = finalFrozenValue !== '' && finalChilledValue !== '';
                               updateData['done'] = isDone;
+
                               
                               if (Object.keys(updateData).length > 0 && currentLogId) {
                                 await updateDoc(getRestaurantDoc(restaurantId, "deliverylogs", currentLogId), updateData);
@@ -497,13 +521,14 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                               // Clear input values
                               setInputValues(prev => {
                                 const newValues = { ...prev };
+
                                 const keyBase = currentLogId || `placeholder-${supplierName}`;
                                 delete newValues[`${keyBase}-frozen`];
                                 delete newValues[`${keyBase}-chilled`];
                                 return newValues;
                               });
                             } catch (error) {
-                              console.error("Error saving delivery log:", error);
+                              // Error saving delivery log
                             }
                           }
                         }}

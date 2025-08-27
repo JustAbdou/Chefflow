@@ -16,10 +16,14 @@ import { getDocs, query, orderBy } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection } from "../../utils/firestoreHelpers";
 
+
 const InvoicesScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
+
   const [invoices, setInvoices] = useState([]);
+
   const [loading, setLoading] = useState(true);
+
   const [refreshing, setRefreshing] = useState(false); // <-- Add this
 
   // Hide Android navigation bar
@@ -29,20 +33,23 @@ const InvoicesScreen = ({ navigation }) => {
   // Date for header
   const today = getFormattedTodayDate();
 
+
   const fetchInvoices = async () => {
     if (!restaurantId) return;
     
     setLoading(true);
     try {
       const q = query(getRestaurantCollection(restaurantId, "invoices"), orderBy("createdAt", "desc"));
+
       const snapshot = await getDocs(q);
+
       const items = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
       }));
       setInvoices(items);
     } catch (error) {
-      console.error("Error fetching invoices:", error);
+      // Error handling
     } finally {
       setLoading(false);
     }
@@ -55,9 +62,11 @@ const InvoicesScreen = ({ navigation }) => {
   // Pull-to-refresh handler
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
+
     await fetchInvoices();
     setRefreshing(false);
   }, []);
+
 
   const renderItem = ({ item }) => (
     <TouchableOpacity 
@@ -116,6 +125,7 @@ const InvoicesScreen = ({ navigation }) => {
     </SafeAreaView>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {

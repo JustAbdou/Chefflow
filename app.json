@@ -2,7 +2,7 @@
   "expo": {
     "name": "ChefFlow",
     "slug": "chefflow",
-    "version": "1.1.0",
+    "version": "1.6.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.marux.chefflow",
-      "buildNumber": "3",
+      "buildNumber": "2",
       "infoPlist": {
         "NSCameraUsageDescription": "This app uses the camera to capture photos of recipes and invoices.",
         "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select images for recipes and invoices.",
@@ -32,7 +32,7 @@
         "visible": "leanback"
       },
       "package": "com.marux.chefflow",
-      "versionCode": 2,
+      "versionCode": 1,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
@@ -43,8 +43,7 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    },
-    "plugins": [
+    },      "plugins": [
       "expo-font",
       "expo-navigation-bar",
       [

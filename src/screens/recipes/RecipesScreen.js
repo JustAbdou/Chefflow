@@ -12,11 +12,16 @@ import { getRestaurantDoc, getRestaurantSubCollection, getRestaurantNestedCollec
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 
+
 function RecipesScreen() {
   const { restaurantId } = useRestaurant();
+
   const [categories, setCategories] = useState([]);
+
   const [selectedCategory, setSelectedCategory] = useState("All Recipes");
+
   const [recipesByCategory, setRecipesByCategory] = useState({});
+
   const [loading, setLoading] = useState(true);
 
   // Hide Android navigation bar
@@ -24,52 +29,42 @@ function RecipesScreen() {
   navigationBar.useHidden(); // Use hidden mode for complete immersion
   const [search, setSearch] = useState(""); // <-- Add search state
   const [refreshing, setRefreshing] = useState(false);
+
   const navigation = useNavigation();
 
   // Fetch categories and all recipes from category documents
   const fetchCategoriesAndRecipes = async () => {
-    if (!restaurantId) {
-      console.log('No restaurantId available, skipping fetch');
-      return;
+    if (!restaurantId) {return;
     }
     setLoading(true);
-    try {
-      console.log('Fetching recipes for restaurantId:', restaurantId);
-      
-      // Fetch category names from restaurants/{restaurantId}/recipes/categories/names
+    try {// Fetch category names from restaurants/{restaurantId}/recipes/categories/names
       const categoryNamesDoc = await getDoc(getRestaurantDoc(restaurantId, "recipes", "categories"));
+
       let categoryNames = [];
+
       
       if (categoryNamesDoc.exists()) {
         const data = categoryNamesDoc.data();
-        categoryNames = data?.names || [];
-        console.log('Fetched category names from Firestore:', categoryNames);
-      } else {
-        console.warn('No category names document found, using default categories');
-        categoryNames = ['Desserts', 'Main', 'Starters']; // Fallback categories
+        categoryNames = data?.names || [];} else {categoryNames = ['Desserts', 'Main', 'Starters']; // Fallback categories
       }
       
       const fetchedCategories = [];
+
       const recipesObj = {};
+
       let allRecipes = [];
 
       // For each category name from the array
-      for (const categoryName of categoryNames) {
-        console.log('Processing category:', categoryName);
-        fetchedCategories.push({ id: categoryName, name: categoryName });
+      for (const categoryName of categoryNames) {fetchedCategories.push({ id: categoryName, name: categoryName });
 
         try {
           // Fetch recipe documents directly from the category path
           // Path: restaurants/{restaurantId}/recipes/categories/{categoryName}/
           const categoryRecipesSnapshot = await getDocs(getRestaurantSubCollection(restaurantId, "recipes", "categories", categoryName));
-          console.log(`Found ${categoryRecipesSnapshot.size} documents in category: ${categoryName}`);
-          
-          const categoryRecipes = [];
+const categoryRecipes = [];
           categoryRecipesSnapshot.forEach(recipeDoc => {
             const recipeData = recipeDoc.data();
-            console.log(`Recipe document ${recipeDoc.id} data:`, recipeData);
-            
-            const recipe = { 
+const recipe = { 
               id: recipeDoc.id, 
               ...recipeData, 
               category: categoryName
@@ -78,21 +73,16 @@ function RecipesScreen() {
             allRecipes.push(recipe);
           });
           
-          recipesObj[categoryName] = categoryRecipes;
-          console.log(`Fetched ${categoryRecipes.length} recipes from category: ${categoryName}`);
-        } catch (categoryError) {
-          console.error(`Error fetching recipes for category ${categoryName}:`, categoryError);
-          recipesObj[categoryName] = [];
+          recipesObj[categoryName] = categoryRecipes;} catch (categoryError) {recipesObj[categoryName] = [];
         }
       }
 
       setCategories(fetchedCategories);
       setRecipesByCategory({ "All Recipes": allRecipes, ...recipesObj });
-      console.log('Total recipes fetched:', allRecipes.length);
-      console.log('Categories:', fetchedCategories.map(cat => cat.name));
+
       if (!selectedCategory && fetchedCategories.length > 0) setSelectedCategory("All Recipes");
     } catch (error) {
-      console.error("Error fetching categories/recipes:", error);
+      // Error handling
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -106,6 +96,7 @@ function RecipesScreen() {
   // Swipe down to refresh handler
   const onRefresh = async () => {
     setRefreshing(true);
+
     await fetchCategoriesAndRecipes();
   };
 
@@ -115,24 +106,21 @@ function RecipesScreen() {
     
     // Get all possible name fields from the recipe
     const recipeName = recipe["recipe name"] || recipe.name || recipe.title || recipe.recipeName || "";
+
     const ingredients = recipe.ingredients || "";
+
     const description = recipe.description || "";
+
     const category = recipe.category || "";
     
     // Debug: Log recipe data for first few recipes when searching
     if (search && recipe === (recipesByCategory[selectedCategory] || [])[0]) {
-      console.log('🔍 Search Debug - Recipe fields:', {
-        'recipe name': recipe["recipe name"],
-        name: recipe.name,
-        title: recipe.title,
-        recipeName: recipe.recipeName,
-        searchTerm: search,
-        allFields: Object.keys(recipe)
-      });
+      // Debug info available in development mode
     }
     
     // Create a searchable string with all relevant fields
     const searchableText = `${recipeName} ${ingredients} ${description} ${category}`.toLowerCase();
+
     const searchTerm = search.toLowerCase().trim();
     
     // Return true if any part matches

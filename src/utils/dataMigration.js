@@ -35,15 +35,15 @@ const COLLECTIONS_TO_MIGRATE = [
 /**
  * Migrate a simple collection
  */
-async function migrateCollection(collectionName) {
-  console.log(`Migrating ${collectionName}...`);
-  
-  try {
+async function migrateCollection(collectionName) {try {
     // Get all documents from the old collection
     const oldCollectionRef = collection(db, collectionName);
+
     const snapshot = await getDocs(oldCollectionRef);
+
     
     const batch = writeBatch(db);
+
     let count = 0;
     
     snapshot.docs.forEach((docSnapshot) => {
@@ -54,37 +54,35 @@ async function migrateCollection(collectionName) {
     });
     
     // Commit the batch
-    await batch.commit();
-    console.log(`✅ Migrated ${count} documents from ${collectionName}`);
-    
-  } catch (error) {
-    console.error(`❌ Error migrating ${collectionName}:`, error);
-  }
+    await batch.commit();} catch (error) {
+      // Error handling
+    }
 }
 
 /**
  * Migrate the recipes collection (more complex due to subcollections)
  */
-async function migrateRecipes() {
-  console.log('Migrating recipes...');
-  
-  try {
+async function migrateRecipes() {try {
     // First, migrate the categories document
     const categoriesDoc = await getDocs(collection(db, 'recipes'));
+
     const categoriesData = categoriesDoc.docs.find(doc => doc.id === 'categories');
+
     
     if (categoriesData) {
       const newCategoriesRef = doc(db, 'restaurants', RESTAURANT_ID, 'recipes', 'categories');
-      await setDoc(newCategoriesRef, categoriesData.data());
-      console.log('✅ Migrated recipes categories document');
-    }
+
+      await setDoc(newCategoriesRef, categoriesData.data());}
     
     // Then migrate each category's recipes
     const categoryNames = categoriesData?.data()?.names || [];
+
     
     for (const categoryName of categoryNames) {
       const recipesSnapshot = await getDocs(collection(db, 'recipes', 'categories', categoryName));
+
       const batch = writeBatch(db);
+
       let count = 0;
       
       recipesSnapshot.docs.forEach((recipeDoc) => {
@@ -100,28 +98,26 @@ async function migrateRecipes() {
         batch.set(newRecipeRef, recipeDoc.data());
         count++;
       });
+
       
-      await batch.commit();
-      console.log(`✅ Migrated ${count} recipes from ${categoryName} category`);
-    }
+      await batch.commit();}
     
   } catch (error) {
-    console.error('❌ Error migrating recipes:', error);
-  }
+      // Error handling
+    }
 }
 
 /**
  * Migrate the fridge collection (subcollections structure)
  */
-async function migrateFridge() {
-  console.log('Migrating fridge data...');
-  
-  try {
+async function migrateFridge() {try {
     const fridgeNames = ['walk-in fridge', 'prep fridge']; // Add your fridge names
     
     for (const fridgeName of fridgeNames) {
       const fridgeSnapshot = await getDocs(collection(db, 'fridge', 'fridges', fridgeName));
+
       const batch = writeBatch(db);
+
       let count = 0;
       
       fridgeSnapshot.docs.forEach((fridgeDoc) => {
@@ -137,25 +133,23 @@ async function migrateFridge() {
         batch.set(newFridgeRef, fridgeDoc.data());
         count++;
       });
+
       
-      await batch.commit();
-      console.log(`✅ Migrated ${count} documents from ${fridgeName}`);
-    }
+      await batch.commit();}
     
   } catch (error) {
-    console.error('❌ Error migrating fridge data:', error);
-  }
+      // Error handling
+    }
 }
 
 /**
  * Migrate the downloads collection (nested structure)
  */
-async function migrateDownloads() {
-  console.log('Migrating downloads...');
-  
-  try {
+async function migrateDownloads() {try {
     const downloadsSnapshot = await getDocs(collection(db, 'downloads', 'invoices', 'recent_downloads'));
+
     const batch = writeBatch(db);
+
     let count = 0;
     
     downloadsSnapshot.docs.forEach((downloadDoc) => {
@@ -171,25 +165,17 @@ async function migrateDownloads() {
       batch.set(newDownloadRef, downloadDoc.data());
       count++;
     });
+
     
-    await batch.commit();
-    console.log(`✅ Migrated ${count} download records`);
-    
-  } catch (error) {
-    console.error('❌ Error migrating downloads:', error);
-  }
+    await batch.commit();} catch (error) {
+      // Error handling
+    }
 }
 
 /**
  * Main migration function
  */
-export async function migrateToRestaurantStructure() {
-  console.log('🚀 Starting migration to restaurant-based structure...');
-  console.log(`Restaurant ID: ${RESTAURANT_ID}`);
-  
-  if (!RESTAURANT_ID || RESTAURANT_ID === 'your-restaurant-id') {
-    console.error('❌ Please set a valid RESTAURANT_ID before running migration');
-    return;
+export async function migrateToRestaurantStructure() {if (!RESTAURANT_ID || RESTAURANT_ID === 'your-restaurant-id') {return;
   }
   
   try {
@@ -200,25 +186,19 @@ export async function migrateToRestaurantStructure() {
     
     // Migrate complex collections
     await migrateRecipes();
+
     await migrateFridge();
-    await migrateDownloads();
-    
-    console.log('✅ Migration completed successfully!');
-    console.log('⚠️  Remember to verify the migrated data and delete old collections if everything looks good.');
-    
-  } catch (error) {
-    console.error('❌ Migration failed:', error);
-  }
+
+    await migrateDownloads();} catch (error) {
+      // Error handling
+    }
 }
 
 /**
  * Function to delete old collections after successful migration
  * WARNING: Only run this after verifying the migration was successful!
  */
-export async function cleanupOldCollections() {
-  console.log('🧹 Cleaning up old collections...');
-  
-  const collections = [
+export async function cleanupOldCollections() {const collections = [
     ...COLLECTIONS_TO_MIGRATE,
     'recipes',
     'fridge', 
@@ -228,21 +208,17 @@ export async function cleanupOldCollections() {
   try {
     for (const collectionName of collections) {
       const snapshot = await getDocs(collection(db, collectionName));
+
       const batch = writeBatch(db);
       
       snapshot.docs.forEach((doc) => {
         batch.delete(doc.ref);
       });
+
       
-      await batch.commit();
-      console.log(`✅ Deleted old ${collectionName} collection`);
+      await batch.commit();}} catch (error) {
+      // Error handling
     }
-    
-    console.log('✅ Cleanup completed!');
-    
-  } catch (error) {
-    console.error('❌ Cleanup failed:', error);
-  }
 }
 
 /**
@@ -250,13 +226,10 @@ export async function cleanupOldCollections() {
  * @param {string} restaurantName - The human-readable restaurant name
  */
 export async function migrateToRestaurant(restaurantName) {
-  if (!restaurantName) {
-    console.error('❌ Restaurant name is required');
-    return false;
+  if (!restaurantName) {return false;
   }
 
-  const restaurantId = normalizeRestaurantName(restaurantName);
-  console.log(`🔄 Starting migration to restaurant: "${restaurantName}" (ID: ${restaurantId})`);
+  const restaurantId = normalizeRestaurantName(restaurantName);`);
 
   try {
     // Migrate all collections
@@ -265,28 +238,23 @@ export async function migrateToRestaurant(restaurantName) {
     }
     
     // Migrate recipes with special handling
-    await migrateRecipesToRestaurant(restaurantId);
-    
-    console.log(`✅ Migration completed successfully for restaurant: ${restaurantName}`);
-    return true;
-  } catch (error) {
-    console.error('❌ Migration failed:', error);
-    return false;
+    await migrateRecipesToRestaurant(restaurantId);return true;
+  } catch (error) {return false;
   }
 }
 
 /**
  * Migrate a single collection to a specific restaurant
  */
-async function migrateCollectionToRestaurant(collectionName, restaurantId) {
-  console.log(`Migrating ${collectionName} to restaurant ${restaurantId}...`);
-  
-  try {
+async function migrateCollectionToRestaurant(collectionName, restaurantId) {try {
     // Get all documents from the old collection
     const oldCollectionRef = collection(db, collectionName);
+
     const snapshot = await getDocs(oldCollectionRef);
+
     
     const batch = writeBatch(db);
+
     let count = 0;
     
     snapshot.docs.forEach((docSnapshot) => {
@@ -297,50 +265,48 @@ async function migrateCollectionToRestaurant(collectionName, restaurantId) {
     });
     
     // Commit the batch
-    await batch.commit();
-    console.log(`✅ Migrated ${count} documents from ${collectionName} to ${restaurantId}`);
-    
-  } catch (error) {
-    console.error(`❌ Error migrating ${collectionName} to ${restaurantId}:`, error);
-  }
+    await batch.commit();} catch (error) {
+      // Error handling
+    }
 }
 
 /**
  * Migrate recipes to a specific restaurant
  */
-async function migrateRecipesToRestaurant(restaurantId) {
-  console.log(`Migrating recipes to restaurant ${restaurantId}...`);
-  
-  try {
+async function migrateRecipesToRestaurant(restaurantId) {try {
     // Get all recipe documents
     const recipesRef = collection(db, 'recipes');
+
     const recipesSnapshot = await getDocs(recipesRef);
+
     
     let totalRecipes = 0;
+
     let totalIngredients = 0;
+
     
     for (const recipeDoc of recipesSnapshot.docs) {
       // Create recipe in new structure
       const newRecipeRef = doc(db, 'restaurants', restaurantId, 'recipes', recipeDoc.id);
+
       await setDoc(newRecipeRef, recipeDoc.data());
       totalRecipes++;
       
       // Migrate ingredients subcollection
       const ingredientsRef = collection(db, 'recipes', recipeDoc.id, 'ingredients');
+
       const ingredientsSnapshot = await getDocs(ingredientsRef);
+
       
       for (const ingredientDoc of ingredientsSnapshot.docs) {
         const newIngredientRef = doc(db, 'restaurants', restaurantId, 'recipes', recipeDoc.id, 'ingredients', ingredientDoc.id);
+
         await setDoc(newIngredientRef, ingredientDoc.data());
         totalIngredients++;
       }
+    }} catch (error) {
+      // Error handling
     }
-    
-    console.log(`✅ Migrated ${totalRecipes} recipes and ${totalIngredients} ingredients to ${restaurantId}`);
-    
-  } catch (error) {
-    console.error(`❌ Error migrating recipes to ${restaurantId}:`, error);
-  }
 }
 
 // Example usage (uncomment to run):

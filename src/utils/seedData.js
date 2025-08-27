@@ -9,10 +9,7 @@ import { getRestaurantDoc } from './firestoreHelpers';
  * Seed suppliers data for a restaurant
  * @param {string} restaurantId - The restaurant ID
  */
-export async function seedSuppliers(restaurantId) {
-  console.log(`Seeding suppliers for restaurant: ${restaurantId}`);
-  
-  const sampleSuppliers = [
+export async function seedSuppliers(restaurantId) {const sampleSuppliers = [
     "Fresh Foods Co.",
     "Prime Meat Supply",
     "Ocean Fresh Seafood",
@@ -27,17 +24,13 @@ export async function seedSuppliers(restaurantId) {
   
   try {
     const suppliersDocRef = getRestaurantDoc(restaurantId, "suppliers", "suppliers");
+
     await setDoc(suppliersDocRef, {
       array: sampleSuppliers,
       updatedAt: new Date(),
       createdAt: new Date()
-    });
-    
-    console.log(`✅ Successfully seeded ${sampleSuppliers.length} suppliers`);
-    return true;
-  } catch (error) {
-    console.error("❌ Error seeding suppliers:", error);
-    return false;
+    });return true;
+  } catch (error) {return false;
   }
 }
 
@@ -45,10 +38,7 @@ export async function seedSuppliers(restaurantId) {
  * Seed fridge names for a restaurant
  * @param {string} restaurantId - The restaurant ID
  */
-export async function seedFridges(restaurantId) {
-  console.log(`Seeding fridges for restaurant: ${restaurantId}`);
-  
-  const sampleFridges = [
+export async function seedFridges(restaurantId) {const sampleFridges = [
     "Walk-in Fridge",
     "Prep Fridge",
     "Dessert Fridge",
@@ -57,17 +47,13 @@ export async function seedFridges(restaurantId) {
   
   try {
     const fridgesDocRef = getRestaurantDoc(restaurantId, "fridges", "fridges");
+
     await setDoc(fridgesDocRef, {
       array: sampleFridges,
       updatedAt: new Date(),
       createdAt: new Date()
-    });
-    
-    console.log(`✅ Successfully seeded ${sampleFridges.length} fridges`);
-    return true;
-  } catch (error) {
-    console.error("❌ Error seeding fridges:", error);
-    return false;
+    });return true;
+  } catch (error) {return false;
   }
 }
 
@@ -75,17 +61,10 @@ export async function seedFridges(restaurantId) {
  * Seed all sample data for a restaurant
  * @param {string} restaurantId - The restaurant ID
  */
-export async function seedAllData(restaurantId) {
-  console.log(`🌱 Seeding all sample data for restaurant: ${restaurantId}`);
-  
-  try {
+export async function seedAllData(restaurantId) {try {
     await seedSuppliers(restaurantId);
-    await seedFridges(restaurantId);
-    
-    console.log("✅ All sample data seeded successfully!");
-    return true;
-  } catch (error) {
-    console.error("❌ Error seeding sample data:", error);
-    return false;
+
+    await seedFridges(restaurantId);return true;
+  } catch (error) {return false;
   }
 }

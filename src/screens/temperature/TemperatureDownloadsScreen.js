@@ -22,24 +22,36 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 
+
 const TemperatureDownloadsScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
+
   const [selectedRange, setSelectedRange] = useState(null); // Changed from '7' to null - range buttons gray by default
   const [startDate, setStartDate] = useState(null);
+
   const [endDate, setEndDate] = useState(null);
+
   const [fridgeLogs, setFridgeLogs] = useState([]);
+
   const [deliveryLogs, setDeliveryLogs] = useState([]);
+
   const [coolingReheatingLogs, setCoolingReheatingLogs] = useState([]);
+
   const [showStartPicker, setShowStartPicker] = useState(false);
+
   const [showEndPicker, setShowEndPicker] = useState(false);
+
   const [recentDownloads, setRecentDownloads] = useState([]);
+
   const today = getFormattedTodayDate();
 
   useEffect(() => {
     const fetchTemperatureRecordsInRange = async () => {
       if (!restaurantId || !startDate || !endDate) return;
+
       
       const start = Timestamp.fromDate(new Date(startDate.setHours(0,0,0,0)));
+
       const end = Timestamp.fromDate(new Date(endDate.setHours(23,59,59,999)));
       
       // Fetch fridge logs
@@ -49,6 +61,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         where("createdAt", "<=", end),
         orderBy("createdAt", "desc")
       );
+
       const fridgeSnapshot = await getDocs(fridgeQuery);
       setFridgeLogs(fridgeSnapshot.docs.map(doc => ({
         ...doc.data(),
@@ -63,6 +76,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         where("createdAt", "<=", end),
         orderBy("createdAt", "desc")
       );
+
       const deliverySnapshot = await getDocs(deliveryQuery);
       setDeliveryLogs(deliverySnapshot.docs.map(doc => ({
         ...doc.data(),
@@ -77,6 +91,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         where("createdAt", "<=", end),
         orderBy("createdAt", "desc")
       );
+
       const coolingReheatingSnapshot = await getDocs(coolingReheatingQuery);
       setCoolingReheatingLogs(coolingReheatingSnapshot.docs.map(doc => ({
         ...doc.data(),
@@ -99,21 +114,23 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         "temperature", 
         "recent_downloads"
       );
+
       const q = query(recentDownloadsRef, orderBy("createdAt", "desc"));
+
       const snapshot = await getDocs(q);
+
       const downloads = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
       }));
       setRecentDownloads(downloads);
-    } catch (e) {
-      console.error("Failed to fetch recent downloads", e);
-    }
+    } catch (e) {}
   };
 
   useEffect(() => {
     fetchRecentDownloads();
   }, [restaurantId]);
+
 
   const renderDownloadItem = ({ item }) => (
     <TouchableOpacity
@@ -149,6 +166,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
       <TouchableOpacity
         onPress={async (e) => {
           e.stopPropagation();
+
           if (!item.link) {
             Alert.alert('No Link', 'No download link available for this item.');
             return;
@@ -170,14 +188,15 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
                     onPress: async () => {
                       try {
                         const fileUri = FileSystem.documentDirectory + (item.name || 'temperature_records.pdf');
+
                         const downloadResumable = FileSystem.createDownloadResumable(item.link, fileUri);
+
                         const result = await downloadResumable.downloadAsync();
+
                         if (result) {
                           await Sharing.shareAsync(result.uri, { mimeType: 'application/pdf' });
                         }
-                      } catch (downloadError) {
-                        console.error('Download error:', downloadError);
-                        Alert.alert('Download Failed', 'Could not download the file.');
+                      } catch (downloadError) {Alert.alert('Download Failed', 'Could not download the file.');
                       }
                     }
                   },
@@ -193,9 +212,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
             } else {
               Alert.alert('Invalid Link', 'This download link is not supported.');
             }
-          } catch (error) {
-            console.error('Error handling download:', error);
-            Alert.alert('Error', 'Could not process the download.');
+          } catch (error) {Alert.alert('Error', 'Could not process the download.');
           }
         }}
         style={{ padding: 8 }}
@@ -214,6 +231,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
     try {
       // Check if the file exists
       const fileInfo = await FileSystem.getInfoAsync(filePath);
+
       
       if (!fileInfo.exists) {
         Alert.alert(
@@ -240,9 +258,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         dialogTitle: `Share ${fileName || 'Temperature Records'}`
       });
       
-    } catch (error) {
-      console.error('Error accessing local file:', error);
-      Alert.alert(
+    } catch (error) {Alert.alert(
         'File Access Error', 
         'Could not access this file. It may be corrupted or inaccessible.',
         [
@@ -265,6 +281,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
     try {
       // Find the download item with this file path
       const downloadToRemove = recentDownloads.find(item => item.link === filePath);
+
       if (downloadToRemove) {
         // Remove from local state
         setRecentDownloads(prev => prev.filter(item => item.id !== downloadToRemove.id));
@@ -277,19 +294,20 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
             "temperature", 
             "recent_downloads"
           ).doc(downloadToRemove.id);
+
           await deleteDoc(docRef);
-        } catch (firestoreError) {
-          console.warn('Could not remove from Firestore:', firestoreError.message);
-        }
+        } catch (firestoreError) {}
       }
     } catch (error) {
-      console.error('Error removing invalid download:', error);
+      // Error handling
     }
   };
+
 
   const formatDate = (date) => {
     return date.toLocaleDateString();
   };
+
 
   const exportToPDF = async () => {
     if (!fridgeLogs.length && !deliveryLogs.length && !coolingReheatingLogs.length) {
@@ -303,6 +321,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
 
       // Generate unique filename
       const fileName = generatePdfFileName('temperature', startDate, endDate);
+
 
       let html = `
         <h1>Temperature Records</h1>
@@ -387,9 +406,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
             'PDF was saved locally due to cloud storage issues. The file may not be accessible from other devices.',
             [{ text: 'OK' }]
           );
-        } catch (localStorageError) {
-          console.error('❌ Both Firebase Storage and local storage failed:', localStorageError);
-          throw new Error('Failed to save PDF: ' + localStorageError.message);
+        } catch (localStorageError) {throw new Error('Failed to save PDF: ' + localStorageError.message);
         }
       }
 
@@ -406,9 +423,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
       // Clean up the original temporary file (keep the permanent copy)
       try {
         await FileSystem.deleteAsync(uri, { idempotent: true });
-      } catch (cleanupError) {
-        console.warn('⚠️ Could not clean up original temporary file:', cleanupError);
-      }
+      } catch (cleanupError) {}
 
       // Refresh the downloads list
       await fetchRecentDownloads();
@@ -430,9 +445,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         ]
       );
 
-    } catch (error) {
-      console.error('❌ Error exporting PDF:', error);
-      Alert.alert(
+    } catch (error) {Alert.alert(
         'Export Failed', 
         'Failed to export PDF: ' + error.message,
         [{ text: 'OK' }]
@@ -440,9 +453,12 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
     }
   };
 
+
   const handleRangeSelect = (days) => {
     setSelectedRange(days);
+
     const end = new Date();
+
     const start = new Date();
     start.setDate(end.getDate() - (parseInt(days) - 1));
     setStartDate(start);
@@ -549,6 +565,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
     </SafeAreaView>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {

@@ -7,21 +7,32 @@ import { getDoc } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantSubDoc } from "../../utils/firestoreHelpers";
 
+
 const { width: screenWidth } = Dimensions.get('window');
 
 // Recipe cache to store previously loaded recipes
 const recipeCache = new Map();
+
 const imageCacheStatus = new Map();
+
 
 function RecipeDetailScreen({ route, navigation }) {
   const { restaurantId } = useRestaurant();
+
   const { recipeId, category } = route.params;
+
   const [recipe, setRecipe] = useState(null);
+
   const [loading, setLoading] = useState(true);
+
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+
   const [imageLoadingStates, setImageLoadingStates] = useState({});
+
   const [imageErrors, setImageErrors] = useState({});
+
   const [refreshing, setRefreshing] = useState(false);
+
   const mountedRef = useRef(true);
 
   // Cache key for this specific recipe
@@ -29,34 +40,34 @@ function RecipeDetailScreen({ route, navigation }) {
 
   useEffect(() => {
     mountedRef.current = true;
+
     
     const fetchRecipeDetails = async () => {
       if (!restaurantId) return;
       
       // Check cache first
       const cachedRecipe = recipeCache.get(cacheKey);
-      if (cachedRecipe && !refreshing) {
-        console.log('📁 Loading recipe from cache:', recipeId);
-        setRecipe(cachedRecipe);
+
+      if (cachedRecipe && !refreshing) {setRecipe(cachedRecipe);
         setLoading(false);
         return;
       }
       
-      try {
-        console.log('🌐 Fetching recipe from Firestore:', recipeId);
-        const recipeDoc = await getDoc(
+      try {const recipeDoc = await getDoc(
           getRestaurantSubDoc(restaurantId, "recipes", "categories", category, recipeId)
         );
+
         
         const recipeData = recipeDoc.data();
+
         if (recipeData && mountedRef.current) {
           // Cache the recipe data
           recipeCache.set(cacheKey, recipeData);
           setRecipe(recipeData);
         }
       } catch (error) {
-        console.error("Error fetching recipe details:", error);
-      } finally {
+      // Error handling
+    } finally {
         if (mountedRef.current) {
           setLoading(false);
           setRefreshing(false);
@@ -72,24 +83,27 @@ function RecipeDetailScreen({ route, navigation }) {
     };
   }, [recipeId, category, restaurantId, cacheKey, refreshing]);
 
+
   const onRefresh = async () => {
     setRefreshing(true);
+
     
     if (!restaurantId) {
       setRefreshing(false);
       return;
     }
     
-    try {
-      console.log('🔄 Force refreshing recipe data:', recipeId);
-      // Clear cache for this recipe
+    try {// Clear cache for this recipe
       recipeCache.delete(cacheKey);
+
       
       const recipeDoc = await getDoc(
         getRestaurantSubDoc(restaurantId, "recipes", "categories", category, recipeId)
       );
+
       
       const recipeData = recipeDoc.data();
+
       if (recipeData && mountedRef.current) {
         // Update cache with fresh data
         recipeCache.set(cacheKey, recipeData);
@@ -108,13 +122,14 @@ function RecipeDetailScreen({ route, navigation }) {
       });
       
     } catch (error) {
-      console.error("Error refreshing recipe details:", error);
+      // Error handling
     } finally {
       if (mountedRef.current) {
         setRefreshing(false);
       }
     }
   };
+
 
   const getImageArray = (recipe) => {
     if (!recipe?.image) return [];
@@ -145,8 +160,11 @@ function RecipeDetailScreen({ route, navigation }) {
     }
 
     const imageUrl = item.trim();
+
     const imageKey = `${index}-${imageUrl}`;
+
     const isLoading = imageLoadingStates[imageKey];
+
     const hasError = imageErrors[imageKey];
     
     // Check if image is already cached
@@ -174,9 +192,7 @@ function RecipeDetailScreen({ route, navigation }) {
               setImageLoadingStates(prev => ({ ...prev, [imageKey]: false }));
             }
           }}
-          onError={(error) => {
-            console.log('Image load error for:', imageUrl, error);
-            if (mountedRef.current) {
+          onError={(error) => {if (mountedRef.current) {
               setImageLoadingStates(prev => ({ ...prev, [imageKey]: false }));
               setImageErrors(prev => ({ ...prev, [imageKey]: true }));
             }
@@ -215,18 +231,24 @@ function RecipeDetailScreen({ route, navigation }) {
     );
   };
 
+
   const onImageScroll = (event) => {
     const slideSize = event.nativeEvent.layoutMeasurement.width;
+
     const index = event.nativeEvent.contentOffset.x / slideSize;
+
     const roundedIndex = Math.round(index);
+
     
     if (roundedIndex !== currentImageIndex) {
       setCurrentImageIndex(roundedIndex);
     }
   };
 
+
   const renderPaginationDots = () => {
     const images = getImageArray(recipe);
+
     if (!images || images.length <= 1) return null;
     
     return (
@@ -243,6 +265,7 @@ function RecipeDetailScreen({ route, navigation }) {
       </View>
     );
   };
+
 
   if (loading) {
     return (
@@ -281,7 +304,7 @@ function RecipeDetailScreen({ route, navigation }) {
         {/* Image Slideshow */}
         {(() => {
           const images = getImageArray(recipe);
-          console.log('Recipe images:', images); // Debug log
+          // Debug log for images
           return images.length > 0 ? (
             <View style={styles.imageContainer}>
               <FlatList

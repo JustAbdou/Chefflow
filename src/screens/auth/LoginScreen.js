@@ -21,9 +21,13 @@ import { auth } from '../../../firebase'; // adjust path if needed
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
+
   const [password, setPassword] = useState('');
+
   const [showPassword, setShowPassword] = useState(false);
+
   const [loading, setLoading] = useState(false);
+
   const [error, setError] = useState('');
 
   // Hide Android navigation bar
@@ -41,6 +45,7 @@ const LoginScreen = ({ navigation }) => {
     });
     return unsubscribe;
   }, []);
+
 
   const handleLogin = async () => {
     setLoading(true);
@@ -64,7 +69,9 @@ const LoginScreen = ({ navigation }) => {
     }
   };
 
+
   const isFormValid = email.length > 0 && password.length > 0;
+
 
   const handleContactUs = () => {
     Linking.openURL('mailto:contact@chefflowapp.net');
@@ -159,6 +166,7 @@ const LoginScreen = ({ navigation }) => {
     </SafeAreaView>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {

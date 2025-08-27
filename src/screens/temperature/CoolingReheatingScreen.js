@@ -20,15 +20,24 @@ import { addDoc, getDocs, deleteDoc, serverTimestamp, query, where, orderBy } fr
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection } from "../../utils/firestoreHelpers";
 
+
 const CoolingReheatingScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
+
   const [logs, setLogs] = useState([]);
+
   const [selectedDate, setSelectedDate] = useState(new Date());
+
   const [showDatePicker, setShowDatePicker] = useState(false);
+
   const [newItem, setNewItem] = useState('');
+
   const [newType, setNewType] = useState('cooling');
+
   const [newTemperature, setNewTemperature] = useState('');
+
   const [loading, setLoading] = useState(true);
+
   const [refreshing, setRefreshing] = useState(false);
 
   // Hide Android navigation bar
@@ -38,10 +47,13 @@ const CoolingReheatingScreen = ({ navigation }) => {
   // Date formatting
   const formatSelectedDate = (date) => {
     const dayName = date.toLocaleDateString(undefined, { weekday: "long" });
+
     const monthName = date.toLocaleDateString(undefined, { month: "long" });
+
     const dayNum = date.getDate();
     return `${dayName}, ${monthName} ${dayNum}`;
   };
+
 
   const todayString = formatSelectedDate(selectedDate);
 
@@ -52,7 +64,9 @@ const CoolingReheatingScreen = ({ navigation }) => {
     setLoading(true);
     try {
       const coolingReheatingCollection = getRestaurantCollection(restaurantId, 'coolingreheating');
+
       const logsSnapshot = await getDocs(coolingReheatingCollection);
+
       
       let allLogs = [];
       logsSnapshot.forEach(docSnap => {
@@ -66,19 +80,20 @@ const CoolingReheatingScreen = ({ navigation }) => {
       // Filter logs for the selected date
       const selectedDateStart = new Date(selectedDate);
       selectedDateStart.setHours(0, 0, 0, 0);
+
       const selectedDateEnd = new Date(selectedDate);
       selectedDateEnd.setHours(23, 59, 59, 999);
+
       
       const filteredLogs = allLogs.filter(log => {
         if (!log.createdAt) return false;
+
         const logDate = log.createdAt.toDate ? log.createdAt.toDate() : new Date(log.createdAt.seconds * 1000);
         return logDate >= selectedDateStart && logDate <= selectedDateEnd;
       });
       
       setLogs(filteredLogs);
-    } catch (error) {
-      console.error("Error fetching cooling/reheating logs:", error);
-      Alert.alert('Error', 'Failed to fetch logs');
+    } catch (error) {Alert.alert('Error', 'Failed to fetch logs');
     } finally {
       setLoading(false);
     }
@@ -87,6 +102,7 @@ const CoolingReheatingScreen = ({ navigation }) => {
   useEffect(() => {
     fetchLogs();
   }, [restaurantId, selectedDate]);
+
 
   const handleAddLog = async () => {
     if (!newItem.trim() || !newTemperature.trim()) {
@@ -99,6 +115,7 @@ const CoolingReheatingScreen = ({ navigation }) => {
     try {
       const selectedDateTimestamp = new Date(selectedDate);
       selectedDateTimestamp.setHours(12, 0, 0, 0);
+
 
       await addDoc(getRestaurantCollection(restaurantId, "coolingreheating"), {
         item: newItem.trim(),
@@ -116,11 +133,10 @@ const CoolingReheatingScreen = ({ navigation }) => {
       fetchLogs();
 
       Alert.alert('Success', 'Log added successfully');
-    } catch (error) {
-      console.error("Error adding cooling/reheating log:", error);
-      Alert.alert('Error', 'Failed to add log');
+    } catch (error) {Alert.alert('Error', 'Failed to add log');
     }
   };
+
 
   const deleteLog = async (logId) => {
     if (!restaurantId) return;
@@ -129,24 +145,27 @@ const CoolingReheatingScreen = ({ navigation }) => {
       await deleteDoc(getRestaurantCollection(restaurantId, "coolingreheating", logId));
       fetchLogs();
       Alert.alert('Success', 'Log deleted successfully');
-    } catch (error) {
-      console.error("Error deleting log:", error);
-      Alert.alert('Error', 'Failed to delete log');
+    } catch (error) {Alert.alert('Error', 'Failed to delete log');
     }
   };
 
+
   const handleDateConfirm = (selectedDate) => {
     setShowDatePicker(false);
+
     if (selectedDate) {
       setSelectedDate(selectedDate);
     }
   };
 
+
   const onRefresh = async () => {
     setRefreshing(true);
+
     await fetchLogs();
     setRefreshing(false);
   };
+
 
   const renderRightActions = (logId) => (
     <TouchableOpacity
@@ -356,6 +375,7 @@ const CoolingReheatingScreen = ({ navigation }) => {
     </SafeAreaView>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {

@@ -24,10 +24,15 @@ import { getFormattedTodayDate } from '../../utils/dateUtils';
 
 export default function ClosingChecklistScreen({ navigation }) {
   const { restaurantId } = useRestaurant();
+
   const [tasks, setTasks] = useState([]);
+
   const [loading, setLoading] = useState(true);
+
   const [refreshing, setRefreshing] = useState(false);
+
   const [modalVisible, setModalVisible] = useState(false);
+
   const [currentDate, setCurrentDate] = useState('');
 
   // Hide Android navigation bar
@@ -44,6 +49,7 @@ export default function ClosingChecklistScreen({ navigation }) {
     
     try {
       const snapshot = await getDocs(getRestaurantCollection(restaurantId, "closinglist"));
+
       const fetchedTasks = snapshot.docs.map(docSnap => {
         const data = docSnap.data();
         return {
@@ -58,9 +64,7 @@ export default function ClosingChecklistScreen({ navigation }) {
         };
       });
       setTasks(fetchedTasks);
-    } catch (e) {
-      console.error("Error fetching cleaning tasks:", e);
-      setTasks([]);
+    } catch (e) {setTasks([]);
     }
   };
 
@@ -71,6 +75,7 @@ export default function ClosingChecklistScreen({ navigation }) {
     try {
       // Get current time in GMT+1 timezone
       const now = new Date();
+
       const gmt1Now = new Date(now.getTime() + (60 * 60 * 1000)); // Add 1 hour for GMT+1
       
       // Calculate today's 3 AM in GMT+1
@@ -79,10 +84,9 @@ export default function ClosingChecklistScreen({ navigation }) {
       
       // Check if we need to reset (current time is past 3 AM today)
       const shouldReset = gmt1Now >= today3AM;
+
       
-      if (!shouldReset) {
-        console.log('Daily reset not needed yet - current time is before 3 AM GMT+1');
-        return;
+      if (!shouldReset) {return;
       }
       
       // Get today's date string for tracking last reset
@@ -93,38 +97,28 @@ export default function ClosingChecklistScreen({ navigation }) {
         const lastResetDate = await AsyncStorage.getItem(lastResetKey);
         
         // If we already reset today, don't reset again
-        if (lastResetDate === todayDateString) {
-          console.log('Daily reset already performed today');
-          return;
+        if (lastResetDate === todayDateString) {return;
         }
-      } catch (storageError) {
-        console.log('Could not read last reset date from storage, proceeding with reset');
-      }
-      
-      console.log('Performing daily reset at 3 AM GMT+1 - resetting all closing checklist tasks "done" boolean only');
-      
-      // Fetch ALL tasks directly from Firestore to ensure we reset everything
+      } catch (storageError) {}// Fetch ALL tasks directly from Firestore to ensure we reset everything
       const snapshot = await getDocs(getRestaurantCollection(restaurantId, "closinglist"));
+
       const resetPromises = [];
       
       // Reset ALL tasks to done: false (only reset the "done" boolean, keep the items)
       snapshot.docs.forEach(docSnap => {
         const data = docSnap.data();
-        if (data.done) {
-          console.log(`Resetting closing checklist task "done" boolean: ${data.name || docSnap.id}`);
-          const resetPromise = updateDoc(getRestaurantDoc(restaurantId, "closinglist", docSnap.id), {
+
+        if (data.done) {const resetPromise = updateDoc(getRestaurantDoc(restaurantId, "closinglist", docSnap.id), {
             done: false,
             completedAt: null,
           });
           resetPromises.push(resetPromise);
         }
       });
+
       
       if (resetPromises.length > 0) {
-        await Promise.all(resetPromises);
-        console.log(`Daily reset completed: Reset "done" boolean for ${resetPromises.length} closing checklist tasks to false`);
-        
-        // Update local state - reset all tasks to not done (only change "done" boolean)
+        await Promise.all(resetPromises);// Update local state - reset all tasks to not done (only change "done" boolean)
         setTasks(prevTasks =>
           prevTasks.map(task => ({
             ...task,
@@ -136,14 +130,10 @@ export default function ClosingChecklistScreen({ navigation }) {
       
       // Store today's date as the last reset date
       try {
-        await AsyncStorage.setItem(lastResetKey, todayDateString);
-        console.log(`Stored last reset date: ${todayDateString}`);
-      } catch (storageError) {
-        console.error('Could not store last reset date:', storageError);
-      }
+        await AsyncStorage.setItem(lastResetKey, todayDateString);} catch (storageError) {}
       
     } catch (error) {
-      console.error('Error performing daily reset:', error);
+      // Error handling
     }
   };
 
@@ -151,7 +141,9 @@ export default function ClosingChecklistScreen({ navigation }) {
   useEffect(() => {
     const loadTasks = async () => {
       setLoading(true);
+
       await fetchTasks();
+
       await performDailyReset(); // Perform daily reset on load
       setLoading(false);
       setRefreshing(false);
@@ -162,7 +154,9 @@ export default function ClosingChecklistScreen({ navigation }) {
   // Pull to refresh handler
   const onRefresh = async () => {
     setRefreshing(true);
+
     await fetchTasks();
+
     await performDailyReset(); // Perform daily reset on refresh
     setRefreshing(false);
   };
@@ -198,9 +192,7 @@ export default function ClosingChecklistScreen({ navigation }) {
             : task
         )
       );
-    } catch (e) {
-      console.error("Error updating closing checklist task:", e);
-    }
+    } catch (e) {}
   };
 
   return (

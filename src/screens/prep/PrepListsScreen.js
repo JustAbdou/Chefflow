@@ -17,13 +17,21 @@ import { auth, db } from "../../../firebase";
 
 export default function PrepListsScreen() {
   const { restaurantId } = useRestaurant();
+
   const navigation = useNavigation();
+
   const [prepItems, setPrepItems] = useState([]);
+
   const [showAddModal, setShowAddModal] = useState(false);
+
   const [showFlagModal, setShowFlagModal] = useState(false);
+
   const [selectedItemId, setSelectedItemId] = useState(null);
+
   const [currentDate, setCurrentDate] = useState('');
+
   const [loading, setLoading] = useState(true);
+
   const [refreshing, setRefreshing] = useState(false);
 
   // Hide Android navigation bar
@@ -41,7 +49,9 @@ export default function PrepListsScreen() {
       setLoading(true);
       try {
         const q = query(getRestaurantCollection(restaurantId, "preplist"), orderBy("createdAt", "desc"));
+
         const snapshot = await getDocs(q);
+
         const items = snapshot.docs.map(doc => {
           const data = doc.data();
           return {
@@ -57,8 +67,8 @@ export default function PrepListsScreen() {
         
         setPrepItems(items);
       } catch (error) {
-        console.error("Error fetching prep items:", error);
-      } finally {
+      // Error handling
+    } finally {
         setLoading(false);
         setRefreshing(false);
       }
@@ -69,8 +79,10 @@ export default function PrepListsScreen() {
   // Daily reset function to clear 'done' status after 24 hours
   const performDailyReset = async (items) => {
     if (!restaurantId) return;
+
     
     const now = new Date();
+
     const resetPromises = [];
     
     items.forEach(item => {
@@ -90,10 +102,10 @@ export default function PrepListsScreen() {
         // Check if more than 24 hours have passed since completion
         if (completedTime) {
           const hoursSinceCompletion = (now.getTime() - completedTime.getTime()) / (1000 * 60 * 60);
+
           
           if (hoursSinceCompletion >= 24) {
-            console.log(`🔄 Resetting done status for item: ${item.name} (completed ${hoursSinceCompletion.toFixed(1)}h ago)`);
-            
+            // Reset item that was completed more than 24 hours ago
             // Reset the done status and remove completedAt timestamp
             const resetPromise = updateDoc(getRestaurantDoc(restaurantId, "preplist", item.id), {
               done: false,
@@ -113,11 +125,9 @@ export default function PrepListsScreen() {
     // Execute all reset operations
     if (resetPromises.length > 0) {
       try {
-        await Promise.all(resetPromises);
-        console.log(`✅ Daily reset completed: ${resetPromises.length} items reset`);
-      } catch (error) {
-        console.error("Error performing daily reset:", error);
-      }
+        await Promise.all(resetPromises);} catch (error) {
+      // Error handling
+    }
     }
   };
 
@@ -126,7 +136,9 @@ export default function PrepListsScreen() {
     setRefreshing(true);
     try {
       const q = query(getRestaurantCollection(restaurantId, "preplist"), orderBy("createdAt", "desc"));
+
       const snapshot = await getDocs(q);
+
       const items = snapshot.docs.map(doc => {
         const data = doc.data();
         return {
@@ -142,7 +154,7 @@ export default function PrepListsScreen() {
       
       setPrepItems(items);
     } catch (error) {
-      console.error("Error refreshing prep items:", error);
+      // Error handling
     } finally {
       setRefreshing(false);
     }
@@ -151,8 +163,10 @@ export default function PrepListsScreen() {
   // Toggle done (checkbox) in state and Firestore
   const toggleItem = async (id, currentDone) => {
     if (!restaurantId) return;
+
     
     const newDoneStatus = !currentDone;
+
     const updateData = { 
       done: newDoneStatus,
       // Set completedAt timestamp when marking as done, clear it when unmarking
@@ -171,17 +185,20 @@ export default function PrepListsScreen() {
     
     try {
       const itemRef = getRestaurantDoc(restaurantId, "preplist", id);
+
       await updateDoc(itemRef, updateData);
     } catch (error) {
-      console.error("Error updating done field:", error);
+      // Error handling
     }
   };
+
 
   const addNewItem = async (itemName) => {
     if (!restaurantId) return;
     
     try {
       const currentUser = auth.currentUser;
+
       let userInfo = {
         userId: 'anonymous',
         userEmail: 'anonymous',
@@ -189,10 +206,12 @@ export default function PrepListsScreen() {
         fullName: 'Anonymous User'
       };
 
+
       if (currentUser) {
         // Fetch user's full name from Firestore
         try {
           const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+
           const userData = userDoc.exists() ? userDoc.data() : null;
           
           userInfo = {
@@ -201,9 +220,7 @@ export default function PrepListsScreen() {
             userName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Unknown User',
             fullName: userData?.fullName || currentUser.displayName || currentUser.email?.split('@')[0] || 'Unknown User'
           };
-        } catch (firestoreError) {
-          console.warn('Could not fetch user data from Firestore:', firestoreError);
-          // Fallback to auth data only
+        } catch (firestoreError) {// Fallback to auth data only
           userInfo = {
             userId: currentUser.uid,
             userEmail: currentUser.email || 'Unknown Email',
@@ -226,7 +243,7 @@ export default function PrepListsScreen() {
       ]);
       setShowAddModal(false);
     } catch (error) {
-      console.error("Error adding prep item:", error);
+      // Error handling
     }
   };
 
@@ -242,9 +259,10 @@ export default function PrepListsScreen() {
     
     try {
       const itemRef = getRestaurantDoc(restaurantId, "preplist", itemId);
+
       await updateDoc(itemRef, { flagColor: flagColor });
     } catch (error) {
-      console.error("Error updating flag:", error);
+      // Error handling
     }
     
     setShowFlagModal(false);
@@ -265,9 +283,10 @@ export default function PrepListsScreen() {
       await deleteDoc(getRestaurantDoc(restaurantId, "preplist", id));
       setPrepItems((items) => items.filter((item) => item.id !== id));
     } catch (error) {
-      console.error("Error deleting prep item:", error);
+      // Error handling
     }
   };
+
 
   const clearAllItems = () => {
     Alert.alert(
@@ -288,20 +307,20 @@ export default function PrepListsScreen() {
               const deletePromises = prepItems.map(item =>
                 deleteDoc(getRestaurantDoc(restaurantId, "preplist", item.id))
               );
+
               
               await Promise.all(deletePromises);
               
               // Clear local state
               setPrepItems([]);
-            } catch (error) {
-              console.error("Error clearing all items:", error);
-              Alert.alert("Error", "Failed to clear all items. Please try again.");
+            } catch (error) {Alert.alert("Error", "Failed to clear all items. Please try again.");
             }
           }
         }
       ]
     );
   };
+
 
   const onBack = () => {
     navigation.goBack();
@@ -320,6 +339,7 @@ export default function PrepListsScreen() {
       </TouchableOpacity>
     </View>
   );
+
 
   const renderPrepItem = (item) => (
     <Swipeable
@@ -390,10 +410,7 @@ export default function PrepListsScreen() {
     
     // Debug: Log the full timestamps for verification
     if (__DEV__) {
-      console.log('Sorting prep items:', {
-        itemA: { name: a.name, createdAt: aTime.toISOString() },
-        itemB: { name: b.name, createdAt: bTime.toISOString() }
-      });
+      // Debug info available in development mode
     }
     
     // Compare full date and time (newest first)

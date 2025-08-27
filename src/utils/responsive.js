@@ -5,6 +5,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Base dimensions (iPhone 12 Pro dimensions as reference)
 const BASE_WIDTH = 390;
+
 const BASE_HEIGHT = 844;
 
 /**
@@ -36,6 +37,7 @@ export const scaleHeight = (size) => {
  */
 export const scaleFont = (size, minScale = 0.8, maxScale = 1.3) => {
   const scale = Math.min(SCREEN_WIDTH / BASE_WIDTH, SCREEN_HEIGHT / BASE_HEIGHT);
+
   const clampedScale = Math.max(minScale, Math.min(maxScale, scale));
   return Math.round(PixelRatio.roundToNearestPixel(size * clampedScale));
 };

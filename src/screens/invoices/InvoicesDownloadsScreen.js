@@ -22,28 +22,40 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 
+
 const InvoicesDownloadsScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
+
   const [selectedRange, setSelectedRange] = useState(null); // Changed from '7' to null
   const [startDate, setStartDate] = useState(null);
+
   const [endDate, setEndDate] = useState(null);
+
   const [invoices, setInvoices] = useState([]);
+
   const [showStartPicker, setShowStartPicker] = useState(false);
+
   const [showEndPicker, setShowEndPicker] = useState(false);
+
   const [recentDownloads, setRecentDownloads] = useState([]);
+
   const today = getFormattedTodayDate();
 
   useEffect(() => {
     const fetchInvoicesInRange = async () => {
       if (!restaurantId || !startDate || !endDate) return;
+
       
       const start = Timestamp.fromDate(new Date(startDate.setHours(0,0,0,0)));
+
       const end = Timestamp.fromDate(new Date(endDate.setHours(23,59,59,999)));
+
       const q = query(
         getRestaurantCollection(restaurantId, "invoices"),
         where("createdAt", ">=", start),
         where("createdAt", "<=", end)
       );
+
       const snapshot = await getDocs(q);
       setInvoices(snapshot.docs.map(doc => ({
         ...doc.data(),
@@ -65,27 +77,30 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
         "invoices", 
         "recent_downloads"
       );
+
       const q = query(recentDownloadsRef, orderBy("createdAt", "desc"));
+
       const snapshot = await getDocs(q);
+
       const downloads = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
       }));
       setRecentDownloads(downloads);
-    } catch (e) {
-      console.error("Failed to fetch recent downloads", e);
-    }
+    } catch (e) {}
   };
 
   useEffect(() => {
     fetchRecentDownloads();
   }, [restaurantId]);
 
+
   const renderDownloadItem = ({ item }) => {
     // Helper function to handle local file access
     const handleLocalFileAccess = async (fileUri) => {
       try {
         const fileInfo = await FileSystem.getInfoAsync(fileUri);
+
         if (fileInfo.exists) {
           await Sharing.shareAsync(fileUri, { mimeType: 'application/pdf' });
         } else {
@@ -105,9 +120,7 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
             ]
           );
         }
-      } catch (error) {
-        console.error('Error accessing local file:', error);
-        Alert.alert('Error', 'Could not access this file.');
+      } catch (error) {Alert.alert('Error', 'Could not access this file.');
       }
     };
 
@@ -120,14 +133,13 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
           "invoices", 
           "recent_downloads"
         ).doc(downloadId);
+
         await deleteDoc(downloadRef);
         
         // Update local state
         setRecentDownloads(prev => prev.filter(download => download.id !== downloadId));
         Alert.alert('Success', 'Invalid download removed.');
-      } catch (error) {
-        console.error('Error removing invalid download:', error);
-        Alert.alert('Error', 'Could not remove the invalid download.');
+      } catch (error) {Alert.alert('Error', 'Could not remove the invalid download.');
       }
     };
 
@@ -158,6 +170,7 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
         <TouchableOpacity
           onPress={async (e) => {
             e.stopPropagation();
+
             if (!item.link) {
               Alert.alert('No Link', 'No download link available for this item.');
               return;
@@ -179,14 +192,15 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
                       onPress: async () => {
                         try {
                           const fileUri = FileSystem.documentDirectory + (item.name || 'invoice.pdf');
+
                           const downloadResumable = FileSystem.createDownloadResumable(item.link, fileUri);
+
                           const result = await downloadResumable.downloadAsync();
+
                           if (result) {
                             await Sharing.shareAsync(result.uri, { mimeType: 'application/pdf' });
                           }
-                        } catch (downloadError) {
-                          console.error('Download error:', downloadError);
-                          Alert.alert('Download Failed', 'Could not download the file.');
+                        } catch (downloadError) {Alert.alert('Download Failed', 'Could not download the file.');
                         }
                       }
                     },
@@ -202,9 +216,7 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
               } else {
                 Alert.alert('Invalid Link', 'This download link is not supported.');
               }
-            } catch (error) {
-              console.error('Error handling download:', error);
-              Alert.alert('Error', 'Could not process the download.');
+            } catch (error) {Alert.alert('Error', 'Could not process the download.');
             }
           }}
           style={{ padding: 8 }}
@@ -219,10 +231,12 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
     );
   };
 
+
   const formatDate = (date) => {
     // Implement your date formatting logic here
     return date.toLocaleDateString();
   };
+
 
   const exportToPDF = async () => {
     if (!invoices.length) {
@@ -239,6 +253,7 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
 
       // Calculate totals
       const totalAmount = invoices.reduce((sum, inv) => sum + (parseFloat(inv.amount) || 0), 0);
+
       
       let html = `
         <!DOCTYPE html>
@@ -265,6 +280,7 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
               color: #2563eb;
               text-decoration: none;
               font-family: 'Helvetica', Arial, sans-serif;
+
               letter-spacing: -1px;
               margin-bottom: 8px;
             }
@@ -473,23 +489,12 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
         html, 
         base64: false, 
         fileName: fileName.replace('.pdf', '') 
-      });
-
-      console.log('📄 PDF generated locally:', uri);
-
-      // Use temporary storage solution until Firebase Storage blob issues are resolved
+      });// Use temporary storage solution until Firebase Storage blob issues are resolved
       let downloadURL;
       try {
         // Try the original method first
-        downloadURL = await uploadPdfToStorage(uri, fileName, restaurantId, 'invoices');
-        console.log('☁️ PDF uploaded to Firebase Storage successfully:', downloadURL);
-      } catch (storageError) {
-        console.log('⚠️ Firebase Storage upload failed, using temporary local storage:', storageError.message);
-        // Use temporary local storage as fallback
-        downloadURL = await uploadPdfToStorageTemporary(uri, fileName, restaurantId, 'invoices');
-        console.log('💾 PDF saved to local storage:', downloadURL);
-        
-        // Alert user about local storage limitation
+        downloadURL = await uploadPdfToStorage(uri, fileName, restaurantId, 'invoices');} catch (storageError) {// Use temporary local storage as fallback
+        downloadURL = await uploadPdfToStorageTemporary(uri, fileName, restaurantId, 'invoices');// Alert user about local storage limitation
         Alert.alert(
           'Local Storage Used',
           'Your PDF has been saved locally. Note that local files may have limited accessibility across app sessions.',
@@ -505,17 +510,9 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
           link: downloadURL, // This is now a cloud URL, not local path
           createdAt: serverTimestamp(),
         }
-      );
-
-      console.log('💾 Download record saved to Firestore');
-
-      // Clean up the original temporary file (keep the permanent copy)
+      );// Clean up the original temporary file (keep the permanent copy)
       try {
-        await FileSystem.deleteAsync(uri, { idempotent: true });
-        console.log('🗑️ Original temporary file cleaned up');
-      } catch (cleanupError) {
-        console.warn('⚠️ Could not clean up original temporary file:', cleanupError);
-      }
+        await FileSystem.deleteAsync(uri, { idempotent: true });} catch (cleanupError) {}
 
       // Refresh the downloads list
       await fetchRecentDownloads();
@@ -537,9 +534,7 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
         ]
       );
 
-    } catch (error) {
-      console.error('❌ Error exporting PDF:', error);
-      Alert.alert(
+    } catch (error) {Alert.alert(
         'Export Failed', 
         'Failed to export PDF: ' + error.message,
         [{ text: 'OK' }]
@@ -547,9 +542,12 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
     }
   };
 
+
   const handleRangeSelect = (days) => {
     setSelectedRange(days);
+
     const end = new Date();
+
     const start = new Date();
     start.setDate(end.getDate() - (parseInt(days) - 1));
     setStartDate(start);
@@ -655,6 +653,7 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
     </SafeAreaView>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {

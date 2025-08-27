@@ -12,10 +12,28 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyBYv2mXBoG331ihDQobE4JGv6hqCZxFd84",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "chefflow-c8581.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "chefflow-c8581",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "chefflow-c8581.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "461434725803",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:461434725803:web:b18a455453fd8343cadeee",
+        "EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID": "G-Q3B29F6JN3"
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyBYv2mXBoG331ihDQobE4JGv6hqCZxFd84",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "chefflow-c8581.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "chefflow-c8581",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "chefflow-c8581.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "461434725803",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:461434725803:web:b18a455453fd8343cadeee",
+        "EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID": "G-Q3B29F6JN3"
+      }
     }
   },
   "submit": {

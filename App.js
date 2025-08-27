@@ -11,7 +11,7 @@ import { OrderListsScreen } from './src/screens/orders/OrderListsScreen';
 import InvoiceUploadScreen from './src/screens/invoices/InvoiceUploadScreen';
 import { RestaurantProvider } from './src/contexts/RestaurantContext';
 import { setupFirestoreErrorHandling } from './src/utils/firestoreConnectionManager';
-import { clearFirestoreCache, resetFirestoreConnection } from './firebase';
+import { clearFirestoreCache, resetFirestoreConnection, testFirebaseConnection } from './firebase';
 import navigationBarUtils from './src/utils/navigationBar';
 import InvoicesScreen from './src/screens/invoices/InvoicesScreen';
 import InvoiceDetailScreen from './src/screens/invoices/InvoiceDetailScreen';
@@ -28,8 +28,11 @@ import PreviousHandoversScreen from './src/screens/handover/PreviousHandoversScr
 import TemperatureRecordsScreen from './src/screens/temperature/TemperatureRecordsScreen';
 import TemperatureDownloadsScreen from './src/screens/temperature/TemperatureDownloadsScreen';
 import CoolingReheatingScreen from './src/screens/temperature/CoolingReheatingScreen';
+import ErrorBoundary from './src/components/ErrorBoundary';
+
 
 const Stack = createStackNavigator();
+
 
 const downloadables = [
   {
@@ -41,36 +44,39 @@ const downloadables = [
 ];
 
 export default function App() {
-  let [fontsLoaded] = useFonts({
+  const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
   });
 
+  const [appReady, setAppReady] = React.useState(false);
+
   React.useEffect(() => {
     const initializeApp = async () => {
       try {
-        console.log('🚀 Initializing ChefFlow app...');
+        // Test Firebase connection first
+        await testFirebaseConnection();
         
         await clearFirestoreCache();
-        
         await resetFirestoreConnection();
         
         setupFirestoreErrorHandling();
-        
         await navigationBarUtils.initializeNavigationBar();
         
-        console.log('✅ ChefFlow app initialization complete');
+        setAppReady(true);
       } catch (error) {
-        console.error('❌ Error during app initialization:', error);
+        console.error('App initialization failed:', error);
+        // Still set app as ready to show error boundary
+        setAppReady(true);
       }
     };
 
     initializeApp();
   }, []);
 
-  if (!fontsLoaded) {
+  if (!fontsLoaded || !appReady) {
     return (
       <View style={{ 
         flex: 1, 
@@ -84,35 +90,37 @@ export default function App() {
   }
 
   return (
-    <RestaurantProvider>
-      <NavigationContainer>
-        <Stack.Navigator
-          initialRouteName="Login"
-          screenOptions={{
-            headerShown: false,
-          }}
-        >
-          <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="Main" component={TabNavigator} />
-          <Stack.Screen name="OrderLists" component={OrderListsScreen} />
-          <Stack.Screen name="PrepLists" component={PrepListsScreen} />
-          <Stack.Screen name="InvoiceUpload" component={InvoiceUploadScreen} />
-          <Stack.Screen name="Invoices" component={InvoicesScreen} />
-          <Stack.Screen name="InvoicesDownloads" component={InvoicesDownloadsScreen} />
-          <Stack.Screen name="InvoiceDetail" component={InvoiceDetailScreen} />
-          <Stack.Screen name="RecipeDetail" component={RecipeDetailScreen} />
-          <Stack.Screen name="AddRecipe" component={AddRecipeScreen} />
-          <Stack.Screen name="FridgeTempLogs" component={FridgeTempLogsScreen} />
-          <Stack.Screen name="CleaningChecklist" component={CleaningChecklistScreen} />
-          <Stack.Screen name="DeliveryTempLogs" component={DeliveryTempLogsScreen} />
-          <Stack.Screen name="Handover" component={HandoverScreen} />
-          <Stack.Screen name="HandoverCompletion" component={HandoverCompletionScreen} />
-          <Stack.Screen name="PreviousHandovers" component={PreviousHandoversScreen} />
-          <Stack.Screen name="TemperatureRecords" component={TemperatureRecordsScreen} />
-          <Stack.Screen name="TemperatureDownloads" component={TemperatureDownloadsScreen} />
-          <Stack.Screen name="CoolingReheating" component={CoolingReheatingScreen} />
-        </Stack.Navigator>
-      </NavigationContainer>
-    </RestaurantProvider>
+    <ErrorBoundary>
+      <RestaurantProvider>
+        <NavigationContainer>
+          <Stack.Navigator
+            initialRouteName="Login"
+            screenOptions={{
+              headerShown: false,
+            }}
+          >
+            <Stack.Screen name="Login" component={LoginScreen} />
+            <Stack.Screen name="Main" component={TabNavigator} />
+            <Stack.Screen name="OrderLists" component={OrderListsScreen} />
+            <Stack.Screen name="PrepLists" component={PrepListsScreen} />
+            <Stack.Screen name="InvoiceUpload" component={InvoiceUploadScreen} />
+            <Stack.Screen name="Invoices" component={InvoicesScreen} />
+            <Stack.Screen name="InvoicesDownloads" component={InvoicesDownloadsScreen} />
+            <Stack.Screen name="InvoiceDetail" component={InvoiceDetailScreen} />
+            <Stack.Screen name="RecipeDetail" component={RecipeDetailScreen} />
+            <Stack.Screen name="AddRecipe" component={AddRecipeScreen} />
+            <Stack.Screen name="FridgeTempLogs" component={FridgeTempLogsScreen} />
+            <Stack.Screen name="CleaningChecklist" component={CleaningChecklistScreen} />
+            <Stack.Screen name="DeliveryTempLogs" component={DeliveryTempLogsScreen} />
+            <Stack.Screen name="Handover" component={HandoverScreen} />
+            <Stack.Screen name="HandoverCompletion" component={HandoverCompletionScreen} />
+            <Stack.Screen name="PreviousHandovers" component={PreviousHandoversScreen} />
+            <Stack.Screen name="TemperatureRecords" component={TemperatureRecordsScreen} />
+            <Stack.Screen name="TemperatureDownloads" component={TemperatureDownloadsScreen} />
+            <Stack.Screen name="CoolingReheating" component={CoolingReheatingScreen} />
+          </Stack.Navigator>
+        </NavigationContainer>
+      </RestaurantProvider>
+    </ErrorBoundary>
   );
 }

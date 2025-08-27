@@ -8,6 +8,7 @@ import Button from "../../components/ui/Button";
 export default function AddPrepItemModal({ visible, onClose, onAdd, date }) {
   const [itemName, setItemName] = useState("");
 
+
   const handleAdd = () => {
     if (itemName.trim()) {
       onAdd(itemName.trim());

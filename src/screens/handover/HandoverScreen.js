@@ -24,12 +24,18 @@ import { uploadPdfToStorage, uploadPdfToStorageTemporary } from '../../utils/pdf
 import * as Print from 'expo-print';
 import * as FileSystem from 'expo-file-system';
 
+
 function HandoverScreen() {
   const navigation = useNavigation();
+
   const { restaurantId } = useRestaurant();
+
   const [serviceNotes, setServiceNotes] = useState('');
+
   const [stockIssues, setStockIssues] = useState('');
+
   const [problemsDuringShift, setProblemsDuringShift] = useState('');
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Hide Android navigation bar
@@ -39,9 +45,11 @@ function HandoverScreen() {
   // Get current date
   const getCurrentDate = () => {
     const date = new Date();
+
     const options = { weekday: 'long', month: 'long', day: 'numeric' };
     return date.toLocaleDateString('en-US', options);
   };
+
 
   const handleCompleteHandover = () => {
     Alert.alert(
@@ -51,7 +59,7 @@ function HandoverScreen() {
         {
           text: "Back to Edit",
           style: "cancel",
-          onPress: () => console.log("User chose to continue editing")
+          onPress: () => {}
         },
         {
           text: "Confirm",
@@ -61,6 +69,7 @@ function HandoverScreen() {
       ]
     );
   };
+
 
   const submitHandoverToFirestore = async () => {
     if (!restaurantId) {
@@ -75,10 +84,7 @@ function HandoverScreen() {
 
     setIsSubmitting(true);
 
-    try {
-      console.log('📝 Submitting handover to Firestore...');
-      
-      // Prepare handover data
+    try {// Prepare handover data
       const handoverData = {
         createdAt: serverTimestamp(),
         createdBy: auth.currentUser.uid,
@@ -91,33 +97,19 @@ function HandoverScreen() {
         serviceNotesText: serviceNotes.trim(),
         stockIssuesText: stockIssues.trim(),
         problemsDuringShiftText: problemsDuringShift.trim(),
-      };
-
-      console.log('📋 Handover data:', handoverData);
-
-      // Get handovers collection reference
+      };// Get handovers collection reference
       const handoversCollection = getRestaurantCollection(restaurantId, 'handovers');
       
       // Submit to Firestore first
-      const docRef = await addDoc(handoversCollection, handoverData);
-      console.log('✅ Handover submitted successfully with ID:', docRef.id);
-
-      // Generate PDF for this handover
+      const docRef = await addDoc(handoversCollection, handoverData);// Generate PDF for this handover
       let pdfUrl = '';
-      try {
-        console.log('📄 Generating PDF for handover...');
-        pdfUrl = await generateHandoverPDF(handoverData, docRef.id);
+      try {pdfUrl = await generateHandoverPDF(handoverData, docRef.id);
+
         
         if (pdfUrl) {
           // Update the handover document with the PDF URL
-          await updateDoc(docRef, { pdf: pdfUrl });
-          console.log('✅ PDF generated and URL saved:', pdfUrl);
-        } else {
-          console.warn('⚠️ PDF generation returned empty URL');
-        }
-      } catch (pdfError) {
-        console.error('⚠️ PDF generation failed, but handover was saved:', pdfError);
-        // Show a warning but don't fail the entire operation
+          await updateDoc(docRef, { pdf: pdfUrl });} else {}
+      } catch (pdfError) {// Show a warning but don't fail the entire operation
         Alert.alert(
           "Handover Saved", 
           "Your handover was saved successfully, but we couldn't generate the PDF. You can still view it in Previous Handovers.",
@@ -136,9 +128,7 @@ function HandoverScreen() {
         }
       });
 
-    } catch (error) {
-      console.error('❌ Error submitting handover:', error);
-      Alert.alert(
+    } catch (error) {Alert.alert(
         "Submission Failed", 
         "There was an error submitting your handover. Please check your connection and try again.",
         [
@@ -155,20 +145,17 @@ function HandoverScreen() {
 
   // Generate PDF for individual handover
   const generateHandoverPDF = async (handoverData, docId) => {
-    try {
-      console.log('🚀 Starting PDF generation process...');
-      const currentDate = new Date();
-      const fileName = `handover_${docId}_${currentDate.toISOString().split('T')[0]}.pdf`;
+    try {const currentDate = new Date();
+
+      const fileName = `handover_${docId}
+    _${currentDate.toISOString().split('T')[0]}.pdf`;
 
       // Determine handover status
       let status = 'Clean Shift';
+
       if (handoverData.problems) status = 'Problems Reported';
       else if (handoverData.stockIssues) status = 'Stock Issues';
-      else if (handoverData.serviceNotes) status = 'Notes Available';
-
-      console.log('📋 Handover status determined:', status);
-
-      // Create HTML for PDF
+      else if (handoverData.serviceNotes) status = 'Notes Available';// Create HTML for PDF
       const html = `
         <html>
           <head>
@@ -289,12 +276,8 @@ function HandoverScreen() {
             </div>
           </body>
         </html>
-      `;
+      `;// Generate PDF locally using expo-print;
 
-      console.log('📝 HTML template created successfully');
-
-      // Generate PDF locally using expo-print
-      console.log('🖨️ Generating PDF with expo-print...');
       const printOptions = {
         html,
         base64: false,
@@ -309,35 +292,25 @@ function HandoverScreen() {
         },
       };
 
-      const { uri } = await Print.printToFileAsync(printOptions);
-      console.log('📄 PDF generated locally at:', uri);
 
-      // Verify the file was created
+      const { uri } = await Print.printToFileAsync(printOptions);// Verify the file was created
       const fileInfo = await FileSystem.getInfoAsync(uri);
+
       if (!fileInfo.exists) {
         throw new Error('PDF file was not created successfully');
       }
-      console.log('✅ PDF file verified, size:', fileInfo.size, 'bytes');
-
+      
       // Upload to Firebase Storage
-      console.log('☁️ Starting Firebase Storage upload...');
       let downloadURL;
       
       // Try Firebase Storage first (primary method)
       try {
-        console.log('� Uploading PDF to Firebase Storage...');
         downloadURL = await uploadPdfToStorage(uri, fileName, restaurantId, 'handovers');
-        console.log('🎉 PDF uploaded to Firebase Storage successfully:', downloadURL);
       } catch (storageError) {
-        console.error('❌ Firebase Storage upload failed:', storageError);
-        
         // Only use local storage as absolute last resort
-        console.warn('⚠️ Falling back to local storage...');
         try {
           downloadURL = await uploadPdfToStorageTemporary(uri, fileName, restaurantId, 'handovers');
-          console.log('💾 PDF saved using local storage fallback:', downloadURL);
         } catch (fallbackError) {
-          console.error('❌ Both storage methods failed:', fallbackError);
           throw new Error('Failed to save PDF using any storage method: ' + fallbackError.message);
         }
       }
@@ -345,23 +318,15 @@ function HandoverScreen() {
       // Clean up the original temporary file
       try {
         await FileSystem.deleteAsync(uri, { idempotent: true });
-        console.log('🗑️ Original temporary file cleaned up successfully');
-      } catch (cleanupError) {
-        console.warn('⚠️ Could not clean up original temporary file:', cleanupError.message);
-      }
+      } catch (cleanupError) {}
 
       return downloadURL;
 
     } catch (error) {
-      console.error('❌ Error generating handover PDF:', error);
-      console.error('Error details:', {
-        message: error.message,
-        stack: error.stack,
-        cause: error.cause
-      });
       throw new Error(`PDF generation failed: ${error.message}`);
     }
   };
+
 
   const handlePreviousHandovers = () => {
     // Navigate to previous handovers screen

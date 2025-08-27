@@ -28,14 +28,23 @@ import { auth } from "../../../firebase";
 
 export default function FridgeTempLogsScreen({ navigation }) {
   const { restaurantId } = useRestaurant();
+
   const [fridgeNames, setFridgeNames] = useState([]);
+
   const [logs, setLogs] = useState([]);
+
   const [expanded, setExpanded] = useState({});
+
   const [loading, setLoading] = useState(true);
+
   const [refreshing, setRefreshing] = useState(false);
+
   const [showDatePicker, setShowDatePicker] = useState(false);
+
   const [selectedDate, setSelectedDate] = useState(new Date());
+
   const [inputValues, setInputValues] = useState({});
+
   const animationRefs = useRef({});
 
   // Hide Android navigation bar
@@ -45,10 +54,13 @@ export default function FridgeTempLogsScreen({ navigation }) {
   // Date formatting
   const formatSelectedDate = (date) => {
     const dayName = date.toLocaleDateString(undefined, { weekday: "long" });
+
     const monthName = date.toLocaleDateString(undefined, { month: "long" });
+
     const dayNum = date.getDate();
     return `${dayName}, ${monthName} ${dayNum}`;
   };
+
 
   const todayString = formatSelectedDate(selectedDate);
 
@@ -58,23 +70,23 @@ export default function FridgeTempLogsScreen({ navigation }) {
     
     try {
       const fridgeLogsCollection = getRestaurantCollection(restaurantId, 'fridgelogs');
+
       const logsSnapshot = await getDocs(fridgeLogsCollection);
       
       // Extract unique fridge names from all logs
       const uniqueFridgeNames = new Set();
       logsSnapshot.forEach(docSnap => {
         const data = docSnap.data();
+
         if (data.fridgeName) {
           uniqueFridgeNames.add(data.fridgeName);
         }
       });
       
       // Convert Set to Array and sort alphabetically
-      const fridgeNamesArray = Array.from(uniqueFridgeNames).sort();
-      console.log('Fetched fridge names from logs:', fridgeNamesArray);
-      setFridgeNames(fridgeNamesArray);
+      const supplierNamesArray = Array.from(uniqueFridgeNames).sort();
+      setFridgeNames(supplierNamesArray);
     } catch (error) {
-      console.error("Error fetching fridge names from logs:", error);
       setFridgeNames([]);
     }
   };
@@ -85,7 +97,9 @@ export default function FridgeTempLogsScreen({ navigation }) {
     
     try {
       const fridgeLogsCollection = getRestaurantCollection(restaurantId, 'fridgelogs');
+
       const logsSnapshot = await getDocs(fridgeLogsCollection);
+
       
       let allLogs = [];
       logsSnapshot.forEach(docSnap => {
@@ -96,12 +110,8 @@ export default function FridgeTempLogsScreen({ navigation }) {
         });
       });
       
-      console.log('All logs fetched:', allLogs.length, allLogs);
-      
       // Filter logs for the selected date
       const selectedDateString = selectedDate.toISOString().split('T')[0]; // Get YYYY-MM-DD format
-      console.log('Filtering for date:', selectedDateString);
-      
       const filteredLogs = allLogs.filter(log => {
         // Check if log.date matches selected date
         if (log.date === selectedDateString) {
@@ -111,14 +121,13 @@ export default function FridgeTempLogsScreen({ navigation }) {
         // Fallback: check createdAt if date field is missing
         if (!log.date && log.createdAt) {
           const logDate = log.createdAt.toDate ? log.createdAt.toDate() : new Date(log.createdAt.seconds * 1000);
+
           const logDateString = logDate.toISOString().split('T')[0];
           return logDateString === selectedDateString;
         }
         
         return false;
       });
-      
-      console.log('Filtered logs for selected date:', filteredLogs);
       
       // Sort logs by createdAt (newest first)
       filteredLogs.sort((a, b) => {
@@ -130,7 +139,7 @@ export default function FridgeTempLogsScreen({ navigation }) {
       
       setLogs(filteredLogs);
     } catch (error) {
-      console.error('Error fetching fridge logs:', error);
+      // Error fetching fridge logs
     }
   };
 
@@ -140,9 +149,11 @@ export default function FridgeTempLogsScreen({ navigation }) {
     setShowDatePicker(false);
   };
 
+
   const handleDateCancel = () => {
     setShowDatePicker(false);
   };
+
 
   const openDatePicker = () => {
     setShowDatePicker(true);
@@ -159,6 +170,7 @@ export default function FridgeTempLogsScreen({ navigation }) {
   // Toggle fridge expansion with animation
   const toggleFridgeExpansion = (fridgeName) => {
     const isCurrentlyExpanded = expanded[fridgeName];
+
     const animationValue = getAnimationValue(fridgeName);
     
     setExpanded(prev => ({ ...prev, [fridgeName]: !isCurrentlyExpanded }));
@@ -201,6 +213,7 @@ export default function FridgeTempLogsScreen({ navigation }) {
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
+
       await Promise.all([fetchFridgeNames(), fetchLogs()]);
       setLoading(false);
       setRefreshing(false);
@@ -211,6 +224,7 @@ export default function FridgeTempLogsScreen({ navigation }) {
   // Pull to refresh handler
   const onRefresh = async () => {
     setRefreshing(true);
+
     await Promise.all([fetchFridgeNames(), fetchLogs()]);
     setRefreshing(false);
   };
@@ -219,16 +233,10 @@ export default function FridgeTempLogsScreen({ navigation }) {
   const getCombinedFridgeData = () => {
     const fridgeData = [];
     
-    console.log('getCombinedFridgeData called:', { 
-      fridgeNamesLength: fridgeNames.length, 
-      logsLength: logs.length,
-      fridgeNames,
-      logs 
-    });
-    
     // Add all fridges from the fridge names list
     fridgeNames.forEach(fridgeName => {
       const existingLog = logs.find(log => log.fridgeName === fridgeName);
+
       
       if (existingLog) {
         // Use existing log data
@@ -252,7 +260,6 @@ export default function FridgeTempLogsScreen({ navigation }) {
       }
     });
     
-    console.log('getCombinedFridgeData result:', fridgeData);
     return fridgeData;
   };
 
@@ -264,6 +271,7 @@ export default function FridgeTempLogsScreen({ navigation }) {
     
     try {
       const fieldName = type === 'am' ? 'temperatureAM' : 'temperaturePM';
+
       await updateDoc(getRestaurantDoc(restaurantId, "fridgelogs", logId), {
         [fieldName]: value,
       });
@@ -275,16 +283,20 @@ export default function FridgeTempLogsScreen({ navigation }) {
         )
       );
     } catch (error) {
-      console.error("Error updating temperature:", error);
+      // Error handling
     }
   };
 
   // Helper for time display (for existing logs)
   const formatTime = (createdAt) => {
     if (!createdAt) return "--:--";
+
     const date = new Date(createdAt.seconds * 1000);
+
     let hours = date.getHours();
+
     let minutes = date.getMinutes();
+
     const ampm = hours >= 12 ? "PM" : "AM";
     hours = hours % 12 || 12;
     return `${hours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
@@ -293,7 +305,9 @@ export default function FridgeTempLogsScreen({ navigation }) {
   // Helper to format temperature (fridges are not freezers, so no "-" symbol)
   const formatTemperature = (temp) => {
     if (!temp || temp === "") return "--°C";
+
     const numTemp = parseFloat(temp);
+
     if (isNaN(numTemp)) return "--°C";
     
     // For fridges, just return the temperature as is (no "-" symbol)
@@ -308,7 +322,7 @@ export default function FridgeTempLogsScreen({ navigation }) {
       await deleteDoc(getRestaurantDoc(restaurantId, "fridgelogs", logId));
       setLogs((logs) => logs.filter((log) => log.id !== logId));
     } catch (error) {
-      console.error("Error deleting fridge log:", error);
+      // Error handling
     }
   };
 
@@ -368,6 +382,7 @@ export default function FridgeTempLogsScreen({ navigation }) {
           ) : (
             fridgeNames.map((fridgeName, index) => {
               const log = logs.find(l => l.fridgeName === fridgeName);
+
               const isExpanded = expanded[fridgeName];
               
               return (
@@ -428,9 +443,8 @@ export default function FridgeTempLogsScreen({ navigation }) {
                             onChangeText={(value) => {
                               // Only allow numbers and decimal point
                               const numericValue = value.replace(/[^0-9.-]/g, '');
-                              const inputKey = `${log?.id || `placeholder-${fridgeName}`}-am`;
-                              console.log('AM input changed:', { value: numericValue, inputKey, logId: log?.id, fridgeName });
-                              setInputValues(prev => ({ ...prev, [inputKey]: numericValue }));
+
+                              const inputKey = `${log?.id || `placeholder-${fridgeName}`}-am`;setInputValues(prev => ({ ...prev, [inputKey]: numericValue }));
                             }}
                             placeholder="0"
                             placeholderTextColor={Colors.gray400}
@@ -451,9 +465,8 @@ export default function FridgeTempLogsScreen({ navigation }) {
                             onChangeText={(value) => {
                               // Only allow numbers and decimal point
                               const numericValue = value.replace(/[^0-9.-]/g, '');
-                              const inputKey = `${log?.id || `placeholder-${fridgeName}`}-pm`;
-                              console.log('PM input changed:', { value: numericValue, inputKey, logId: log?.id, fridgeName });
-                              setInputValues(prev => ({ ...prev, [inputKey]: numericValue }));
+
+                              const inputKey = `${log?.id || `placeholder-${fridgeName}`}-pm`;setInputValues(prev => ({ ...prev, [inputKey]: numericValue }));
                             }}
                             placeholder="0"
                             placeholderTextColor={Colors.gray400}
@@ -469,15 +482,19 @@ export default function FridgeTempLogsScreen({ navigation }) {
                         style={styles.saveButton}
                         onPress={async (e) => {
                           e.stopPropagation();
+
                           const amValue = inputValues[`${log?.id || `placeholder-${fridgeName}`}-am`] || '';
+
                           const pmValue = inputValues[`${log?.id || `placeholder-${fridgeName}`}-pm`] || '';
                           
                           // Get original values for comparison
                           const originalAm = log?.temperatureAM || '';
+
                           const originalPm = log?.temperaturePM || '';
                           
                           // Check if any values have actually changed
                           const amChanged = amValue !== originalAm;
+
                           const pmChanged = pmValue !== originalPm;
                           
                           // Allow saving if there are any changes OR if we're creating a new log
@@ -488,6 +505,7 @@ export default function FridgeTempLogsScreen({ navigation }) {
                               // If no existing log, create one first
                               if (!currentLogId) {
                                 const selectedDateString = selectedDate.toISOString().split('T')[0];
+
                                 
                                 const newLogRef = await addDoc(getRestaurantCollection(restaurantId, "fridgelogs"), {
                                   fridgeName: fridgeName,
@@ -519,6 +537,7 @@ export default function FridgeTempLogsScreen({ navigation }) {
                               
                               // Update both values in a single operation to avoid race conditions
                               const updateData = {};
+
                               if (amChanged) {
                                 updateData['temperatureAM'] = amValue;
                               }
@@ -528,9 +547,12 @@ export default function FridgeTempLogsScreen({ navigation }) {
                               
                               // Check if both temperatures are filled to mark as done
                               const finalAmValue = amChanged ? amValue : (log?.temperatureAM || '');
+
                               const finalPmValue = pmChanged ? pmValue : (log?.temperaturePM || '');
+
                               const isDone = finalAmValue !== '' && finalPmValue !== '';
                               updateData['done'] = isDone;
+
                               
                               if (Object.keys(updateData).length > 0 && currentLogId) {
                                 await updateDoc(getRestaurantDoc(restaurantId, "fridgelogs", currentLogId), updateData);
@@ -551,14 +573,15 @@ export default function FridgeTempLogsScreen({ navigation }) {
                               // Clear input values
                               setInputValues(prev => {
                                 const newValues = { ...prev };
+
                                 const keyBase = currentLogId || `placeholder-${fridgeName}`;
                                 delete newValues[`${keyBase}-am`];
                                 delete newValues[`${keyBase}-pm`];
                                 return newValues;
                               });
                             } catch (error) {
-                              console.error("Error saving fridge log:", error);
-                            }
+      // Error handling
+    }
                           }
                         }}
                         activeOpacity={0.8}

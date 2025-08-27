@@ -7,6 +7,7 @@ import RecipesScreen from '../screens/recipes/RecipesScreen';
 import { HomeIcon, RecipesIcon, SettingsIcon, DownloadsIcon } from '../components/icons/NavigationIcons';
 import DownloadsScreen from "../screens/downloads/DownloadsScreen";
 
+
 const Tab = createBottomTabNavigator();
 
 // Custom tab button to remove press opacity

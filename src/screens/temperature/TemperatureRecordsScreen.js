@@ -15,15 +15,21 @@ import { getDocs, query, orderBy } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection } from "../../utils/firestoreHelpers";
 
+
 const TemperatureRecordsScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
+
   const [fridgeLogs, setFridgeLogs] = useState([]);
+
   const [deliveryLogs, setDeliveryLogs] = useState([]);
+
   const [loading, setLoading] = useState(true);
+
   const [refreshing, setRefreshing] = useState(false);
 
   // Date for header
   const today = getFormattedTodayDate();
+
 
   const fetchTemperatureRecords = async () => {
     if (!restaurantId) return;
@@ -32,7 +38,9 @@ const TemperatureRecordsScreen = ({ navigation }) => {
     try {
       // Fetch fridge logs using the same approach as FridgeScreen
       const fridgeLogsCollection = getRestaurantCollection(restaurantId, 'fridgelogs');
+
       const fridgeLogsSnapshot = await getDocs(fridgeLogsCollection);
+
       
       let allFridgeLogs = [];
       fridgeLogsSnapshot.forEach(docSnap => {
@@ -56,7 +64,9 @@ const TemperatureRecordsScreen = ({ navigation }) => {
 
       // Fetch delivery logs using the same approach as DeliveryScreen
       const deliveryLogsCollection = getRestaurantCollection(restaurantId, 'deliverylogs');
+
       const deliveryLogsSnapshot = await getDocs(deliveryLogsCollection);
+
       
       let allDeliveryLogs = [];
       deliveryLogsSnapshot.forEach(docSnap => {
@@ -78,7 +88,7 @@ const TemperatureRecordsScreen = ({ navigation }) => {
       
       setDeliveryLogs(allDeliveryLogs);
     } catch (error) {
-      console.error("Error fetching temperature records:", error);
+      // Error handling
     } finally {
       setLoading(false);
     }
@@ -91,9 +101,11 @@ const TemperatureRecordsScreen = ({ navigation }) => {
   // Pull-to-refresh handler
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
+
     await fetchTemperatureRecords();
     setRefreshing(false);
   }, []);
+
 
   const renderFridgeItem = ({ item }) => {
     return (
@@ -125,6 +137,7 @@ const TemperatureRecordsScreen = ({ navigation }) => {
       </View>
     );
   };
+
 
   const renderDeliveryItem = ({ item }) => (
     <View style={styles.recordCard}>
@@ -207,6 +220,7 @@ const TemperatureRecordsScreen = ({ navigation }) => {
     </SafeAreaView>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {

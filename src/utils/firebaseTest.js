@@ -6,16 +6,12 @@ import { checkFirebaseStorageHealth } from './pdfUpload';
  * Test Firebase Storage configuration and upload capabilities
  * Call this function on app startup or in a debug screen to verify Firebase is working
  */
-export const testFirebaseStorageSetup = async () => {
-  console.log('🧪 Testing Firebase Storage setup...');
-  
-  try {
+export const testFirebaseStorageSetup = async () => {try {
     // Check if Firebase Storage is available
     const isHealthy = await checkFirebaseStorageHealth();
+
     
-    if (isHealthy) {
-      console.log('✅ Firebase Storage is properly configured and accessible');
-      return {
+    if (isHealthy) {return {
         success: true,
         message: 'Firebase Storage is ready for use',
         details: {
@@ -23,9 +19,7 @@ export const testFirebaseStorageSetup = async () => {
           configurationValid: true
         }
       };
-    } else {
-      console.error('❌ Firebase Storage health check failed');
-      return {
+    } else {return {
         success: false,
         message: 'Firebase Storage is not properly configured',
         details: {
@@ -34,9 +28,7 @@ export const testFirebaseStorageSetup = async () => {
         }
       };
     }
-  } catch (error) {
-    console.error('❌ Firebase Storage test failed:', error);
-    return {
+  } catch (error) {return {
       success: false,
       message: 'Firebase Storage test failed',
       error: error.message,
@@ -61,9 +53,7 @@ export const getFirebaseDiagnostics = () => {
       expoVersion: Constants.expoVersion || 'unknown',
       appVersion: Constants.nativeAppVersion || 'unknown'
     };
-  } catch (error) {
-    console.error('Failed to get diagnostics:', error);
-    return {
+  } catch (error) {return {
       error: error.message
     };
   }

@@ -16,6 +16,7 @@ import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
 import { auth, db } from "../../../firebase";
 
+
 function AddItemModal({ visible, onClose, onAdd, supplier, date }) {
   const [itemName, setItemName] = useState("");
 
@@ -24,6 +25,7 @@ function AddItemModal({ visible, onClose, onAdd, supplier, date }) {
       setItemName("");
     }
   }, [visible]);
+
 
   const handleAdd = () => {
     if (itemName.trim()) {
@@ -86,16 +88,22 @@ function AddItemModal({ visible, onClose, onAdd, supplier, date }) {
 
 export function OrderListsScreen() {
   const { restaurantId } = useRestaurant();
+
   const navigation = useNavigation()
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedSupplier, setSelectedSupplier] = useState("")
   const [orderItems, setOrderItems] = useState([]);
+
   const [suppliers, setSuppliers] = useState([]);
+
   const [loading, setLoading] = useState(true);
+
   const [refreshing, setRefreshing] = useState(false);
 
+
   const navigationBar = useNavigationBar();
-  navigationBar.useHidden(); 
+  navigationBar.useHidden();
+ 
   const [currentDate, setCurrentDate] = useState('')
 
   useEffect(() => {
@@ -107,25 +115,28 @@ export function OrderListsScreen() {
     
     try {
       const suppliersDocRef = getRestaurantDoc(restaurantId, "suppliers", "suppliers");
+
       const suppliersDoc = await getDoc(suppliersDocRef);
+
       
       if (suppliersDoc.exists() && suppliersDoc.data().names) {
         setSuppliers(suppliersDoc.data().names);
       } else {
         setSuppliers([]);
       }
-    } catch (error) {
-      console.error("Error fetching suppliers:", error);
-      setSuppliers([]);
+    } catch (error) {setSuppliers([]);
     }
   };
+
 
   const fetchOrderItems = async () => {
     if (!restaurantId) return;
     
     try {
       const q = query(getRestaurantCollection(restaurantId, "orderlist"), orderBy("createdAt", "desc"));
+
       const snapshot = await getDocs(q);
+
       const items = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
@@ -133,13 +144,14 @@ export function OrderListsScreen() {
       }));
       setOrderItems(items);
     } catch (error) {
-      console.error("Error fetching order items:", error);
+      // Error handling
     }
   };
 
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
+
       await Promise.all([fetchSuppliers(), fetchOrderItems()]);
       setLoading(false);
       setRefreshing(false);
@@ -147,17 +159,23 @@ export function OrderListsScreen() {
     loadData();
   }, [restaurantId]);
 
+
   const onRefresh = async () => {
     setRefreshing(true);
+
     await Promise.all([fetchSuppliers(), fetchOrderItems()]);
     setRefreshing(false);
   };
 
+
   const toggleItem = async (id) => {
     if (!restaurantId) return;
+
     
     const item = orderItems.find(item => item.id === id);
+
     if (!item) return;
+
     
     const newCompletedStatus = !item.completed;
     
@@ -169,9 +187,7 @@ export function OrderListsScreen() {
       await updateDoc(getRestaurantDoc(restaurantId, "orderlist", id), {
         done: newCompletedStatus,
       });
-    } catch (error) {
-      console.error("Error updating order item:", error);
-      // Revert local state on error
+    } catch (error) {// Revert local state on error
       setOrderItems((items) =>
         items.map((item) => (item.id === id ? { ...item, completed: !newCompletedStatus } : item))
       );
@@ -197,13 +213,12 @@ export function OrderListsScreen() {
               const deletePromises = orderItems.map(item =>
                 deleteDoc(getRestaurantDoc(restaurantId, "orderlist", item.id))
               );
+
               
               await Promise.all(deletePromises);
               
               setOrderItems([]);
-            } catch (error) {
-              console.error("Error clearing all items:", error);
-              Alert.alert("Error", "Failed to clear all items. Please try again.");
+            } catch (error) {Alert.alert("Error", "Failed to clear all items. Please try again.");
             }
           }
         }
@@ -216,6 +231,7 @@ export function OrderListsScreen() {
     
     try {
       const currentUser = auth.currentUser;
+
       let userInfo = {
         userId: 'anonymous',
         userEmail: 'anonymous',
@@ -223,9 +239,11 @@ export function OrderListsScreen() {
         fullName: 'Anonymous User'
       };
 
+
       if (currentUser) {
         try {
           const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+
           const userData = userDoc.exists() ? userDoc.data() : null;
           
           userInfo = {
@@ -234,9 +252,7 @@ export function OrderListsScreen() {
             userName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Unknown User',
             fullName: userData?.fullName || currentUser.displayName || currentUser.email?.split('@')[0] || 'Unknown User'
           };
-        } catch (firestoreError) {
-          console.warn('Could not fetch user data from Firestore:', firestoreError);
-          userInfo = {
+        } catch (firestoreError) {userInfo = {
             userId: currentUser.uid,
             userEmail: currentUser.email || 'Unknown Email',
             userName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Unknown User',
@@ -265,7 +281,7 @@ export function OrderListsScreen() {
       ]);
       setShowAddModal(false);
     } catch (error) {
-      console.error("Error adding order item:", error);
+      // Error handling
     }
   }
 
@@ -276,7 +292,7 @@ export function OrderListsScreen() {
       await deleteDoc(getRestaurantDoc(restaurantId, "orderlist", id));
       setOrderItems((items) => items.filter((item) => item.id !== id));
     } catch (error) {
-      console.error("Error deleting order item:", error);
+      // Error handling
     }
   }
 
@@ -287,6 +303,7 @@ export function OrderListsScreen() {
   const getSuppliersWithItems = () => {
     const groupedItems = orderItems.reduce((groups, item) => {
       const supplier = item.supplier || 'No Supplier';
+
       if (!groups[supplier]) {
         groups[supplier] = [];
       }
@@ -299,6 +316,7 @@ export function OrderListsScreen() {
       items: groupedItems[supplier] || []
     }));
   };
+
 
   const renderSupplierItems = (items) => {
     if (items.length === 0) {
@@ -327,6 +345,7 @@ export function OrderListsScreen() {
       </Swipeable>
     ));
   };
+
 
   const renderRightActions = (itemId) => (
     <View style={styles.swipeActionContainer}>

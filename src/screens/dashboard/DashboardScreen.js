@@ -20,16 +20,26 @@ import { getRestaurantCollection } from "../../utils/firestoreHelpers";
 import { auth, db } from "../../../firebase";
 import { DocumentIcon } from '../../components/icons/NavigationIcons';
 
+
 const DashboardScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
+
   const [currentDate, setCurrentDate] = useState('');
+
   const [chefName, setChefName] = useState('Chef');
+
   const [prepCount, setPrepCount] = useState(0);
+
   const [orderCount, setOrderCount] = useState(0);
+
   const [recipeCount, setRecipeCount] = useState(0);
+
   const [invoiceCount, setInvoiceCount] = useState(0);
+
   const [closingChecklistCount, setClosingChecklistCount] = useState(0);
+
   const [latestFridgeTemp, setLatestFridgeTemp] = useState('--°C');
+
   const [refreshing, setRefreshing] = useState(false);
 
   // Hide Android navigation bar
@@ -45,10 +55,13 @@ const DashboardScreen = ({ navigation }) => {
     const fetchUserName = async () => {
       try {
         const user = auth.currentUser;
+
         if (user) {
           const userDoc = await getDoc(doc(db, 'users', user.uid));
+
           if (userDoc.exists()) {
             const userData = userDoc.data();
+
             const fullName = userData.fullName || userData.name || 'Chef';
             // Extract first name (everything before the first space)
             const firstName = fullName.split(' ')[0];
@@ -57,9 +70,7 @@ const DashboardScreen = ({ navigation }) => {
             setChefName(capitalizedFirstName);
           }
         }
-      } catch (error) {
-        console.warn('Error fetching user name:', error);
-        setChefName('Chef'); // Fallback
+      } catch (error) {setChefName('Chef'); // Fallback
       }
     };
 
@@ -77,15 +88,14 @@ const DashboardScreen = ({ navigation }) => {
         
         // Filter items within 48-hour window using the same logic as PrepListsScreen
         const { todayItems, yesterdayItems } = groupPrepItemsByDay(allPrepItems);
+
         const visibleItems = [...todayItems, ...yesterdayItems];
         
         // Count incomplete items from visible items only
         const incompleteCount = visibleItems.filter(item => !item.done).length;
         setPrepCount(incompleteCount);
       },
-      (error) => {
-        console.warn('Prep list listener error:', error);
-        setPrepCount(0);
+      (error) => {setPrepCount(0);
       }
     );
     
@@ -98,9 +108,7 @@ const DashboardScreen = ({ navigation }) => {
       (snapshot) => {
         setOrderCount(snapshot.size);
       },
-      (error) => {
-        console.warn('Order list listener error:', error);
-        setOrderCount(0);
+      (error) => {setOrderCount(0);
       }
     );
     
@@ -110,9 +118,7 @@ const DashboardScreen = ({ navigation }) => {
       (snapshot) => {
         setInvoiceCount(snapshot.size);
       },
-      (error) => {
-        console.warn('Invoices listener error:', error);
-        setInvoiceCount(0);
+      (error) => {setInvoiceCount(0);
       }
     );
     
@@ -124,9 +130,7 @@ const DashboardScreen = ({ navigation }) => {
         const pendingTasks = snapshot.docs.filter(doc => !doc.data().done);
         setClosingChecklistCount(pendingTasks.length);
       },
-      (error) => {
-        console.warn('Closing checklist listener error:', error);
-        setClosingChecklistCount(0);
+      (error) => {setClosingChecklistCount(0);
       }
     );
     
@@ -135,7 +139,9 @@ const DashboardScreen = ({ navigation }) => {
       try {
         // First get category names
         const categoryNamesDoc = await getDoc(doc(db, 'restaurants', restaurantId, 'recipes', 'categories'));
+
         let categoryNames = [];
+
         
         if (categoryNamesDoc.exists()) {
           const data = categoryNamesDoc.data();
@@ -146,16 +152,16 @@ const DashboardScreen = ({ navigation }) => {
         
         // Count recipes across all categories
         let totalRecipes = 0;
+
         for (const categoryName of categoryNames) {
           const categoryCollection = getRestaurantCollection(restaurantId, `recipes/categories/${categoryName}`);
+
           const categorySnapshot = await getDocs(categoryCollection);
           totalRecipes += categorySnapshot.size;
         }
         
         setRecipeCount(totalRecipes);
-      } catch (error) {
-        console.warn('Error fetching recipe count:', error);
-        setRecipeCount(0);
+      } catch (error) {setRecipeCount(0);
       }
     };
     
@@ -175,7 +181,9 @@ const DashboardScreen = ({ navigation }) => {
       (snapshot) => {
         if (!snapshot.empty) {
           const latestLog = snapshot.docs[0].data();
+
           const temp = latestLog.temperature;
+
           if (temp && temp !== '') {
             setLatestFridgeTemp(`${temp}°C`);
           } else {
@@ -185,9 +193,7 @@ const DashboardScreen = ({ navigation }) => {
           setLatestFridgeTemp('--°C');
         }
       },
-      (error) => {
-        console.warn('Fridge temperature listener error:', error);
-        setLatestFridgeTemp('--°C');
+      (error) => {setLatestFridgeTemp('--°C');
       }
     );
     
@@ -234,6 +240,7 @@ const DashboardScreen = ({ navigation }) => {
     },
   ];
 
+
   const kitchenManagement = [
     {
       title: 'Fridge Temperature',
@@ -268,6 +275,7 @@ const DashboardScreen = ({ navigation }) => {
       screen: 'Handover',
     },
   ];
+
 
   const downloadables = [
     {
@@ -432,6 +440,7 @@ const DashboardScreen = ({ navigation }) => {
     </SafeAreaView>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {

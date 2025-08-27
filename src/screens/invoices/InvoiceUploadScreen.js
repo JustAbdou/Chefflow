@@ -23,23 +23,33 @@ import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 
+
 const InvoiceUploadScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
+
   const [uploading, setUploading] = useState(false);
 
   // Invoice details state
   const [invoiceNumber, setInvoiceNumber] = useState('#INV-2025-0421');
+
   const [date, setDate] = useState(new Date());
+
   const [amount, setAmount] = useState('0'); // <-- Set default amount to 0
   const [supplier, setSupplier] = useState('');
+
   const [showDatePicker, setShowDatePicker] = useState(false);
 
+
   const [editField, setEditField] = useState(null);
+
   const [supplierModalVisible, setSupplierModalVisible] = useState(false);
+
 
   const [supplierList, setSupplierList] = useState([]);
 
+
   const animatedListHeight = useRef(new Animated.Value(0)).current;
+
   const animatedOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -76,16 +86,15 @@ const InvoiceUploadScreen = ({ navigation }) => {
     const fetchSuppliers = async () => {
       if (!restaurantId) return;
       
-      try {
-        console.log('🔍 Fetching suppliers from delivery logs for restaurant:', restaurantId);
-        
-        const deliveryLogsCollection = getRestaurantCollection(restaurantId, 'deliverylogs');
+      try {const deliveryLogsCollection = getRestaurantCollection(restaurantId, 'deliverylogs');
+
         const logsSnapshot = await getDocs(deliveryLogsCollection);
         
         // Extract unique supplier names from all delivery logs
         const uniqueSupplierNames = new Set();
         logsSnapshot.forEach(docSnap => {
           const data = docSnap.data();
+
           if (data.supplierName) {
             uniqueSupplierNames.add(data.supplierName);
           }
@@ -96,21 +105,18 @@ const InvoiceUploadScreen = ({ navigation }) => {
         });
         
         // Convert Set to Array and sort alphabetically
-        const suppliersArray = Array.from(uniqueSupplierNames).sort();
-        console.log('✅ Fetched suppliers from delivery logs:', suppliersArray);
-        setSupplierList(suppliersArray);
+        const suppliersArray = Array.from(uniqueSupplierNames).sort();setSupplierList(suppliersArray);
         
         // Set first supplier as default if supplier is empty and there are suppliers
         if (!supplier && suppliersArray.length > 0) {
           setSupplier(suppliersArray[0]);
         }
-      } catch (error) {
-        console.error('❌ Error fetching suppliers from delivery logs:', error);
-        setSupplierList([]);
+      } catch (error) {setSupplierList([]);
       }
     };
     fetchSuppliers();
   }, [restaurantId]);
+
 
 
 
@@ -129,15 +135,15 @@ const InvoiceUploadScreen = ({ navigation }) => {
       setUploading(false);
       navigation.goBack();
     } catch (error) {
-      setUploading(false);
-      console.error(error);
-    }
+      setUploading(false);}
   };
 
   // Helper to format date as YYYY-MM-DD
   const formatDate = (dateObj) => {
     const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+
     const day = String(dateObj.getDate()).padStart(2, '0');
+
     const year = dateObj.getFullYear();
     return `${year}-${month}-${day}`;
   };
@@ -145,7 +151,9 @@ const InvoiceUploadScreen = ({ navigation }) => {
   // Update invoice number when date changes
   useEffect(() => {
     const year = date.getFullYear();
+
     const month = String(date.getMonth() + 1).padStart(2, '0');
+
     const day = String(date.getDate()).padStart(2, '0');
     setInvoiceNumber(`#INV-${year}-${month}${day}`);
   }, [date]);
@@ -153,6 +161,7 @@ const InvoiceUploadScreen = ({ navigation }) => {
   // Date picker handler
   const handleDateConfirm = (selectedDate) => {
     setShowDatePicker(false);
+
     if (selectedDate) {
       setDate(selectedDate);
     }
@@ -284,6 +293,7 @@ const InvoiceUploadScreen = ({ navigation }) => {
     </SafeAreaView>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {
