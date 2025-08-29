@@ -3,12 +3,9 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert 
 import { useRestaurant } from '../../contexts/RestaurantContext';
 import { Colors, Typography, Spacing } from '../../constants';
 
-
 const RestaurantSelectorScreen = () => {
   const { restaurantId, restaurantDisplayName, setRestaurantId, availableRestaurants, normalizeRestaurantName } = useRestaurant();
-
   const [customName, setCustomName] = useState('');
-
 
   const handleSelectRestaurant = (selectedId) => {
     Alert.alert(
@@ -26,7 +23,6 @@ const RestaurantSelectorScreen = () => {
       ]
     );
   };
-
 
   const handleCustomName = () => {
     if (!customName.trim()) {
@@ -114,7 +110,6 @@ const RestaurantSelectorScreen = () => {
     </ScrollView>
   );
 };
-
 
 const styles = StyleSheet.create({
   container: {

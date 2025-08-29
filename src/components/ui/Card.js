@@ -2,7 +2,6 @@ import React from 'react';
 import { View } from 'react-native';
 import { Colors, Spacing } from '../../constants';
 
-
 const Card = ({
   children,
   padding = 'md',
@@ -17,7 +16,6 @@ const Card = ({
     borderColor: Colors.borderLight,
     ...style,
   };
-
 
   if (shadow) {
     cardStyle.shadowColor = '#000';

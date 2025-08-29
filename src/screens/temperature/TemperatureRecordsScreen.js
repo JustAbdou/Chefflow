@@ -11,84 +11,58 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, Typography } from '../../constants';
 import { getFormattedTodayDate } from '../../utils/dateUtils';
+import { getAndroidTitleMargin } from '../../utils/responsive';
 import { getDocs, query, orderBy } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection } from "../../utils/firestoreHelpers";
 
-
 const TemperatureRecordsScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
-
   const [fridgeLogs, setFridgeLogs] = useState([]);
-
   const [deliveryLogs, setDeliveryLogs] = useState([]);
-
+  const [coolingReheatingLogs, setCoolingReheatingLogs] = useState([]);
   const [loading, setLoading] = useState(true);
-
   const [refreshing, setRefreshing] = useState(false);
 
   // Date for header
   const today = getFormattedTodayDate();
-
 
   const fetchTemperatureRecords = async () => {
     if (!restaurantId) return;
     
     setLoading(true);
     try {
-      // Fetch fridge logs using the same approach as FridgeScreen
-      const fridgeLogsCollection = getRestaurantCollection(restaurantId, 'fridgelogs');
+      // Fetch fridge logs from /restaurants/{restaurantId}/fridgelogs
+      const fridgeQuery = query(getRestaurantCollection(restaurantId, "fridgelogs"), orderBy("createdAt", "desc"));
+      const fridgeSnapshot = await getDocs(fridgeQuery);
+      const fridgeItems = fridgeSnapshot.docs.map(doc => ({
+        id: doc.id,
+        type: 'fridge',
+        ...doc.data(),
+      }));
+      setFridgeLogs(fridgeItems);
 
-      const fridgeLogsSnapshot = await getDocs(fridgeLogsCollection);
+      // Fetch delivery logs from /restaurants/{restaurantId}/deliverylogs
+      const deliveryQuery = query(getRestaurantCollection(restaurantId, "deliverylogs"), orderBy("createdAt", "desc"));
+      const deliverySnapshot = await getDocs(deliveryQuery);
+      const deliveryItems = deliverySnapshot.docs.map(doc => ({
+        id: doc.id,
+        type: 'delivery',
+        ...doc.data(),
+      }));
+      setDeliveryLogs(deliveryItems);
 
-      
-      let allFridgeLogs = [];
-      fridgeLogsSnapshot.forEach(docSnap => {
-        const data = docSnap.data();
-        allFridgeLogs.push({
-          id: docSnap.id,
-          type: 'fridge',
-          ...data,
-        });
-      });
-      
-      // Sort fridge logs by createdAt (newest first)
-      allFridgeLogs.sort((a, b) => {
-        if (a.createdAt && b.createdAt) {
-          return b.createdAt.seconds - a.createdAt.seconds;
-        }
-        return 0;
-      });
-      
-      setFridgeLogs(allFridgeLogs);
-
-      // Fetch delivery logs using the same approach as DeliveryScreen
-      const deliveryLogsCollection = getRestaurantCollection(restaurantId, 'deliverylogs');
-
-      const deliveryLogsSnapshot = await getDocs(deliveryLogsCollection);
-
-      
-      let allDeliveryLogs = [];
-      deliveryLogsSnapshot.forEach(docSnap => {
-        const data = docSnap.data();
-        allDeliveryLogs.push({
-          id: docSnap.id,
-          type: 'delivery',
-          ...data,
-        });
-      });
-      
-      // Sort delivery logs by createdAt (newest first)
-      allDeliveryLogs.sort((a, b) => {
-        if (a.createdAt && b.createdAt) {
-          return b.createdAt.seconds - a.createdAt.seconds;
-        }
-        return 0;
-      });
-      
-      setDeliveryLogs(allDeliveryLogs);
+      // Fetch cooling and reheating logs from /restaurants/{restaurantId}/coolingreheating
+      const coolingReheatingQuery = query(getRestaurantCollection(restaurantId, "coolingreheating"), orderBy("createdAt", "desc"));
+      const coolingReheatingSnapshot = await getDocs(coolingReheatingQuery);
+      const coolingReheatingItems = coolingReheatingSnapshot.docs.map(doc => ({
+        id: doc.id,
+        type: 'coolingreheating',
+        ...doc.data(),
+      }));
+      setCoolingReheatingLogs(coolingReheatingItems);
     } catch (error) {
-      // Error handling
+      console.error("Error fetching temperature records:", error);
     } finally {
       setLoading(false);
     }
@@ -101,69 +75,87 @@ const TemperatureRecordsScreen = ({ navigation }) => {
   // Pull-to-refresh handler
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-
     await fetchTemperatureRecords();
     setRefreshing(false);
   }, []);
 
-
-  const renderFridgeItem = ({ item }) => {
-    return (
-      <View style={styles.recordCard}>
-        <View style={styles.recordInfo}>
-          <Text style={styles.recordType}>Fridge Temperature</Text>
-          <Text style={styles.recordLocation}>{item.fridgeName || 'Unknown Fridge'}</Text>
-          <Text style={styles.recordDate}>
-            {item.date || (item.createdAt?.seconds 
-              ? new Date(item.createdAt.seconds * 1000).toLocaleDateString()
-              : 'Unknown Date')
-            }
-          </Text>
-        </View>
-        <View style={styles.temperatureContainer}>
-          {item.temperatureAM && (
-            <Text style={styles.temperatureValue}>AM: {item.temperatureAM}°C</Text>
-          )}
-          {item.temperaturePM && (
-            <Text style={styles.temperatureSubValue}>PM: {item.temperaturePM}°C</Text>
-          )}
-          {!item.temperatureAM && !item.temperaturePM && (
-            <Text style={styles.temperatureValue}>--°C</Text>
-          )}
-          {item.done && (
-            <Ionicons name="checkmark-circle" size={20} color="#4CAF50" style={{ marginTop: 4 }} />
-          )}
-        </View>
-      </View>
-    );
-  };
-
-
-  const renderDeliveryItem = ({ item }) => (
+  const renderFridgeItem = ({ item }) => (
     <View style={styles.recordCard}>
       <View style={styles.recordInfo}>
-        <Text style={styles.recordType}>Delivery Temperature</Text>
-        <Text style={styles.recordLocation}>{item.supplierName || item.supplier || 'Unknown Supplier'}</Text>
+        <Text style={styles.recordType}>Fridge Temperature</Text>
+        <Text style={styles.recordLocation}>{item.fridgeName || 'Unknown Fridge'}</Text>
         <Text style={styles.recordDate}>
           {item.date || (item.createdAt?.seconds 
             ? new Date(item.createdAt.seconds * 1000).toLocaleDateString()
-            : 'Unknown Date')
-          }
+            : 'Unknown Date')}
         </Text>
       </View>
       <View style={styles.temperatureContainer}>
-        {item.frozen && (
-          <Text style={styles.temperatureValue}>Frozen: {item.frozen}°C</Text>
-        )}
-        {item.chilled && (
-          <Text style={styles.temperatureSubValue}>Chilled: {item.chilled}°C</Text>
-        )}
-        {!item.frozen && !item.chilled && (
-          <Text style={styles.temperatureValue}>--°C</Text>
-        )}
+        <Text style={styles.temperatureValue}>
+          AM: {item.temperatureAM || '--'}°C
+        </Text>
+        <Text style={styles.temperatureSubValue}>
+          PM: {item.temperaturePM || '--'}°C
+        </Text>
         {item.done && (
           <Ionicons name="checkmark-circle" size={20} color="#4CAF50" style={{ marginTop: 4 }} />
         )}
+      </View>
+    </View>
+  );
+
+    const renderDeliveryItem = ({ item }) => (
+    <View style={styles.recordCard}>
+      <View style={styles.recordInfo}>
+        <Text style={styles.recordType}>Delivery Temperature</Text>
+        <Text style={styles.recordLocation}>{item.supplierName || 'Unknown Supplier'}</Text>
+        <Text style={styles.recordDate}>
+          {item.date || (item.createdAt?.seconds 
+            ? new Date(item.createdAt.seconds * 1000).toLocaleDateString()
+            : 'Unknown Date')}
+        </Text>
+      </View>
+      <View style={styles.temperatureContainer}>
+        <Text style={styles.temperatureValue}>
+          Frozen: {item.frozen || '--'}°C
+        </Text>
+        <Text style={styles.temperatureSubValue}>
+          Chilled: {item.chilled || '--'}°C
+        </Text>
+        {item.done && (
+          <Ionicons name="checkmark-circle" size={20} color="#4CAF50" style={{ marginTop: 4 }} />
+        )}
+      </View>
+    </View>
+  );
+
+  const renderCoolingReheatingItem = ({ item }) => (
+    <View style={styles.recordCard}>
+      <View style={styles.recordInfo}>
+        <Text style={styles.recordType}>
+          {item.type === 'cooling' ? 'Cooling' : 'Reheating'} Temperature
+        </Text>
+        <Text style={styles.recordLocation}>{item.item || 'Unknown Item'}</Text>
+        <Text style={styles.recordDate}>
+          {item.createdAt?.seconds 
+            ? new Date(item.createdAt.seconds * 1000).toLocaleDateString()
+            : 'Unknown Date'}
+        </Text>
+      </View>
+      <View style={styles.temperatureContainer}>
+        <View style={[styles.typeBadge, item.type === 'cooling' ? styles.coolingBadge : styles.reheatingBadge]}>
+          <Ionicons 
+            name={item.type === 'cooling' ? 'snow' : 'flame'} 
+            size={12} 
+            color={item.type === 'cooling' ? '#0ea5e9' : '#f97316'} 
+          />
+          <Text style={[styles.typeText, item.type === 'cooling' ? styles.coolingText : styles.reheatingText]}>
+            {item.type === 'cooling' ? 'Cooling' : 'Reheating'}
+          </Text>
+        </View>
+        <Text style={styles.temperatureValue}>
+          {item.temperature || '--'}°C
+        </Text>
       </View>
     </View>
   );
@@ -213,6 +205,21 @@ const TemperatureRecordsScreen = ({ navigation }) => {
           showsVerticalScrollIndicator={false}
           scrollEnabled={false} // Disable internal scrolling since we're using ScrollView
           nestedScrollEnabled={true}
+        />
+
+        {/* Cooling & Reheating Temperature Section */}
+        <View style={[styles.sectionHeader, { marginTop: Spacing.xl }]}>
+          <Text style={styles.sectionTitle}>Cooling & Reheating Logs ({coolingReheatingLogs.length})</Text>
+        </View>
+        
+        <FlatList
+          data={coolingReheatingLogs} // Show all cooling & reheating logs
+          keyExtractor={item => `coolingreheating-${item.id}`}
+          renderItem={renderCoolingReheatingItem}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          scrollEnabled={false} // Disable internal scrolling since we're using ScrollView
+          nestedScrollEnabled={true}
           refreshing={refreshing}
           onRefresh={handleRefresh}
         />
@@ -220,7 +227,6 @@ const TemperatureRecordsScreen = ({ navigation }) => {
     </SafeAreaView>
   );
 };
-
 
 const styles = StyleSheet.create({
   container: {
@@ -232,7 +238,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.md,
-    paddingTop: Spacing.lg,
+    paddingTop: Spacing.lg + getAndroidTitleMargin(),
   },
   backButton: {
     marginRight: Spacing.md,
@@ -242,11 +248,9 @@ const styles = StyleSheet.create({
     fontSize: 35,
     color: Colors.textPrimary,
     fontWeight: "300",
-    marginTop: 5,
   },
   titleContainer: {
     flex: 1,
-    marginTop: Spacing.xl,
   },
   title: {
     fontFamily: Typography.fontBold,
@@ -326,6 +330,31 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontWeight: '500',
     marginTop: 2,
+  },
+  typeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginBottom: 4,
+  },
+  coolingBadge: {
+    backgroundColor: '#eff6ff',
+  },
+  reheatingBadge: {
+    backgroundColor: '#fff7ed',
+  },
+  typeText: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  coolingText: {
+    color: '#0ea5e9',
+  },
+  reheatingText: {
+    color: '#f97316',
   },
 });
 

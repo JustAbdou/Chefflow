@@ -3,7 +3,6 @@ import { TouchableOpacity, Text, ActivityIndicator } from 'react-native';
 import { Colors, Spacing, Typography } from '../../constants';
 import { scaleWidth, scaleHeight, scaleFont } from '../../utils/responsive';
 
-
 const Button = ({
   children,
   variant = 'primary',
@@ -22,7 +21,6 @@ const Button = ({
       flexDirection: 'row',
     };
 
-
     const variants = {
       primary: {
         backgroundColor: disabled ? Colors.gray300 : Colors.primary,
@@ -36,7 +34,6 @@ const Button = ({
         borderColor: disabled ? Colors.gray300 : Colors.primary,
       },
     };
-
 
     const sizes = {
       sm: {
@@ -66,12 +63,10 @@ const Button = ({
     };
   };
 
-
   const getTextStyle = () => {
     const baseTextStyle = {
       fontFamily: Typography.fontSemiBold,
     };
-
 
     const variants = {
       primary: {
@@ -84,7 +79,6 @@ const Button = ({
         color: disabled ? Colors.gray400 : Colors.primary,
       },
     };
-
 
     const sizes = {
       sm: { fontSize: Typography.sm },

@@ -4,9 +4,8 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import DashboardScreen from '../screens/dashboard/DashboardScreen';
 import ProfileScreen from '../screens/settings/ProfileScreen';
 import RecipesScreen from '../screens/recipes/RecipesScreen'; 
-import { HomeIcon, RecipesIcon, SettingsIcon, DownloadsIcon } from '../components/icons/NavigationIcons';
-import DownloadsScreen from "../screens/downloads/DownloadsScreen";
-
+import DownloadsScreen from '../screens/downloads/DownloadsScreen';
+import { HomeIcon, RecipesIcon, SettingsIcon, DownloadsIcon } from '../components/icons/NavigationIcons'; // <-- Import icons
 
 const Tab = createBottomTabNavigator();
 
@@ -53,8 +52,8 @@ export default function TabNavigator() {
         name="Downloads"
         component={DownloadsScreen}
         options={{
-          tabBarIcon: ({ focused }) => <DownloadsIcon focused={focused} />,
-          tabBarLabel: "Downloads",
+          tabBarIcon: ({ color, size }) => <DownloadsIcon color={color} size={size} />,
+          tabBarLabel: 'Downloads',
         }}
       />
       <Tab.Screen
@@ -65,6 +64,7 @@ export default function TabNavigator() {
           tabBarLabel: 'Settings',
         }}
       />
+      {/* Add other screens here */}
     </Tab.Navigator>
   );
 }

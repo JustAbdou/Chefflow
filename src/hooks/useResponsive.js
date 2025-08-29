@@ -30,8 +30,10 @@ export const useResponsive = () => {
     scaleFont,
     scaleModerate,
     getAndroidTitleMargin,
+    // Device type helpers
     isPhone: !screenData.isTablet,
     isLandscape: screenData.screenWidth > screenData.screenHeight,
+    // Responsive helpers
     wp: (percentage) => (screenData.screenWidth * percentage) / 100,
     hp: (percentage) => (screenData.screenHeight * percentage) / 100,
   };

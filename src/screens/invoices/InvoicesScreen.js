@@ -16,14 +16,10 @@ import { getDocs, query, orderBy } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection } from "../../utils/firestoreHelpers";
 
-
 const InvoicesScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
-
   const [invoices, setInvoices] = useState([]);
-
   const [loading, setLoading] = useState(true);
-
   const [refreshing, setRefreshing] = useState(false); // <-- Add this
 
   // Hide Android navigation bar
@@ -33,23 +29,20 @@ const InvoicesScreen = ({ navigation }) => {
   // Date for header
   const today = getFormattedTodayDate();
 
-
   const fetchInvoices = async () => {
     if (!restaurantId) return;
     
     setLoading(true);
     try {
       const q = query(getRestaurantCollection(restaurantId, "invoices"), orderBy("createdAt", "desc"));
-
       const snapshot = await getDocs(q);
-
       const items = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
       }));
       setInvoices(items);
     } catch (error) {
-      // Error handling
+      console.error("Error fetching invoices:", error);
     } finally {
       setLoading(false);
     }
@@ -62,25 +55,21 @@ const InvoicesScreen = ({ navigation }) => {
   // Pull-to-refresh handler
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-
     await fetchInvoices();
     setRefreshing(false);
   }, []);
-
 
   const renderItem = ({ item }) => (
     <TouchableOpacity 
       style={styles.invoiceCard}
       onPress={() => navigation.navigate('InvoiceDetail', { invoice: item })}
+      activeOpacity={0.7}
     >
-      <View style={styles.invoiceInfo}>
+      <View>
         <Text style={styles.invoiceNumber}>{item.invoiceNumber}</Text>
-        <Text style={styles.supplier}>{item.supplier || 'Unknown Supplier'}</Text>
-        <Text style={styles.date}>{item.date}</Text>
+        {/* Optionally, add a subtitle or date here */}
       </View>
-      <View style={styles.invoiceRight}>
-        <Text style={styles.amount}>£{item.amount}</Text>
-      </View>
+      <Text style={styles.amount}>£{item.amount}</Text>
     </TouchableOpacity>
   );
 
@@ -113,19 +102,16 @@ const InvoicesScreen = ({ navigation }) => {
         refreshing={refreshing}
         onRefresh={handleRefresh}
       />
-
       {/* Floating Action Button */}
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.fab}
         onPress={() => navigation.navigate('InvoiceUpload')}
-        activeOpacity={0.85}
       >
-        <Ionicons name="add" size={38} color="#fff" />
+        <Ionicons name="add" size={36} color="#fff" />
       </TouchableOpacity>
     </SafeAreaView>
   );
 };
-
 
 const styles = StyleSheet.create({
   container: {
@@ -211,26 +197,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     marginBottom: Spacing.md,
   },
-  invoiceInfo: {
-    flex: 1,
-  },
   invoiceNumber: {
     ...Typography.h4,
     color: Colors.textPrimary,
     fontWeight: '500',
-  },
-  supplier: {
-    ...Typography.body,
-    color: Colors.gray400,
-    marginTop: 2,
-  },
-  date: {
-    ...Typography.body,
-    color: Colors.gray400,
-    marginTop: 2,
-  },
-  invoiceRight: {
-    alignItems: 'flex-end',
   },
   amount: {
     ...Typography.h4,

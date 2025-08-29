@@ -20,41 +20,27 @@ import { Colors } from "../constants/Colors";
 import { Typography } from "../constants/Typography";
 import { Spacing } from "../constants/Spacing";
 
-
 const today = new Date();
-
 const dateString = today.toLocaleDateString("en-US", {
   weekday: "long",
   month: "long",
   day: "numeric",
 });
 
-
 const categories = ["Main", "Desserts", "Starters"];
 
 export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
   const { restaurantId } = useRestaurant();
-
   const [image, setImage] = useState(null);
-
   const [category, setCategory] = useState(categories[0]);
-
   const [name, setName] = useState("");
-
   const [ingredients, setIngredients] = useState([]);
-
   const [instructions, setInstructions] = useState([]);
-
   const [notes, setNotes] = useState("");
-
   const [ingredientInput, setIngredientInput] = useState("");
-
   const [instructionTitle, setInstructionTitle] = useState("");
-
   const [instructionDesc, setInstructionDesc] = useState("");
-
   const [loading, setLoading] = useState(false);
-
 
   const pickImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
@@ -63,12 +49,10 @@ export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
       aspect: [4, 3],
       quality: 0.7,
     });
-
     if (!result.canceled) {
       setImage(result.assets[0].uri);
     }
   };
-
 
   const addIngredient = () => {
     if (ingredientInput.trim()) {
@@ -77,11 +61,9 @@ export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
     }
   };
 
-
   const removeIngredient = idx => {
     setIngredients(ingredients.filter((_, i) => i !== idx));
   };
-
 
   const addInstruction = () => {
     if (instructionTitle.trim()) {
@@ -94,11 +76,9 @@ export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
     }
   };
 
-
   const removeInstruction = idx => {
     setInstructions(instructions.filter((_, i) => i !== idx));
   };
-
 
   const handleAddRecipe = async () => {
     if (!restaurantId || !name.trim() || !category || ingredients.length === 0 || instructions.length === 0) {
@@ -107,11 +87,12 @@ export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
     }
     setLoading(true);
     try {
+      // Save to Firestore under restaurants/{restaurantId}/recipes/categories/{category}/{autoId}
       await addDoc(
         getRestaurantSubCollection(restaurantId, "recipes", "categories", category),
         {
           "recipe name": name,
-          image: image || "",
+          image: image ? [image] : ["https://placehold.co/200x200?text=No+Image"],
           ingredients,
           instructions: instructions.map(
             step => `${step.title}. ${step.desc}`
@@ -121,6 +102,7 @@ export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
       );
       onRecipeAdded && onRecipeAdded();
       onClose();
+      // Reset form
       setImage(null);
       setCategory(categories[0]);
       setName("");

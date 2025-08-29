@@ -1,13 +1,14 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, RefreshControl, Alert, Modal, TextInput, KeyboardAvoidingView, Platform } from "react-native"
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, RefreshControl, Alert } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { Colors } from "../../constants/Colors"
 import { Typography } from "../../constants/Typography"
 import { Spacing } from "../../constants/Spacing"
 import { getAndroidTitleMargin } from "../../utils/responsive"
 import useNavigationBar from "../../hooks/useNavigationBar"
+import AddOrderItemModal from "./AddOrderItemModal"
 import { Swipeable } from "react-native-gesture-handler"
 import { useNavigation } from "@react-navigation/native"
 import { getFormattedTodayDate } from '../../utils/dateUtils';
@@ -16,166 +17,64 @@ import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
 import { auth, db } from "../../../firebase";
 
-
-function AddItemModal({ visible, onClose, onAdd, supplier, date }) {
-  const [itemName, setItemName] = useState("");
-
-  useEffect(() => {
-    if (!visible) {
-      setItemName("");
-    }
-  }, [visible]);
-
-
-  const handleAdd = () => {
-    if (itemName.trim()) {
-      onAdd(itemName.trim(), supplier);
-      setItemName("");
-      onClose();
-    }
-  };
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
-      >
-        <View style={styles.overlay}>
-          <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} />
-          <View style={styles.modal}>
-            <View style={styles.modalHeader}>
-              <View style={styles.titleContainer}>
-                <Text style={styles.modalTitle}>Add Order Item</Text>
-                {date && <Text style={styles.modalDate}>{date}</Text>}
-                <Text style={styles.modalSupplier}>Supplier: {supplier}</Text>
-              </View>
-              <TouchableOpacity style={styles.closeButton} onPress={onClose} activeOpacity={0.7}>
-                <Text style={styles.closeText}>×</Text>
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.form}>
-              <Text style={styles.label}>Item Name</Text>
-              <TextInput
-                style={styles.input}
-                value={itemName}
-                onChangeText={setItemName}
-                placeholder="Enter item name"
-                placeholderTextColor={Colors.gray200}
-                autoFocus
-              />
-            </View>
-
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.addButton,
-                  !itemName.trim() && { backgroundColor: Colors.gray200 },
-                ]}
-                onPress={handleAdd}
-                disabled={!itemName.trim()}
-              >
-                <Text style={styles.addButtonText}>Add Item</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-}
-
 export function OrderListsScreen() {
   const { restaurantId } = useRestaurant();
-
   const navigation = useNavigation()
   const [showAddModal, setShowAddModal] = useState(false)
-  const [selectedSupplier, setSelectedSupplier] = useState("")
   const [orderItems, setOrderItems] = useState([]);
-
-  const [suppliers, setSuppliers] = useState([]);
-
   const [loading, setLoading] = useState(true);
-
   const [refreshing, setRefreshing] = useState(false);
 
-
+  // Hide Android navigation bar
   const navigationBar = useNavigationBar();
-  navigationBar.useHidden();
- 
+  navigationBar.useHidden(); // Use hidden mode for complete immersion
   const [currentDate, setCurrentDate] = useState('')
 
   useEffect(() => {
     setCurrentDate(getFormattedTodayDate());
   }, [])
 
-  const fetchSuppliers = async () => {
-    if (!restaurantId) return;
-    
-    try {
-      const suppliersDocRef = getRestaurantDoc(restaurantId, "suppliers", "suppliers");
-
-      const suppliersDoc = await getDoc(suppliersDocRef);
-
-      
-      if (suppliersDoc.exists() && suppliersDoc.data().names) {
-        setSuppliers(suppliersDoc.data().names);
-      } else {
-        setSuppliers([]);
-      }
-    } catch (error) {setSuppliers([]);
-    }
-  };
-
-
+  // Reusable function to fetch order items
   const fetchOrderItems = async () => {
     if (!restaurantId) return;
     
     try {
       const q = query(getRestaurantCollection(restaurantId, "orderlist"), orderBy("createdAt", "desc"));
-
       const snapshot = await getDocs(q);
-
       const items = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
-        completed: doc.data().done || false, 
+        completed: doc.data().done || false, // completed UI state matches Firestore 'done' field
       }));
       setOrderItems(items);
     } catch (error) {
-      // Error handling
+      console.error("Error fetching order items:", error);
     }
   };
 
   useEffect(() => {
-    const loadData = async () => {
+    const loadOrderItems = async () => {
       setLoading(true);
-
-      await Promise.all([fetchSuppliers(), fetchOrderItems()]);
+      await fetchOrderItems();
       setLoading(false);
       setRefreshing(false);
     };
-    loadData();
+    loadOrderItems();
   }, [restaurantId]);
 
-
+  // Pull to refresh handler
   const onRefresh = async () => {
     setRefreshing(true);
-
-    await Promise.all([fetchSuppliers(), fetchOrderItems()]);
+    await fetchOrderItems();
     setRefreshing(false);
   };
 
-
   const toggleItem = async (id) => {
     if (!restaurantId) return;
-
     
+    // Update local state first for immediate UI feedback
     const item = orderItems.find(item => item.id === id);
-
     if (!item) return;
-
     
     const newCompletedStatus = !item.completed;
     
@@ -183,21 +82,26 @@ export function OrderListsScreen() {
       items.map((item) => (item.id === id ? { ...item, completed: newCompletedStatus } : item))
     );
     
+    // Update Firestore - when checked (completed: true), set done: true
     try {
       await updateDoc(getRestaurantDoc(restaurantId, "orderlist", id), {
         done: newCompletedStatus,
       });
-    } catch (error) {// Revert local state on error
+    } catch (error) {
+      console.error("Error updating order item:", error);
+      // Revert local state on error
       setOrderItems((items) =>
         items.map((item) => (item.id === id ? { ...item, completed: !newCompletedStatus } : item))
       );
     }
   }
 
-  const clearAllItems = () => {
+  const clearAllItems = async () => {
+    if (!restaurantId || orderItems.length === 0) return;
+    
     Alert.alert(
       "Clear All Items",
-      "Are you sure you want to delete all items in the order list? This action cannot be undone.",
+      `Are you sure you want to delete all ${orderItems.length} order items? This action cannot be undone.`,
       [
         {
           text: "Cancel",
@@ -207,18 +111,19 @@ export function OrderListsScreen() {
           text: "Delete All",
           style: "destructive",
           onPress: async () => {
-            if (!restaurantId) return;
-            
             try {
+              // Delete all items from Firestore
               const deletePromises = orderItems.map(item =>
                 deleteDoc(getRestaurantDoc(restaurantId, "orderlist", item.id))
               );
-
               
               await Promise.all(deletePromises);
               
+              // Clear local state
               setOrderItems([]);
-            } catch (error) {Alert.alert("Error", "Failed to clear all items. Please try again.");
+            } catch (error) {
+              console.error("Error clearing all order items:", error);
+              Alert.alert("Error", "Failed to delete all items. Please try again.");
             }
           }
         }
@@ -226,12 +131,15 @@ export function OrderListsScreen() {
     );
   }
 
-  const addNewItem = async (itemName, supplierName) => {
+  const getSelectedCount = () => {
+    return orderItems.filter(item => item.completed).length;
+  }
+
+  const addNewItem = async (itemName) => {
     if (!restaurantId) return;
     
     try {
       const currentUser = auth.currentUser;
-
       let userInfo = {
         userId: 'anonymous',
         userEmail: 'anonymous',
@@ -239,11 +147,10 @@ export function OrderListsScreen() {
         fullName: 'Anonymous User'
       };
 
-
       if (currentUser) {
+        // Fetch user's full name from Firestore
         try {
           const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-
           const userData = userDoc.exists() ? userDoc.data() : null;
           
           userInfo = {
@@ -252,7 +159,10 @@ export function OrderListsScreen() {
             userName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Unknown User',
             fullName: userData?.fullName || currentUser.displayName || currentUser.email?.split('@')[0] || 'Unknown User'
           };
-        } catch (firestoreError) {userInfo = {
+        } catch (firestoreError) {
+          console.warn('Could not fetch user data from Firestore:', firestoreError);
+          // Fallback to auth data only
+          userInfo = {
             userId: currentUser.uid,
             userEmail: currentUser.email || 'Unknown Email',
             userName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Unknown User',
@@ -263,25 +173,17 @@ export function OrderListsScreen() {
 
       const docRef = await addDoc(getRestaurantCollection(restaurantId, "orderlist"), {
         name: itemName,
-        supplier: supplierName, 
         createdAt: serverTimestamp(),
         createdBy: userInfo,
-        done: false, 
+        done: false, // Initialize as not done
       });
       setOrderItems((items) => [
-        { 
-          id: docRef.id, 
-          name: itemName, 
-          supplier: supplierName, 
-          completed: false, 
-          createdBy: userInfo, 
-          done: false 
-        },
+        { id: docRef.id, name: itemName, completed: false, createdBy: userInfo, done: false },
         ...items,
       ]);
       setShowAddModal(false);
     } catch (error) {
-      // Error handling
+      console.error("Error adding order item:", error);
     }
   }
 
@@ -292,7 +194,7 @@ export function OrderListsScreen() {
       await deleteDoc(getRestaurantDoc(restaurantId, "orderlist", id));
       setOrderItems((items) => items.filter((item) => item.id !== id));
     } catch (error) {
-      // Error handling
+      console.error("Error deleting order item:", error);
     }
   }
 
@@ -300,62 +202,24 @@ export function OrderListsScreen() {
     navigation.goBack('Main', { screen: 'Dashboard' })
   }
 
-  const getSuppliersWithItems = () => {
-    const groupedItems = orderItems.reduce((groups, item) => {
-      const supplier = item.supplier || 'No Supplier';
-
-      if (!groups[supplier]) {
-        groups[supplier] = [];
-      }
-      groups[supplier].push(item);
-      return groups;
-    }, {});
-
-    return suppliers.map(supplier => ({
-      supplier,
-      items: groupedItems[supplier] || []
-    }));
-  };
-
-
-  const renderSupplierItems = (items) => {
-    if (items.length === 0) {
-      return (
-        <Text style={styles.noItemsText}>No items yet for this supplier</Text>
-      );
-    }
-
-    return items.map((item) => (
-      <Swipeable
-        key={item.id}
-        renderRightActions={() => renderRightActions(item.id)}
-        overshootRight={false}
-        containerStyle={styles.swipeableContainer}
-      >
-        <TouchableOpacity 
-          style={styles.listItem}
-          onPress={() => toggleItem(item.id)}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.checkbox, item.completed && styles.checkedBox]}>
-            {item.completed && <Text style={styles.checkmark}>✓</Text>}
-          </View>
-          <Text style={[styles.itemText, item.completed && styles.completedText]}>{item.name}</Text>
-        </TouchableOpacity>
-      </Swipeable>
-    ));
-  };
-
-
+  // Render right action for swipe-to-delete
   const renderRightActions = (itemId) => (
-    <View style={styles.swipeActionContainer}>
+    <View style={{ flex: 1, justifyContent: "center" }}>
       <TouchableOpacity
-        style={styles.deleteAction}
+        style={{
+          backgroundColor: "#FF3B30",
+          justifyContent: "center",
+          alignItems: "center",
+          width: 90,
+          height: "80%",
+          borderRadius: 16,
+          marginVertical: 8,
+          alignSelf: "flex-end",
+        }}
         onPress={() => deleteItem(itemId)}
         activeOpacity={0.8}
       >
-        <Ionicons name="trash-outline" size={24} color="white" />
-        <Text style={styles.deleteActionText}>Delete</Text>
+        <Text style={{ color: "white", fontWeight: "bold", fontSize: 16 }}>Delete</Text>
       </TouchableOpacity>
     </View>
   )
@@ -369,6 +233,7 @@ export function OrderListsScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
+        {/* Header */}
         <View style={styles.header}>
           <View style={styles.backHeader}>
             <TouchableOpacity style={styles.backButton} onPress={onBack} activeOpacity={0.7}>
@@ -381,8 +246,9 @@ export function OrderListsScreen() {
           </View>
         </View>
 
+        {/* Section Header */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Today's Orders</Text>
+          <Text style={styles.sectionTitle}>Today's List</Text>
           {orderItems.length > 0 && (
             <TouchableOpacity
               style={styles.clearAllButton}
@@ -394,49 +260,43 @@ export function OrderListsScreen() {
           )}
         </View>
 
+        {/* Order Items List */}
         <View style={styles.listContainer}>
           {loading ? (
             <Text style={{ textAlign: "center", marginTop: 40 }}>Loading...</Text>
-          ) : suppliers.length === 0 ? (
-            <Text style={styles.emptyState}>No suppliers found. Please add suppliers first.</Text>
           ) : (
-            getSuppliersWithItems().map(({ supplier, items }) => (
-              <View key={supplier} style={styles.supplierSection}>
-                <View style={styles.supplierHeader}>
-                  <View style={styles.supplierInfo}>
-                    <Text style={styles.supplierName}>{supplier}</Text>
-                    <Text style={styles.supplierItemCount}>{items.length} item{items.length !== 1 ? 's' : ''}</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.addItemButton}
-                    onPress={() => {
-                      setSelectedSupplier(supplier);
-                      setShowAddModal(true);
-                    }}
-                    activeOpacity={0.7}
+            orderItems.map((item) => (
+              <Swipeable
+                key={item.id}
+                renderRightActions={() => renderRightActions(item.id)}
+                overshootRight={false}
+                containerStyle={{ backgroundColor: "transparent" }}
+              >
+                <TouchableOpacity
+                  style={styles.listItem}
+                  onPress={() => toggleItem(item.id)}
+                  activeOpacity={0.7}
+                >
+                  <View
+                    style={[styles.checkbox, item.completed && styles.checkedBox]}
                   >
-                    <Ionicons name="add" size={20} color="#fff" />
-                    <Text style={styles.addItemButtonText}>Add</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.supplierItems}>
-                  {renderSupplierItems(items)}
-                </View>
-              </View>
+                    {item.completed && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={[styles.itemText, item.completed && styles.completedText]}>{item.name}</Text>
+                </TouchableOpacity>
+              </Swipeable>
             ))
           )}
         </View>
       </ScrollView>
 
-      {showAddModal && (
-        <AddItemModal 
-          visible={showAddModal}
-          onClose={() => setShowAddModal(false)} 
-          onAdd={addNewItem}
-          supplier={selectedSupplier}
-          date={currentDate}
-        />
-      )}
+      {/* Floating Action Button */}
+      <TouchableOpacity style={styles.fab} onPress={() => setShowAddModal(true)} activeOpacity={0.85}>
+        <Ionicons name="add" size={38} color="#fff" />
+      </TouchableOpacity>
+
+      {/* Add Item Modal */}
+      {showAddModal && <AddOrderItemModal onClose={() => setShowAddModal(false)} onAdd={addNewItem} />}
     </SafeAreaView>
   )
 }
@@ -495,11 +355,6 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontBold,
     color: Colors.textPrimary,
   },
-  bulkActionsContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-  },
   clearAllButton: {
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
@@ -510,98 +365,13 @@ const styles = StyleSheet.create({
   },
   clearAllText: {
     fontSize: Typography.sm,
-    color: "#FF3B30",
-    fontWeight: Typography.medium,
-  },
-  bulkSelectButton: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-    backgroundColor: "transparent",
-  },
-  bulkSelectButtonActive: {
-    backgroundColor: Colors.primary,
-  },
-  bulkSelectText: {
-    fontSize: Typography.sm,
-    color: Colors.primary,
-    fontWeight: Typography.medium,
-  },
-  bulkSelectTextActive: {
-    color: "white",
-  },
-  selectAllButton: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
-  },
-  selectAllText: {
-    fontSize: Typography.sm,
-    color: Colors.textSecondary,
+    color: "#FF3B30", // Red color to indicate deletion
     fontWeight: Typography.medium,
   },
   listContainer: {
     paddingHorizontal: Spacing.lg,
     paddingBottom: 100,
-  },
-  emptyState: {
-    textAlign: "center",
-    marginTop: 40,
-    fontSize: Typography.md,
-    color: Colors.textSecondary,
-    fontStyle: 'italic',
-  },
-  supplierSection: {
-    marginBottom: Spacing.xl,
-  },
-  supplierHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
-    backgroundColor: "#f8fafc",
-    borderRadius: 12,
-    marginBottom: Spacing.sm,
-  },
-  supplierInfo: {
-    flex: 1,
-  },
-  supplierName: {
-    fontSize: Typography.lg,
-    fontFamily: Typography.fontBold,
-    color: Colors.textPrimary,
-  },
-  supplierItemCount: {
-    fontSize: Typography.sm,
-    color: Colors.textSecondary,
-    fontWeight: Typography.medium,
-    marginTop: 2,
-  },
-  addItemButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.primary,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: 20,
-    gap: 4,
-  },
-  addItemButtonText: {
-    color: "#fff",
-    fontSize: Typography.sm,
-    fontWeight: Typography.bold,
-  },
-  supplierItems: {
-    paddingLeft: Spacing.md,
-  },
-  noItemsText: {
-    fontSize: Typography.sm,
-    color: Colors.textSecondary,
-    fontStyle: 'italic',
-    textAlign: 'center',
-    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.xl
   },
   listItem: {
     flexDirection: "row",
@@ -609,9 +379,6 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.lg,
     borderBottomWidth: 1,
     borderBottomColor: Colors.borderLight,
-    backgroundColor: Colors.gray50,
-    borderRadius: 16,
-    paddingHorizontal: Spacing.md,
   },
   checkbox: {
     width: 20,
@@ -659,126 +426,5 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 12,
     elevation: 8,
-  },
-  // Modal Styles
-  overlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  backdrop: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-  },
-  modal: {
-    backgroundColor: Colors.background,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.xl,
-    minHeight: 300,
-    maxHeight: "80%",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: Spacing.xl,
-  },
-  titleContainer: {
-    flex: 1,
-  },
-  modalTitle: {
-    fontSize: Typography.xl,
-    fontWeight: "bold",
-    color: Colors.textPrimary,
-    marginBottom: Spacing.xs,
-  },
-  modalDate: {
-    fontSize: Typography.base,
-    color: Colors.textSecondary,
-    marginTop: Spacing.xs,
-  },
-  modalSupplier: {
-    fontSize: Typography.sm,
-    color: Colors.primary,
-    marginTop: Spacing.xs,
-    fontWeight: "600",
-  },
-  closeButton: {
-    padding: Spacing.xs,
-  },
-  closeText: {
-    fontSize: 24,
-    color: Colors.textSecondary,
-    fontWeight: "300",
-  },
-  form: {
-    marginBottom: Spacing.xl,
-  },
-  label: {
-    fontSize: Typography.base,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.sm,
-  },
-  input: {
-    fontSize: Typography.lg,
-    fontWeight: "600",
-    color: Colors.textPrimary,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: 0,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
-  },
-  buttonContainer: {
-    marginTop: "auto",
-  },
-  addButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  addButtonText: {
-    color: "#fff",
-    fontFamily: Typography.fontBold,
-    fontSize: Typography.lg,
-  },
-  swipeableContainer: {
-    backgroundColor: "transparent",
-    marginBottom: Spacing.md,
-  },
-  swipeActionContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "flex-end",
-    paddingRight: Spacing.md,
-  },
-  deleteAction: {
-    backgroundColor: "#FF3B30",
-    justifyContent: "center",
-    alignItems: "center",
-    width: 80,
-    height: "85%",
-    borderRadius: 16,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  deleteActionText: {
-    color: "white",
-    fontSize: Typography.sm,
-    fontWeight: Typography.bold,
-    marginTop: 4,
   },
 })

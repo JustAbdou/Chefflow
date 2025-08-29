@@ -61,14 +61,14 @@ async function resetRestaurantData(restaurantId) {
     // 2. Reset Prep Lists (delete DONE only)
     await deleteCollectionItems(restaurantId, 'preplist', today, 'done-only');
     
-    // 3. Reset Fridge Temp Logs (delete ALL)
-    await deleteCollectionItems(restaurantId, 'fridgelogs', today, 'all');
+    // 3. Reset Fridge Temp Logs (reset AM/PM temperatures and set done: false)
+    await resetFridgeTemperatures(restaurantId);
     
-    // 4. Reset Delivery Temp Logs (delete ALL)
-    await deleteCollectionItems(restaurantId, 'deliverylogs', today, 'all');
+    // 4. Reset Delivery Temp Logs (reset chilled/frozen temperatures and set done: false)
+    await resetDeliveryTemperatures(restaurantId);
     
-    // 5. Reset Cleaning Checklist (delete DONE only)
-    await deleteCollectionItems(restaurantId, 'cleaninglist', today, 'done-only');
+    // 5. Reset Closing Checklist (set done: false)
+    await resetClosingChecklist(restaurantId);
     
     console.log(`✅ Restaurant ${restaurantId} reset completed`);
     
@@ -121,6 +121,115 @@ async function deleteCollectionItems(restaurantId, collectionName, date, mode) {
     
   } catch (error) {
     console.error(`❌ Error processing ${collectionName}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Reset fridge temperature logs (clear AM/PM temperatures and set done: false)
+ * @param {string} restaurantId - Restaurant ID
+ */
+async function resetFridgeTemperatures(restaurantId) {
+  try {
+    console.log(`🧊 Resetting fridge temperatures for restaurant ${restaurantId}`);
+    
+    const collectionRef = db.collection('restaurants').doc(restaurantId).collection('fridgelogs');
+    const snapshot = await collectionRef.get();
+    
+    if (snapshot.empty) {
+      console.log('No fridge logs to reset');
+      return;
+    }
+    
+    console.log(`Found ${snapshot.size} fridge logs to reset`);
+    
+    const batch = db.batch();
+    
+    snapshot.forEach(doc => {
+      batch.update(doc.ref, {
+        temperatureAM: '',
+        temperaturePM: '',
+        done: false
+      });
+    });
+    
+    await batch.commit();
+    console.log(`🧊 Reset ${snapshot.size} fridge temperature logs`);
+    
+  } catch (error) {
+    console.error('❌ Error resetting fridge temperatures:', error);
+    throw error;
+  }
+}
+
+/**
+ * Reset delivery temperature logs (clear chilled/frozen temperatures and set done: false)
+ * @param {string} restaurantId - Restaurant ID
+ */
+async function resetDeliveryTemperatures(restaurantId) {
+  try {
+    console.log(`🚚 Resetting delivery temperatures for restaurant ${restaurantId}`);
+    
+    const collectionRef = db.collection('restaurants').doc(restaurantId).collection('deliverylogs');
+    const snapshot = await collectionRef.get();
+    
+    if (snapshot.empty) {
+      console.log('No delivery logs to reset');
+      return;
+    }
+    
+    console.log(`Found ${snapshot.size} delivery logs to reset`);
+    
+    const batch = db.batch();
+    
+    snapshot.forEach(doc => {
+      batch.update(doc.ref, {
+        chilled: '',
+        frozen: '',
+        done: false
+      });
+    });
+    
+    await batch.commit();
+    console.log(`🚚 Reset ${snapshot.size} delivery temperature logs`);
+    
+  } catch (error) {
+    console.error('❌ Error resetting delivery temperatures:', error);
+    throw error;
+  }
+}
+
+/**
+ * Reset closing checklist (set done: false for all items)
+ * @param {string} restaurantId - Restaurant ID
+ */
+async function resetClosingChecklist(restaurantId) {
+  try {
+    console.log(`🧹 Resetting closing checklist for restaurant ${restaurantId}`);
+    
+    const collectionRef = db.collection('restaurants').doc(restaurantId).collection('cleaninglist');
+    const snapshot = await collectionRef.get();
+    
+    if (snapshot.empty) {
+      console.log('No cleaning checklist items to reset');
+      return;
+    }
+    
+    console.log(`Found ${snapshot.size} checklist items to reset`);
+    
+    const batch = db.batch();
+    
+    snapshot.forEach(doc => {
+      batch.update(doc.ref, {
+        done: false
+      });
+    });
+    
+    await batch.commit();
+    console.log(`🧹 Reset ${snapshot.size} cleaning checklist items`);
+    
+  } catch (error) {
+    console.error('❌ Error resetting closing checklist:', error);
     throw error;
   }
 }

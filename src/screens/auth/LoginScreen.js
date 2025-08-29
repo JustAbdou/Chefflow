@@ -10,42 +10,26 @@ import {
   TouchableOpacity,
   Image,
   Linking,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import { Colors, Spacing, Typography } from '../../constants';
 import useNavigationBar from '../../hooks/useNavigationBar';
-import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../../../firebase'; // adjust path if needed
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
-
   const [password, setPassword] = useState('');
-
   const [showPassword, setShowPassword] = useState(false);
-
   const [loading, setLoading] = useState(false);
-
   const [error, setError] = useState('');
 
   // Hide Android navigation bar
   const navigationBar = useNavigationBar();
   navigationBar.useHidden(); // Use hidden mode for complete immersion
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'Main', params: { screen: 'Dashboard' } }],
-        });
-      }
-    });
-    return unsubscribe;
-  }, []);
-
 
   const handleLogin = async () => {
     setLoading(true);
@@ -53,7 +37,10 @@ const LoginScreen = ({ navigation }) => {
     try {
       await signInWithEmailAndPassword(auth, email, password);
       setLoading(false);
-      navigation.navigate('Main', { screen: 'Dashboard' });
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Main', params: { screen: 'Dashboard' } }],
+      });
     } catch (error) {
       setLoading(false);
       // Show stylish error message instead of alert
@@ -69,13 +56,23 @@ const LoginScreen = ({ navigation }) => {
     }
   };
 
-
   const isFormValid = email.length > 0 && password.length > 0;
 
-
-  const handleContactUs = () => {
-    Linking.openURL('mailto:contact@chefflowapp.net');
-  };
+  const handleContactUs = async () => {
+    try {
+      const email = "contact@chefflowapp.net"
+      const url = `mailto:${email}`
+      const supported = await Linking.canOpenURL(url)
+      if (supported) {
+        await Linking.openURL(url)
+      } else {
+        Alert.alert("Error", "Unable to open email client")
+      }
+    } catch (error) {
+      console.error("Error opening email:", error)
+      Alert.alert("Error", "Unable to open email client")
+    }
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -166,7 +163,6 @@ const LoginScreen = ({ navigation }) => {
     </SafeAreaView>
   );
 };
-
 
 const styles = StyleSheet.create({
   container: {

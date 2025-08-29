@@ -1,16 +1,14 @@
 export function getFormattedTodayDate() {
   const today = new Date();
-
   const options = { weekday: 'long', month: 'long', day: 'numeric' };
   return today.toLocaleDateString(undefined, options);
 }
 
 export function isItemFromYesterday(itemCreatedAt) {
   if (!itemCreatedAt) return false;
-
   
+  // Convert Firestore timestamp to Date if needed
   let itemDate;
-
   if (typeof itemCreatedAt.toDate === 'function') {
     itemDate = itemCreatedAt.toDate();
   } else if (itemCreatedAt instanceof Date) {
@@ -19,16 +17,15 @@ export function isItemFromYesterday(itemCreatedAt) {
     itemDate = new Date(itemCreatedAt);
   }
   
+  // Get current date and time
   const now = new Date();
-
   
+  // Get today's 3 AM in London time (UTC+0 or UTC+1 depending on DST)
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-  const todayAt3AM = new Date(today.getTime() + (3 * 60 * 60 * 1000));
+  const todayAt3AM = new Date(today.getTime() + (3 * 60 * 60 * 1000)); // 3 AM today
   
   // If current time is before 3 AM, we consider "today" to start from yesterday's 3 AM
   let cutoffTime;
-
   if (now.getHours() < 3) {
     // It's before 3 AM, so "yesterday" items are those before yesterday's 3 AM
     const yesterdayAt3AM = new Date(todayAt3AM.getTime() - (24 * 60 * 60 * 1000));
@@ -43,7 +40,6 @@ export function isItemFromYesterday(itemCreatedAt) {
 
 export function groupPrepItemsByDay(items) {
   const todayItems = [];
-
   const yesterdayItems = [];
   
   // Get current date and time
@@ -51,12 +47,10 @@ export function groupPrepItemsByDay(items) {
   
   // Calculate the 3 AM cutoff for today
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
   const todayAt3AM = new Date(today.getTime() + (3 * 60 * 60 * 1000)); // 3 AM today
   
   // If current time is before 3 AM, adjust the cutoff to yesterday's 3 AM
   let currentDayCutoff;
-
   if (now.getHours() < 3) {
     // It's before 3 AM, so current "day" started from yesterday's 3 AM
     currentDayCutoff = new Date(todayAt3AM.getTime() - (24 * 60 * 60 * 1000));
@@ -77,7 +71,6 @@ export function groupPrepItemsByDay(items) {
     
     // Convert Firestore timestamp to Date if needed
     let itemDate;
-
     if (typeof item.createdAt.toDate === 'function') {
       itemDate = item.createdAt.toDate();
     } else if (item.createdAt instanceof Date) {
@@ -102,7 +95,6 @@ export function groupPrepItemsByDay(items) {
 
 export function groupCleaningTasksByDay(tasks) {
   const todayTasks = [];
-
   const yesterdayTasks = [];
   
   // Get current date and time
@@ -110,12 +102,10 @@ export function groupCleaningTasksByDay(tasks) {
   
   // Calculate the 3 AM cutoff for today
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
   const todayAt3AM = new Date(today.getTime() + (3 * 60 * 60 * 1000)); // 3 AM today
   
   // If current time is before 3 AM, adjust the cutoff to yesterday's 3 AM
   let currentDayCutoff;
-
   if (now.getHours() < 3) {
     // It's before 3 AM, so current "day" started from yesterday's 3 AM
     currentDayCutoff = new Date(todayAt3AM.getTime() - (24 * 60 * 60 * 1000));
@@ -136,7 +126,6 @@ export function groupCleaningTasksByDay(tasks) {
     
     // Convert Firestore timestamp to Date if needed
     let taskDate;
-
     if (typeof task.createdAt.toDate === 'function') {
       taskDate = task.createdAt.toDate();
     } else if (task.createdAt instanceof Date) {

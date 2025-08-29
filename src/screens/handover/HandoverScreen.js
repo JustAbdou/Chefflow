@@ -14,28 +14,23 @@ import {
 import { Colors } from '../../constants/Colors';
 import { Typography } from '../../constants/Typography';
 import { Spacing } from '../../constants/Spacing';
+import { getAndroidTitleMargin } from '../../utils/responsive';
 import useNavigationBar from '../../hooks/useNavigationBar';
 import { useNavigation } from '@react-navigation/native';
 import { useRestaurant } from '../../contexts/RestaurantContext';
 import { auth } from '../../../firebase';
 import { addDoc, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
 import { getRestaurantCollection } from '../../utils/firestoreHelpers';
-import { uploadPdfToStorage, uploadPdfToStorageTemporary } from '../../utils/pdfUpload';
+import { uploadPdfToStorage, uploadPdfToStorageTemporary, generatePdfFileName } from '../../utils/pdfUpload';
 import * as Print from 'expo-print';
 import * as FileSystem from 'expo-file-system';
 
-
 function HandoverScreen() {
   const navigation = useNavigation();
-
   const { restaurantId } = useRestaurant();
-
   const [serviceNotes, setServiceNotes] = useState('');
-
   const [stockIssues, setStockIssues] = useState('');
-
   const [problemsDuringShift, setProblemsDuringShift] = useState('');
-
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Hide Android navigation bar
@@ -45,11 +40,9 @@ function HandoverScreen() {
   // Get current date
   const getCurrentDate = () => {
     const date = new Date();
-
     const options = { weekday: 'long', month: 'long', day: 'numeric' };
     return date.toLocaleDateString('en-US', options);
   };
-
 
   const handleCompleteHandover = () => {
     Alert.alert(
@@ -59,7 +52,7 @@ function HandoverScreen() {
         {
           text: "Back to Edit",
           style: "cancel",
-          onPress: () => {}
+          onPress: () => console.log("User chose to continue editing")
         },
         {
           text: "Confirm",
@@ -69,7 +62,6 @@ function HandoverScreen() {
       ]
     );
   };
-
 
   const submitHandoverToFirestore = async () => {
     if (!restaurantId) {
@@ -84,7 +76,10 @@ function HandoverScreen() {
 
     setIsSubmitting(true);
 
-    try {// Prepare handover data
+    try {
+      console.log('📝 Submitting handover to Firestore...');
+      
+      // Prepare handover data
       const handoverData = {
         createdAt: serverTimestamp(),
         createdBy: auth.currentUser.uid,
@@ -97,24 +92,30 @@ function HandoverScreen() {
         serviceNotesText: serviceNotes.trim(),
         stockIssuesText: stockIssues.trim(),
         problemsDuringShiftText: problemsDuringShift.trim(),
-      };// Get handovers collection reference
+      };
+
+      console.log('📋 Handover data:', handoverData);
+
+      // Get handovers collection reference
       const handoversCollection = getRestaurantCollection(restaurantId, 'handovers');
       
       // Submit to Firestore first
-      const docRef = await addDoc(handoversCollection, handoverData);// Generate PDF for this handover
-      let pdfUrl = '';
-      try {pdfUrl = await generateHandoverPDF(handoverData, docRef.id);
+      const docRef = await addDoc(handoversCollection, handoverData);
+      console.log('✅ Handover submitted successfully with ID:', docRef.id);
 
+      // Generate PDF for this handover
+      try {
+        console.log('📄 Generating PDF for handover...');
+        const pdfUrl = await generateHandoverPDF(handoverData, docRef.id);
         
         if (pdfUrl) {
           // Update the handover document with the PDF URL
-          await updateDoc(docRef, { pdf: pdfUrl });} else {}
-      } catch (pdfError) {// Show a warning but don't fail the entire operation
-        Alert.alert(
-          "Handover Saved", 
-          "Your handover was saved successfully, but we couldn't generate the PDF. You can still view it in Previous Handovers.",
-          [{ text: "OK" }]
-        );
+          await updateDoc(docRef, { pdf: pdfUrl });
+          console.log('✅ PDF generated and URL saved:', pdfUrl);
+        }
+      } catch (pdfError) {
+        console.error('⚠️ PDF generation failed, but handover was saved:', pdfError);
+        // Don't fail the entire operation if PDF generation fails
       }
       
       // Navigate to completion screen with handover data
@@ -124,17 +125,18 @@ function HandoverScreen() {
           stockIssues: handoverData.stockIssues,
           problems: handoverData.problems,
           docId: docRef.id,
-          pdfUrl: pdfUrl,
         }
       });
 
-    } catch (error) {Alert.alert(
+    } catch (error) {
+      console.error('❌ Error submitting handover:', error);
+      Alert.alert(
         "Submission Failed", 
         "There was an error submitting your handover. Please check your connection and try again.",
         [
           {
             text: "OK",
-            onPress: () => {}
+            onPress: () => setIsSubmitting(false)
           }
         ]
       );
@@ -145,188 +147,114 @@ function HandoverScreen() {
 
   // Generate PDF for individual handover
   const generateHandoverPDF = async (handoverData, docId) => {
-    try {const currentDate = new Date();
-
-      const fileName = `handover_${docId}
-    _${currentDate.toISOString().split('T')[0]}.pdf`;
+    try {
+      const currentDate = new Date();
+      const fileName = `handover_${docId}_${currentDate.toISOString().split('T')[0]}.pdf`;
 
       // Determine handover status
       let status = 'Clean Shift';
-
       if (handoverData.problems) status = 'Problems Reported';
       else if (handoverData.stockIssues) status = 'Stock Issues';
-      else if (handoverData.serviceNotes) status = 'Notes Available';// Create HTML for PDF
+      else if (handoverData.serviceNotes) status = 'Notes Available';
+
+      // Create HTML for PDF
       const html = `
         <html>
           <head>
             <style>
-              body { 
-                font-family: Arial, sans-serif; 
-                margin: 20px; 
-                color: #333;
-                line-height: 1.6;
-              }
-              .header { 
-                text-align: center; 
-                margin-bottom: 30px; 
-                border-bottom: 3px solid #007AFF;
-                padding-bottom: 20px;
-              }
-              .header h1 { 
-                color: #007AFF; 
-                margin-bottom: 10px; 
-                font-size: 28px;
-              }
-              .header p { 
-                color: #666; 
-                margin: 5px 0;
-              }
-              .section { 
-                margin-bottom: 25px; 
-                page-break-inside: avoid;
-              }
-              .section h2 { 
-                color: #333; 
-                border-bottom: 2px solid #007AFF; 
-                padding-bottom: 5px; 
-                margin-bottom: 15px;
-              }
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              .header { text-align: center; margin-bottom: 30px; }
+              .header h1 { color: #007AFF; margin-bottom: 10px; }
+              .header p { color: #666; }
+              .section { margin-bottom: 25px; }
+              .section h2 { color: #333; border-bottom: 2px solid #007AFF; padding-bottom: 5px; }
               .status { 
-                padding: 15px; 
-                border-radius: 8px; 
+                padding: 10px; 
+                border-radius: 5px; 
                 margin-bottom: 20px;
                 font-weight: bold;
-                border-left: 5px solid;
               }
-              .status.clean { 
-                background-color: #d4edda; 
-                color: #155724; 
-                border-left-color: #28a745;
-              }
-              .status.issues { 
-                background-color: #f8d7da; 
-                color: #721c24; 
-                border-left-color: #dc3545;
-              }
-              .status.notes { 
-                background-color: #cce5ff; 
-                color: #004085; 
-                border-left-color: #007AFF;
-              }
-              .content { 
-                background-color: #f8f9fa; 
-                padding: 15px; 
-                border-radius: 8px; 
-                border: 1px solid #e9ecef;
-                min-height: 60px;
-              }
-              .empty { 
-                color: #999; 
-                font-style: italic; 
-              }
-              .footer {
-                margin-top: 40px; 
-                text-align: center; 
-                color: #666; 
-                font-size: 12px;
-                border-top: 1px solid #ddd;
-                padding-top: 20px;
-              }
-              .footer p {
-                margin: 5px 0;
-              }
+              .status.clean { background-color: #d4edda; color: #155724; }
+              .status.issues { background-color: #f8d7da; color: #721c24; }
+              .status.notes { background-color: #cce5ff; color: #004085; }
+              .content { background-color: #f8f9fa; padding: 15px; border-radius: 5px; }
+              .empty { color: #999; font-style: italic; }
             </style>
           </head>
           <body>
             <div class="header">
               <h1>Kitchen Handover Report</h1>
-              <p><strong>Generated on:</strong> ${currentDate.toLocaleDateString()} at ${currentDate.toLocaleTimeString()}</p>
-              <p><strong>Document ID:</strong> ${docId}</p>
+              <p>Generated on: ${currentDate.toLocaleDateString()} at ${currentDate.toLocaleTimeString()}</p>
             </div>
             
             <div class="status ${status.includes('Problems') ? 'issues' : status.includes('Stock') ? 'issues' : status.includes('Notes') ? 'notes' : 'clean'}">
-              <strong>Shift Status:</strong> ${status}
+              Status: ${status}
             </div>
             
             <div class="section">
-              <h2>📝 Service Notes</h2>
+              <h2>Service Notes</h2>
               <div class="content">
-                ${handoverData.serviceNotesText ? handoverData.serviceNotesText.replace(/\n/g, '<br>') : '<span class="empty">No service notes provided</span>'}
+                ${handoverData.serviceNotesText || '<span class="empty">No service notes provided</span>'}
               </div>
             </div>
             
             <div class="section">
-              <h2>📦 Stock Issues</h2>
+              <h2>Stock Issues</h2>
               <div class="content">
-                ${handoverData.stockIssuesText ? handoverData.stockIssuesText.replace(/\n/g, '<br>') : '<span class="empty">No stock issues reported</span>'}
+                ${handoverData.stockIssuesText || '<span class="empty">No stock issues reported</span>'}
               </div>
             </div>
             
             <div class="section">
-              <h2>⚠️ Problems During Shift</h2>
+              <h2>Problems During Shift</h2>
               <div class="content">
-                ${handoverData.problemsDuringShiftText ? handoverData.problemsDuringShiftText.replace(/\n/g, '<br>') : '<span class="empty">No problems reported</span>'}
+                ${handoverData.problemsDuringShiftText || '<span class="empty">No problems reported</span>'}
               </div>
             </div>
             
-            <div class="footer">
-              <p>This handover report was generated by ChefFlow</p>
-              <p>For internal restaurant management use only</p>
-              <p>© ${currentDate.getFullYear()} ChefFlow - Kitchen Management System</p>
+            <div style="margin-top: 40px; text-align: center; color: #666; font-size: 12px;">
+              <p>This handover was submitted by a ChefFlow user and is for internal use only.</p>
+              <p>Document ID: ${docId}</p>
             </div>
           </body>
         </html>
-      `;// Generate PDF locally using expo-print;
+      `;
 
-      const printOptions = {
-        html,
-        base64: false,
-        fileName: fileName.replace('.pdf', ''),
-        width: 612, // 8.5 inches in points
-        height: 792, // 11 inches in points
-        margins: {
-          left: 50,
-          right: 50,
-          top: 50,
-          bottom: 50,
-        },
-      };
+      // Generate PDF locally
+      const { uri } = await Print.printToFileAsync({ 
+        html, 
+        base64: false, 
+        fileName: fileName.replace('.pdf', '') 
+      });
 
+      console.log('📄 PDF generated locally:', uri);
 
-      const { uri } = await Print.printToFileAsync(printOptions);// Verify the file was created
-      const fileInfo = await FileSystem.getInfoAsync(uri);
-
-      if (!fileInfo.exists) {
-        throw new Error('PDF file was not created successfully');
-      }
-      
       // Upload to Firebase Storage
       let downloadURL;
-      
-      // Try Firebase Storage first (primary method)
       try {
         downloadURL = await uploadPdfToStorage(uri, fileName, restaurantId, 'handovers');
+        console.log('☁️ PDF uploaded to Firebase Storage successfully:', downloadURL);
       } catch (storageError) {
-        // Only use local storage as absolute last resort
-        try {
-          downloadURL = await uploadPdfToStorageTemporary(uri, fileName, restaurantId, 'handovers');
-        } catch (fallbackError) {
-          throw new Error('Failed to save PDF using any storage method: ' + fallbackError.message);
-        }
+        console.log('⚠️ Firebase Storage upload failed, using temporary local storage:', storageError.message);
+        downloadURL = await uploadPdfToStorageTemporary(uri, fileName, restaurantId, 'handovers');
+        console.log('💾 PDF saved to local storage:', downloadURL);
       }
 
       // Clean up the original temporary file
       try {
         await FileSystem.deleteAsync(uri, { idempotent: true });
-      } catch (cleanupError) {}
+        console.log('🗑️ Original temporary file cleaned up');
+      } catch (cleanupError) {
+        console.warn('⚠️ Could not clean up original temporary file:', cleanupError);
+      }
 
       return downloadURL;
 
     } catch (error) {
-      throw new Error(`PDF generation failed: ${error.message}`);
+      console.error('❌ Error generating handover PDF:', error);
+      throw error;
     }
   };
-
 
   const handlePreviousHandovers = () => {
     // Navigate to previous handovers screen
@@ -449,7 +377,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.lg,
+    paddingTop: Spacing.lg + getAndroidTitleMargin(),
     paddingBottom: Spacing.md,
   },
   appTitle: {

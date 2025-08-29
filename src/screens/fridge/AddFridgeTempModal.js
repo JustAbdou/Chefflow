@@ -23,11 +23,8 @@ export default function AddFridgeTempModal({
   loadingFridges,
 }) {
   const [selectedFridge, setSelectedFridge] = useState(fridgeNames[0] || "");
-
   const [dropdownVisible, setDropdownVisible] = useState(false);
-
   const [tempValue, setTempValue] = useState("");
-
   const [saving, setSaving] = useState(false);
 
   React.useEffect(() => {
@@ -40,26 +37,29 @@ export default function AddFridgeTempModal({
     }
   }, [visible, fridgeNames]);
 
-
   const handleSave = async () => {
     if (!selectedFridge || !tempValue.trim()) {
+      console.log('⚠️ Missing fridge selection or temperature value');
       return;
     }
     
     // Validate that it's a valid number string
     const cleanTempValue = tempValue.replace(',', '.'); // Convert comma to dot
     const tempNumber = parseFloat(cleanTempValue);
-
     
     if (isNaN(tempNumber)) {
+      console.log('⚠️ Invalid temperature value');
       return;
     }
+    
+    console.log('🌡️ Temperature string being saved:', cleanTempValue);
     
     setSaving(true);
     try {
       await onSave(selectedFridge, cleanTempValue); // Pass the clean string
+      console.log('✅ Temperature saved successfully');
     } catch (error) {
-      // Error saving temperature
+      console.error('❌ Error saving temperature:', error);
     } finally {
       setSaving(false);
     }
@@ -75,7 +75,6 @@ export default function AddFridgeTempModal({
     
     // Ensure only one decimal point
     const parts = cleanText.split('.');
-
     if (parts.length > 2) {
       cleanText = parts[0] + '.' + parts.slice(1).join('');
     }

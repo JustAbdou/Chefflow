@@ -18,7 +18,10 @@ export const useNavigationBar = () => {
         navigationBarUtils.hideNavigationBar();
       }
 
+      // Optional: Show navigation bar when component unmounts
       return () => {
+        // Uncomment if you want to restore navigation bar on unmount
+        // navigationBarUtils.showNavigationBar();
       };
     }, [autoHide]);
   };
@@ -60,16 +63,19 @@ export const useNavigationBar = () => {
   };
 
   return {
+    // Direct utility access
     hide: navigationBarUtils.hideNavigationBar,
     show: navigationBarUtils.showNavigationBar,
     setLeanBack: navigationBarUtils.setLeanBackMode,
     setColor: navigationBarUtils.setNavigationBarColor,
     
+    // React hooks for automatic behavior
     useAutoHide,
     useLeanBack,
     useHidden,
     useNavigationBarColor,
     
+    // Utility checks
     isAvailable: navigationBarUtils.isAvailable(),
     isAndroid: Platform.OS === 'android'
   };

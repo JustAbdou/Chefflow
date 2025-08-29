@@ -10,7 +10,6 @@ import {
   RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from "../../constants/Colors";
 import { Typography } from "../../constants/Typography";
 import { Spacing } from "../../constants/Spacing";
@@ -20,19 +19,15 @@ import { getDocs, updateDoc, addDoc, serverTimestamp } from "firebase/firestore"
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
 import { auth } from "../../../firebase";
-import { getFormattedTodayDate } from '../../utils/dateUtils';
+import { getFormattedTodayDate, groupCleaningTasksByDay } from '../../utils/dateUtils';
+import AddCleaningTaskModal from "./AddCleaningTaskModal"; // import the modal
 
-export default function ClosingChecklistScreen({ navigation }) {
+export default function CleaningChecklistScreen({ navigation }) {
   const { restaurantId } = useRestaurant();
-
   const [tasks, setTasks] = useState([]);
-
   const [loading, setLoading] = useState(true);
-
   const [refreshing, setRefreshing] = useState(false);
-
   const [modalVisible, setModalVisible] = useState(false);
-
   const [currentDate, setCurrentDate] = useState('');
 
   // Hide Android navigation bar
@@ -41,6 +36,8 @@ export default function ClosingChecklistScreen({ navigation }) {
 
   useEffect(() => {
     setCurrentDate(getFormattedTodayDate());
+    console.log('🏪 Restaurant ID from context:', restaurantId);
+    console.log('👤 Current user:', auth.currentUser?.uid);
   }, []);
 
   // Reusable function to fetch tasks
@@ -48,10 +45,13 @@ export default function ClosingChecklistScreen({ navigation }) {
     if (!restaurantId) return;
     
     try {
+      console.log('🔍 Fetching closing tasks for restaurant:', restaurantId);
       const snapshot = await getDocs(getRestaurantCollection(restaurantId, "closinglist"));
-
+      console.log('📋 Found', snapshot.docs.length, 'closing tasks');
+      
       const fetchedTasks = snapshot.docs.map(docSnap => {
         const data = docSnap.data();
+        console.log('📝 Task data:', data);
         return {
           id: docSnap.id,
           title: data.name || "",
@@ -60,80 +60,13 @@ export default function ClosingChecklistScreen({ navigation }) {
             : "--:--",
           done: !!data.done,
           createdAt: data.createdAt, // Preserve original createdAt for grouping
-          completedAt: data.completedAt, // Track when task was completed
         };
       });
+      console.log('✅ Processed tasks:', fetchedTasks);
       setTasks(fetchedTasks);
-    } catch (e) {setTasks([]);
-    }
-  };
-
-  // Daily reset function - reset all tasks to false at 3 AM GMT+1 every day
-  const performDailyReset = async () => {
-    if (!restaurantId) return;
-    
-    try {
-      // Get current time in GMT+1 timezone
-      const now = new Date();
-
-      const gmt1Now = new Date(now.getTime() + (60 * 60 * 1000)); // Add 1 hour for GMT+1
-      
-      // Calculate today's 3 AM in GMT+1
-      const today3AM = new Date(gmt1Now);
-      today3AM.setHours(3, 0, 0, 0);
-      
-      // Check if we need to reset (current time is past 3 AM today)
-      const shouldReset = gmt1Now >= today3AM;
-
-      
-      if (!shouldReset) {return;
-      }
-      
-      // Get today's date string for tracking last reset
-      const todayDateString = today3AM.toISOString().split('T')[0]; // YYYY-MM-DD format
-      const lastResetKey = `lastClosingChecklistReset_${restaurantId}`;
-      
-      try {
-        const lastResetDate = await AsyncStorage.getItem(lastResetKey);
-        
-        // If we already reset today, don't reset again
-        if (lastResetDate === todayDateString) {return;
-        }
-      } catch (storageError) {}// Fetch ALL tasks directly from Firestore to ensure we reset everything
-      const snapshot = await getDocs(getRestaurantCollection(restaurantId, "closinglist"));
-
-      const resetPromises = [];
-      
-      // Reset ALL tasks to done: false (only reset the "done" boolean, keep the items)
-      snapshot.docs.forEach(docSnap => {
-        const data = docSnap.data();
-
-        if (data.done) {const resetPromise = updateDoc(getRestaurantDoc(restaurantId, "closinglist", docSnap.id), {
-            done: false,
-            completedAt: null,
-          });
-          resetPromises.push(resetPromise);
-        }
-      });
-
-      
-      if (resetPromises.length > 0) {
-        await Promise.all(resetPromises);// Update local state - reset all tasks to not done (only change "done" boolean)
-        setTasks(prevTasks =>
-          prevTasks.map(task => ({
-            ...task,
-            done: false,
-            completedAt: null
-          }))
-        );
-      }
-      
-      // Store today's date as the last reset date
-      try {
-        await AsyncStorage.setItem(lastResetKey, todayDateString);} catch (storageError) {}
-      
-    } catch (error) {
-      // Error handling
+    } catch (e) {
+      console.error("❌ Error fetching closing tasks:", e);
+      setTasks([]);
     }
   };
 
@@ -141,10 +74,7 @@ export default function ClosingChecklistScreen({ navigation }) {
   useEffect(() => {
     const loadTasks = async () => {
       setLoading(true);
-
       await fetchTasks();
-
-      await performDailyReset(); // Perform daily reset on load
       setLoading(false);
       setRefreshing(false);
     };
@@ -154,10 +84,7 @@ export default function ClosingChecklistScreen({ navigation }) {
   // Pull to refresh handler
   const onRefresh = async () => {
     setRefreshing(true);
-
     await fetchTasks();
-
-    await performDailyReset(); // Perform daily reset on refresh
     setRefreshing(false);
   };
 
@@ -166,34 +93,53 @@ export default function ClosingChecklistScreen({ navigation }) {
     if (!restaurantId) return;
     
     try {
-      // Prepare update data
-      const updateData = { done: !currentDone };
-      
-      // If marking as done, store completion timestamp
-      if (!currentDone) {
-        updateData.completedAt = serverTimestamp();
-      } else {
-        // If unmarking as done, clear completion timestamp
-        updateData.completedAt = null;
-      }
+      // Prepare update object
+      const updateData = { 
+        done: !currentDone,
+        completedAt: !currentDone ? serverTimestamp() : null
+      };
       
       // Update in Firestore
       await updateDoc(getRestaurantDoc(restaurantId, "closinglist", taskId), updateData);
-      
       // Update locally
       setTasks(prevTasks =>
         prevTasks.map(task =>
-          task.id === taskId 
-            ? { 
-                ...task, 
-                done: !currentDone,
-                completedAt: !currentDone ? new Date() : null 
-              } 
-            : task
+          task.id === taskId ? { ...task, done: !currentDone } : task
         )
       );
-    } catch (e) {}
+    } catch (e) {
+      console.error("Error updating closing task:", e);
+    }
   };
+
+  // Add new cleaning task to Firestore
+  const handleAddTask = async (taskName) => {
+    if (!restaurantId || !auth.currentUser) return;
+    
+    try {
+      console.log('➕ Adding closing task:', taskName, 'for restaurant:', restaurantId);
+      // Add document with proper structure
+      await addDoc(getRestaurantCollection(restaurantId, "closinglist"), {
+        createdAt: serverTimestamp(),
+        createdBy: auth.currentUser.uid,
+        name: taskName,
+        done: false,
+        restaurantId: restaurantId,
+        completedAt: null,
+      });
+      
+      console.log('✅ Task added successfully');
+      // Refresh tasks after adding
+      await fetchTasks();
+    } catch (error) {
+      console.error("❌ Error adding closing task:", error);
+    }
+  };
+
+  // Group tasks by day (today/yesterday based on 3 AM cutoff)
+  // const { todayTasks, yesterdayTasks } = groupCleaningTasksByDay(tasks);
+  // console.log('📅 Today tasks:', todayTasks.length, 'Yesterday tasks:', yesterdayTasks.length);
+  console.log('🔍 All tasks:', tasks.length);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -223,26 +169,51 @@ export default function ClosingChecklistScreen({ navigation }) {
             <ActivityIndicator size="large" style={{ marginTop: 40 }} />
           ) : (
             <>
-              {/* Today's Tasks */}
+              {/* All Tasks */}
               {tasks.length > 0 && (
                 <>
+                  <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>Closing Tasks ({tasks.length})</Text>
+                  </View>
                   <View style={styles.tasksContainer}>
                     {tasks.map((task) => (
                       <TouchableOpacity 
                         key={task.id} 
-                        style={styles.listItem}
+                        style={styles.taskCard}
                         onPress={() => toggleTaskDone(task.id, task.done)}
                         activeOpacity={0.7}
                       >
-                        <View style={[styles.checkbox, task.done && styles.checkedBox]}>
-                          {task.done && <Text style={styles.checkmark}>✓</Text>}
+                        <View style={styles.taskLeft}>
+                          {task.done ? (
+                            <Ionicons name="checkmark-circle" size={24} color="#2563eb" style={styles.checkCircle} />
+                          ) : (
+                            <Ionicons name="ellipse-outline" size={24} color="#A0A7B3" style={styles.checkCircle} />
+                          )}
+                          <View style={styles.taskContent}>
+                            <Text style={[styles.taskTitle, task.done && {textDecorationLine: 'line-through', opacity: 0.6}]}>
+                              {task.title}
+                            </Text>
+                          </View>
                         </View>
-                        <Text style={[styles.itemText, task.done && styles.completedText]}>
-                          {task.title}
-                        </Text>
                       </TouchableOpacity>
                     ))}
                   </View>
+                </>
+              )}
+              
+              {/* Empty state */}
+              {tasks.length === 0 && (
+                <>
+                  <Text style={styles.emptyState}>No closing tasks found.</Text>
+                  <Text style={[styles.emptyState, {marginTop: 10, fontSize: 14}]}>
+                    Restaurant ID: {restaurantId || 'Not found'}
+                  </Text>
+                  <Text style={[styles.emptyState, {marginTop: 5, fontSize: 14}]}>
+                    Total tasks in state: {tasks.length}
+                  </Text>
+                  <Text style={[styles.emptyState, {marginTop: 5, fontSize: 14}]}>
+                    User authenticated: {auth.currentUser ? 'Yes' : 'No'}
+                  </Text>
                 </>
               )}
             </>
@@ -250,6 +221,12 @@ export default function ClosingChecklistScreen({ navigation }) {
         </View>
       </ScrollView>
 
+      <AddCleaningTaskModal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        onAdd={handleAddTask}
+        date={currentDate}
+      />
     </SafeAreaView>
   );
 }
@@ -330,64 +307,41 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontMedium,
     color: "#2563eb",
   },
-
-  listItem: {
+  tasksContainer: {
+    gap: Spacing.md,
+  },
+  taskCard: {
+    backgroundColor: "#f8fafc",
+    borderRadius: 16,
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: Spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
-    backgroundColor: Colors.gray50,
-    borderRadius: 16,
-    paddingHorizontal: Spacing.md,
-    marginBottom: Spacing.md,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    justifyContent: "space-between",
   },
-  checkbox: {
-    width: 20,
-    height: 20,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: Colors.primary,
-    marginRight: Spacing.lg,
+  taskLeft: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: Colors.background,
-  },
-  checkedBox: {
-    backgroundColor: Colors.primary,
-  },
-  checkmark: {
-    color: "white",
-    fontSize: 10,
-    fontWeight: Typography.bold,
-  },
-  itemText: {
-    fontSize: Typography.lg,
-    color: Colors.textPrimary,
-    fontWeight: Typography.medium,
     flex: 1,
   },
-  completedText: {
-    textDecorationLine: "line-through",
-    color: Colors.textSecondary,
+  checkCircle: {
+    marginRight: 14,
   },
-  fab: {
-    position: "absolute",
-    right: 40,
-    bottom: 70,
-    width: 72,
-    height: 72,
-    borderRadius: 50,
-    backgroundColor: Colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
+  taskContent: {
+    flex: 1,
+  },
+  taskTitle: {
+    fontFamily: Typography.fontBold,
+    fontSize: 18,
+    color: "#111",
+    marginBottom: 2,
+  },
+  taskTime: {
+    fontFamily: Typography.fontRegular,
+    fontSize: 16,
+    color: "#8B96A5",
+  },
+  taskRight: {
+    alignItems: "flex-end",
   },
 });

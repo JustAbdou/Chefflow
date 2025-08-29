@@ -56,18 +56,24 @@ function ProfileScreen() {
       return
     }
 
-    try {const restaurantDocRef = doc(db, 'restaurants', restaurantId)
-      const restaurantDoc = await getDoc(restaurantDocRef);
+    try {
+      console.log('🔍 Fetching restaurant name for:', restaurantId)
+      
+      const restaurantDocRef = doc(db, 'restaurants', restaurantId)
+      const restaurantDoc = await getDoc(restaurantDocRef)
 
       if (restaurantDoc.exists()) {
-        const restaurantData = restaurantDoc.data();
-        const name = restaurantData.name || restaurantData.restaurantName || "Restaurant";
-        setRestaurantName(name);
+        const restaurantData = restaurantDoc.data()
+        const name = restaurantData.name || restaurantData.restaurantName || "Restaurant"
+        console.log('🏪 Restaurant name:', name)
+        setRestaurantName(name)
       } else {
-        setRestaurantName("Restaurant");
+        console.log('⚠️ Restaurant document not found')
+        setRestaurantName("Restaurant")
       }
     } catch (error) {
-      setRestaurantName("Restaurant");
+      console.error('❌ Error fetching restaurant name:', error)
+      setRestaurantName("Restaurant")
     }
   }
 
@@ -79,19 +85,28 @@ function ProfileScreen() {
     }
 
     try {
-      const userDocRef = doc(db, 'users', auth.currentUser.uid);
-      const userDoc = await getDoc(userDocRef);
+      console.log('🔍 Fetching user profile for:', auth.currentUser.uid)
+      
+      const userDocRef = doc(db, 'users', auth.currentUser.uid)
+      const userDoc = await getDoc(userDocRef)
 
       if (userDoc.exists()) {
-        const userData = userDoc.data();
-        const fullName = userData.fullName || userData.name || userData.displayName || "Chef";
+        const userData = userDoc.data()
+        console.log('👤 User data:', userData)
+        
+        const fullName = userData.fullName || userData.name || userData.displayName || "Chef"
         const firstName = getFirstName(fullName)
         
         setUserProfile({
           name: firstName,
           title: restaurantName,
           fullName: fullName
-        })} else {// Fallback to auth user display name if available
+        })
+        
+        console.log('✅ Profile updated - First name:', firstName, 'Restaurant:', restaurantName)
+      } else {
+        console.log('⚠️ User document not found, using defaults')
+        // Fallback to auth user display name if available
         const authDisplayName = auth.currentUser.displayName
         if (authDisplayName) {
           const firstName = getFirstName(authDisplayName)
@@ -103,7 +118,9 @@ function ProfileScreen() {
           }))
         }
       }
-    } catch (error) {// Keep default values on error
+    } catch (error) {
+      console.error('❌ Error fetching user profile:', error)
+      // Keep default values on error
     } finally {
       setLoading(false)
     }
@@ -136,24 +153,43 @@ function ProfileScreen() {
               await signOut(auth)
               navigation.replace('Login') // or your login screen name
             } catch (error) {
-      // Error handling
-    }
+              console.error("Sign out error:", error)
+            }
           }
         }
       ]
     )
   }
 
-  const handlePrivacyPolicy = () => {
-    Linking.openURL('https://chefflowapp.net/privacy-policy/')
-      .catch(err => {Alert.alert('Error', 'Unable to open privacy policy. Please check your internet connection.')
-      })
+  const handlePrivacyPolicy = async () => {
+    try {
+      const url = "https://chefflowapp.net/privacy-policy/"
+      const supported = await Linking.canOpenURL(url)
+      if (supported) {
+        await Linking.openURL(url)
+      } else {
+        Alert.alert("Error", "Unable to open privacy policy link")
+      }
+    } catch (error) {
+      console.error("Error opening privacy policy:", error)
+      Alert.alert("Error", "Unable to open privacy policy link")
+    }
   }
 
-  const handleContactSupport = () => {
-    Linking.openURL('mailto:contact@chefflowapp.net')
-      .catch(err => {Alert.alert('Error', 'Unable to open email app. Please check if you have an email app installed.')
-      })
+  const handleHelpSupport = async () => {
+    try {
+      const email = "contact@chefflowapp.net"
+      const url = `mailto:${email}`
+      const supported = await Linking.canOpenURL(url)
+      if (supported) {
+        await Linking.openURL(url)
+      } else {
+        Alert.alert("Error", "Unable to open email client")
+      }
+    } catch (error) {
+      console.error("Error opening email:", error)
+      Alert.alert("Error", "Unable to open email client")
+    }
   }
 
   const menuItems = [
@@ -163,7 +199,7 @@ function ProfileScreen() {
     },
     {
       title: "Help & Support",
-      onPress: handleContactSupport,
+      onPress: handleHelpSupport,
     },
   ]
 
@@ -222,7 +258,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xl + getAndroidTitleMargin(),
+    paddingTop: Spacing.lg + getAndroidTitleMargin(),
     paddingBottom: Spacing.xl,
   },
   title: {

@@ -1,194 +1,232 @@
 import { storage } from '../../firebase';
-import { ref as storageRef, uploadString, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref as storageRef, uploadBytes, getDownloadURL, uploadString } from 'firebase/storage';
 import * as FileSystem from 'expo-file-system';
 
 /**
- * Upload PDF to Firebase Storage with React Native compatibility
- * This function prioritizes Firebase Storage upload and falls back to local storage if needed
- * 
- * @param {string} localPdfPath - Path to the PDF file on device
- * @param {string} fileName - Name for the uploaded file
- * @param {string} restaurantId - Restaurant ID for folder organization
- * @param {string} type - Document type (handover, temperature, invoice, etc.)
- * @returns {Promise<string>} - Firebase Storage download URL or local file path
+ * Upload a PDF file to Firebase Storage and return the download URL
+ * @param {string} localPdfPath - Local file path of the PDF
+ * @param {string} fileName - Name for the file in storage
+ * @param {string} restaurantId - Restaurant ID for organizing files
+ * @param {string} type - Type of document ('temperature' or 'invoice')
+ * @returns {Promise<string>} - Download URL of the uploaded file
  */
-export const uploadPdfToStorage = async (localPdfPath, fileName, restaurantId, type = 'documents') => {if (!localPdfPath || !fileName || !restaurantId) {
-    throw new Error('Missing required parameters for PDF upload');
-  }
-
-  // Validate file exists
-  const fileInfo = await FileSystem.getInfoAsync(localPdfPath);
-if (!fileInfo.exists) {
-    throw new Error('PDF file does not exist at path: ' + localPdfPath);
-  }
-
-  // Try Firebase Storage upload first (primary method)
+export const uploadPdfToStorage = async (localPdfPath, fileName, restaurantId, type = 'documents') => {
   try {
-    // For React Native/Expo, use a different approach
-    // Convert the file to a Blob using the expo-file-system method
-    // For React Native compatibility, we need to use fetch with the file URI
-    const response = await fetch(localPdfPath);
+    console.log('📤 Starting PDF upload to Firebase Storage...');
+    console.log('Local path:', localPdfPath);
+    console.log('File name:', fileName);
+    console.log('Restaurant ID:', restaurantId);
+    console.log('Type:', type);
 
-    const blob = await response.blob();
-    if (!blob || blob.size === 0) {
-      throw new Error('Failed to convert PDF file to blob or file is empty');
+    // Validate inputs
+    if (!localPdfPath || !fileName || !restaurantId) {
+      throw new Error('Missing required parameters for PDF upload');
+    }
+
+    // Check if file exists
+    const fileInfo = await FileSystem.getInfoAsync(localPdfPath);
+    if (!fileInfo.exists) {
+      throw new Error('PDF file does not exist at the specified path');
+    }
+    
+    console.log('📄 File exists, size:', fileInfo.size);
+
+    // Read the file as base64
+    const fileBase64 = await FileSystem.readAsStringAsync(localPdfPath, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+
+    console.log('📄 File read as base64, length:', fileBase64.length);
+
+    if (!fileBase64 || fileBase64.length === 0) {
+      throw new Error('Failed to read PDF file or file is empty');
     }
 
     // Create storage reference with restaurant-specific path
     const storagePath = `restaurants/${restaurantId}/${type}/${fileName}`;
-
     const fileRef = storageRef(storage, storagePath);
+
+    console.log('📁 Uploading to path:', storagePath);
+
+    // For React Native, we need to use the base64 string directly with data URI format
+    const dataUri = `data:application/pdf;base64,${fileBase64}`;
     
-    // Upload using uploadBytes with the blob
+    console.log('🔄 Converting to blob...');
+    
+    // Convert data URI to blob for upload
+    const response = await fetch(dataUri);
+    if (!response.ok) {
+      throw new Error(`Failed to create blob from data URI: ${response.status}`);
+    }
+    
+    const blob = await response.blob();
+    console.log('🗂️ Blob created, size:', blob.size, 'type:', blob.type);
+
+    if (blob.size === 0) {
+      throw new Error('Blob is empty - PDF conversion failed');
+    }
+
+    console.log('☁️ Starting Firebase Storage upload...');
+
+    // Upload the blob
     const snapshot = await uploadBytes(fileRef, blob, {
       contentType: 'application/pdf',
-      customMetadata: {
-        'originalName': fileName,
-        'uploadedBy': 'ChefFlow',
-        'restaurantId': restaurantId,
-        'documentType': type,
-        'uploadTimestamp': new Date().toISOString()
+    });
+
+    console.log('✅ File uploaded successfully');
+    console.log('Upload snapshot:', {
+      ref: snapshot.ref.fullPath,
+      metadata: {
+        contentType: snapshot.metadata.contentType,
+        size: snapshot.metadata.size,
+        timeCreated: snapshot.metadata.timeCreated
       }
     });
-    
+
     // Get the download URL
+    console.log('🔗 Getting download URL...');
     const downloadURL = await getDownloadURL(snapshot.ref);
-    if (!downloadURL || downloadURL.length === 0) {
-      throw new Error('Download URL is empty or invalid');
-    }
+    console.log('🔗 Download URL obtained:', downloadURL);
+
     return downloadURL;
-
-  } catch (firebaseError) {
-    // Fall back to local storage as last resort
-    try {
-      const localStorageUrl = await uploadPdfToStorageTemporary(localPdfPath, fileName, restaurantId, type);
-      return localStorageUrl;
-    } catch (localError) {
-      throw new Error(`Both Firebase Storage and local storage failed. Firebase: ${firebaseError.message}, Local: ${localError.message}`);
+  } catch (error) {
+    console.error('❌ Error uploading PDF to Firebase Storage:', error);
+    console.error('Error details:', {
+      code: error.code,
+      message: error.message,
+      stack: error.stack,
+      serverResponse: error.serverResponse
+    });
+    
+    // Provide more specific error messages based on error type
+    if (error.code === 'storage/unauthorized') {
+      throw new Error('Upload failed: Insufficient permissions to access Firebase Storage');
+    } else if (error.code === 'storage/canceled') {
+      throw new Error('Upload was canceled');
+    } else if (error.code === 'storage/unknown') {
+      throw new Error('Upload failed: Firebase Storage error - check internet connection and Firebase configuration');
+    } else if (error.code === 'storage/invalid-format') {
+      throw new Error('Upload failed: Invalid file format');
+    } else if (error.code === 'storage/quota-exceeded') {
+      throw new Error('Upload failed: Storage quota exceeded');
+    } else {
+      throw new Error('Failed to upload PDF to cloud storage: ' + error.message);
     }
   }
 };
 
 /**
- * Alternative Firebase upload method using uploadBytes (for troubleshooting)
- * Currently not used but kept for reference
+ * Temporary solution: Save PDF locally and return a placeholder URL
+ * This avoids Firebase Storage upload issues while maintaining functionality
+ * @param {string} localPdfPath - Local file path of the PDF
+ * @param {string} fileName - Name for the file in storage
+ * @param {string} restaurantId - Restaurant ID for organizing files
+ * @param {string} type - Type of document ('temperature' or 'invoice')
+ * @returns {Promise<string>} - Local file path (temporary solution)
  */
-export const uploadPdfToStorageWithBytes = async (localPdfPath, fileName, restaurantId, type = 'documents') => {
+export const uploadPdfToStorageTemporary = async (localPdfPath, fileName, restaurantId, type = 'documents') => {
   try {
-    // Read file as Uint8Array
-    const fileData = await FileSystem.readAsStringAsync(localPdfPath, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-    
-    // Convert base64 to Uint8Array
-    const binaryString = atob(fileData);
+    console.log('📤 Using temporary PDF storage solution...');
+    console.log('Local path:', localPdfPath);
+    console.log('File name:', fileName);
 
-    const bytes = new Uint8Array(binaryString.length);
+    // Validate inputs
+    if (!localPdfPath || !fileName || !restaurantId) {
+      throw new Error('Missing required parameters for PDF upload');
+    }
 
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
+    // Check if file exists
+    const fileInfo = await FileSystem.getInfoAsync(localPdfPath);
+    if (!fileInfo.exists) {
+      throw new Error('PDF file does not exist at the specified path');
     }
     
-    const storagePath = `restaurants/${restaurantId}/${type}/${fileName}`;
+    console.log('📄 File exists, size:', fileInfo.size);
 
-    const fileRef = storageRef(storage, storagePath);
+    // Create a permanent location for the PDF in the app's document directory
+    const permanentPath = FileSystem.documentDirectory + 'pdfs/' + fileName;
+    
+    // Create pdfs directory if it doesn't exist
+    const pdfDir = FileSystem.documentDirectory + 'pdfs/';
+    const dirInfo = await FileSystem.getInfoAsync(pdfDir);
+    if (!dirInfo.exists) {
+      await FileSystem.makeDirectoryAsync(pdfDir, { intermediates: true });
+      console.log('� Created PDFs directory');
+    }
 
-    
-    const snapshot = await uploadBytes(fileRef, bytes, {
-      contentType: 'application/pdf'
-    });
-    
-    return await getDownloadURL(snapshot.ref);
-  } catch (error) {throw error;
-  }
-};
-
-/**
- * Local storage fallback solution: Save PDF locally and return a file path
- * This is used when Firebase Storage upload fails
- * 
- * @param {string} localPdfPath - Path to the source PDF file
- * @param {string} fileName - Name for the stored file
- * @param {string} restaurantId - Restaurant ID for folder organization
- * @param {string} type - Document type
- * @returns {Promise<string>} - Local file path
- */
-export const uploadPdfToStorageTemporary = async (localPdfPath, fileName, restaurantId, type = 'documents') => {try {
-    // Create a structured directory for local storage
-    const documentsDir = `${FileSystem.documentDirectory}
-    chefflow/${restaurantId}/${type}/`;
-    
-    // Ensure directory exists
-    await FileSystem.makeDirectoryAsync(documentsDir, { intermediates: true });
-    
-    // Copy file to structured location
-    const destinationPath = `${documentsDir}${fileName}`;
-
+    // Copy the file to a permanent location
     await FileSystem.copyAsync({
       from: localPdfPath,
-      to: destinationPath
-    });return destinationPath;
-    
-  } catch (error) {throw new Error('Failed to save PDF to local storage: ' + error.message);
-  }
-};
+      to: permanentPath,
+    });
 
-/**
- * Helper function to clean up temporary files
- * Call this after successful upload to free up storage space
- */
-export const cleanupTempFile = async (filePath) => {
-  try {
-    const fileInfo = await FileSystem.getInfoAsync(filePath);
+    console.log('📄 PDF saved to permanent location:', permanentPath);
 
-    if (fileInfo.exists) {
-      await FileSystem.deleteAsync(filePath);}
+    // Return the permanent path (temporary solution until Firebase Storage is fixed)
+    return permanentPath;
   } catch (error) {
-      // Error handling
-    }
-};
-
-/**
- * Generate a standardized PDF filename with timestamp and date range
- * @param {string} type - Document type (handover, invoice, temperature, etc.)
- * @param {Date} startDate - Start date for the report (optional)
- * @param {Date} endDate - End date for the report (optional)
- * @returns {string} - Formatted filename with .pdf extension
- */
-export const generatePdfFileName = (type, startDate = null, endDate = null) => {
-  const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
-
-  
-  let fileName = `${type}
-    _report_${timestamp}`;
-  
-  // Add date range if provided
-  if (startDate && endDate) {
-    const startStr = startDate.toISOString().slice(0, 10);
-
-    const endStr = endDate.toISOString().slice(0, 10);
-    fileName = `${type}
-    _report_${startStr}
-    _to_${endStr}
-    _${timestamp}`;
-  } else if (startDate) {
-    const startStr = startDate.toISOString().slice(0, 10);
-    fileName = `${type}
-    _report_${startStr}
-    _${timestamp}`;
+    console.error('❌ Error saving PDF (temporary method):', error);
+    throw new Error('Failed to save PDF: ' + error.message);
   }
-  
-  return `${fileName}.pdf`;
 };
 
 /**
- * Check if Firebase Storage is available and properly configured
- * @returns {boolean} - True if Firebase Storage is ready
+ * Generate a unique filename for the PDF
+ * @param {string} type - Type of document ('temperature' or 'invoice')
+ * @param {Date} startDate - Start date for the report
+ * @param {Date} endDate - End date for the report
+ * @returns {string} - Unique filename
  */
-export const checkFirebaseStorageHealth = async () => {
+export const generatePdfFileName = (type, startDate, endDate) => {
+  const formatDate = (date) => {
+    return date.toISOString().split('T')[0]; // YYYY-MM-DD format
+  };
+  
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
+  const start = formatDate(startDate);
+  const end = formatDate(endDate);
+  
+  return `${type}_${start}_to_${end}_${timestamp}.pdf`;
+};
+
+/**
+ * Test Firebase Storage connectivity by uploading a small test file
+ * @param {string} restaurantId - Restaurant ID for organizing files
+ * @returns {Promise<string>} - Test result message
+ */
+export const testStorageConnection = async (restaurantId) => {
   try {
-    // Try to create a reference - this will fail if Firebase isn't configured
-    const testRef = storageRef(storage, 'health-check/test.txt');return true;
-  } catch (error) {return false;
+    console.log('🧪 Testing Firebase Storage connection...');
+    
+    // Create a simple test file
+    const testContent = 'This is a test file for Firebase Storage connectivity';
+    const testFileName = `test_${Date.now()}.txt`;
+    const testPath = `restaurants/${restaurantId}/test/${testFileName}`;
+    
+    console.log('📝 Creating test file...');
+    
+    // Create a blob from text
+    const blob = new Blob([testContent], { type: 'text/plain' });
+    const fileRef = storageRef(storage, testPath);
+    
+    console.log('☁️ Uploading test file to:', testPath);
+    
+    // Upload the test file
+    const snapshot = await uploadBytes(fileRef, blob);
+    console.log('✅ Test file uploaded successfully');
+    
+    // Get download URL
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    console.log('🔗 Test file download URL:', downloadURL);
+    
+    return 'Firebase Storage connection test successful!';
+  } catch (error) {
+    console.error('❌ Firebase Storage connection test failed:', error);
+    console.error('Error details:', {
+      code: error.code,
+      message: error.message,
+      stack: error.stack
+    });
+    throw error;
   }
 };

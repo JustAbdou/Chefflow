@@ -42,8 +42,8 @@ function TasksScreen({ navigation }) {
       screen: "DeliveryTempLogs", 
     },
     {
-      title: "Cleaning Checklist",
-      subtitle: "Today's cleaning tasks",
+      title: "Closing Checklist",
+      subtitle: "Today's closing tasks",
       icon: ClipboardIcon,
       iconColor: Colors.primary,
       screen: "CleaningChecklist",
@@ -105,7 +105,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xl + getAndroidTitleMargin(),
+    paddingTop: Spacing.lg + getAndroidTitleMargin(),
     paddingBottom: Spacing.lg,
   },
   title: {

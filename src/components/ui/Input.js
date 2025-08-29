@@ -2,7 +2,6 @@ import React from 'react';
 import { View, Text, TextInput } from 'react-native';
 import { Colors, Spacing, Typography } from '../../constants';
 
-
 const Input = ({
   label,
   placeholder,
@@ -24,14 +23,12 @@ const Input = ({
     marginBottom: error ? Spacing.xs : 0,
   };
 
-
   const labelStyle = {
     fontSize: Typography.base, // Reduced from lg
     fontFamily: Typography.fontMedium,
     color: Colors.textPrimary,
     marginBottom: Spacing.sm, // Reduced from md
   };
-
 
   const inputContainerStyle = {
     backgroundColor: disabled ? Colors.gray50 : '#F8F9FA',
@@ -45,14 +42,12 @@ const Input = ({
     alignItems: 'center',
   };
 
-
   const inputStyle = {
     fontSize: Typography.base, // Reduced from lg
     fontFamily: Typography.fontRegular,
     color: disabled ? Colors.gray400 : Colors.textPrimary,
     flex: 1,
   };
-
 
   const errorStyle = {
     fontSize: Typography.sm,

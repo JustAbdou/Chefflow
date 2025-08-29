@@ -7,11 +7,9 @@ import {
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, Typography } from '../../constants';
 import { getAndroidTitleMargin } from '../../utils/responsive';
 import useNavigationBar from '../../hooks/useNavigationBar';
-
 
 const InvoiceDetailScreen = ({ route, navigation }) => {
   const { invoice } = route.params;
@@ -20,137 +18,151 @@ const InvoiceDetailScreen = ({ route, navigation }) => {
   const navigationBar = useNavigationBar();
   navigationBar.useHidden();
 
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Unknown Date';
-
-    const date = new Date(dateString);
+  // Format date
+  const formatDate = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
     return date.toLocaleDateString('en-GB', {
       weekday: 'long',
-      year: 'numeric',
+      day: 'numeric',
       month: 'long',
-      day: 'numeric'
+      year: 'numeric'
     });
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Text style={styles.backArrow}>‹</Text>
-        </TouchableOpacity>
-        <View style={styles.headerInfo}>
-          <Text style={styles.title}>Invoice Details</Text>
-          <Text style={styles.subtitle}>{invoice.invoiceNumber}</Text>
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        {/* Header */}
+        <View style={styles.headerRow}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Text style={styles.backArrow}>‹</Text>
+          </TouchableOpacity>
+          <View style={styles.titleContainer}>
+            <Text style={styles.title}>Invoice Details</Text>
+            <Text style={styles.subtitle}>{invoice.invoiceNumber}</Text>
+          </View>
         </View>
-        <View style={{ width: 28 }} />
-      </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-
-        {/* Invoice Details */}
-        <View style={styles.detailsSection}>
-          <Text style={styles.sectionTitle}>Invoice Information</Text>
+        {/* Invoice Information Card */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Invoice Information</Text>
           
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Invoice Number</Text>
             <Text style={styles.detailValue}>{invoice.invoiceNumber}</Text>
           </View>
-          
+
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Date</Text>
-            <Text style={styles.detailValue}>{formatDate(invoice.date)}</Text>
+            <Text style={styles.detailValue}>{formatDate(invoice.createdAt)}</Text>
           </View>
-          
+
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Supplier</Text>
-            <Text style={styles.detailValue}>{invoice.supplier || 'Unknown'}</Text>
+            <Text style={styles.detailValue}>{invoice.supplier || 'N/A'}</Text>
           </View>
-          
+
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Amount</Text>
-            <Text style={styles.amountValue}>£{invoice.amount}</Text>
+            <Text style={[styles.detailValue, styles.amountValue]}>£{invoice.amount}</Text>
           </View>
+
+          {invoice.description && (
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Description</Text>
+              <Text style={styles.detailValue}>{invoice.description}</Text>
+            </View>
+          )}
+
+          {invoice.category && (
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Category</Text>
+              <Text style={styles.detailValue}>{invoice.category}</Text>
+            </View>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 };
 
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.backgroundPrimary,
   },
-  header: {
+  scrollView: {
+    flex: 1,
+  },
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gray200,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.lg,
+    paddingTop: Spacing.lg + getAndroidTitleMargin(),
   },
   backButton: {
-    padding: Spacing.sm,
-    marginLeft: -Spacing.sm,
+    marginRight: Spacing.md,
+    padding: Spacing.xs,
   },
   backArrow: {
-    fontSize: 32,
+    fontSize: 35,
     color: Colors.textPrimary,
-    fontWeight: 'bold',
+    fontWeight: "300",
   },
-  headerInfo: {
+  titleContainer: {
     flex: 1,
-    alignItems: 'center',
   },
   title: {
-    ...Typography.h3,
+    fontFamily: Typography.fontBold,
+    fontSize: Typography.xl,
     color: Colors.textPrimary,
-    fontWeight: '600',
+    fontWeight: 'bold',
   },
   subtitle: {
     ...Typography.body,
     color: Colors.gray400,
     marginTop: 2,
   },
-  scrollContent: {
-    padding: Spacing.md,
-  },
-  sectionTitle: {
-    ...Typography.h4,
-    color: Colors.textPrimary,
-    fontWeight: '600',
-    marginBottom: Spacing.sm,
-  },
-  detailsSection: {
+  card: {
     backgroundColor: Colors.gray100,
     borderRadius: 16,
-    padding: Spacing.md,
+    padding: Spacing.lg,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.lg,
+  },
+  cardTitle: {
+    fontFamily: Typography.fontBold,
+    fontSize: Typography.lg,
+    color: Colors.textPrimary,
+    fontWeight: 'bold',
+    marginBottom: Spacing.lg,
   },
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingVertical: Spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: Colors.gray200,
   },
   detailLabel: {
     ...Typography.body,
-    color: Colors.gray600,
-    fontWeight: '500',
+    color: Colors.gray400,
+    flex: 1,
   },
   detailValue: {
     ...Typography.body,
     color: Colors.textPrimary,
-    fontWeight: '600',
+    fontWeight: '500',
+    flex: 2,
+    textAlign: 'right',
   },
   amountValue: {
-    ...Typography.h3,
     color: Colors.primary,
-    fontWeight: '700',
+    fontWeight: 'bold',
+    fontSize: Typography.lg,
   },
 });
 

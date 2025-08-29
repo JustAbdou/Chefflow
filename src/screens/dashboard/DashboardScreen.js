@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { getFormattedTodayDate, groupPrepItemsByDay } from '../../utils/dateUtils';
+import { getFormattedTodayDate } from '../../utils/dateUtils';
 import {
   View,
   Text,
@@ -14,32 +14,21 @@ import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { Colors, Spacing, Typography } from '../../constants';
 import { getAndroidTitleMargin } from '../../utils/responsive';
 import useNavigationBar from '../../hooks/useNavigationBar';
-import { onSnapshot, query, orderBy, limit, where, doc, getDoc, getDocs } from "firebase/firestore";
+import { onSnapshot, query, orderBy, limit, where, doc, getDoc } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection } from "../../utils/firestoreHelpers";
 import { auth, db } from "../../../firebase";
-import { DocumentIcon } from '../../components/icons/NavigationIcons';
-
 
 const DashboardScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
-
   const [currentDate, setCurrentDate] = useState('');
-
   const [chefName, setChefName] = useState('Chef');
-
   const [prepCount, setPrepCount] = useState(0);
-
   const [orderCount, setOrderCount] = useState(0);
-
   const [recipeCount, setRecipeCount] = useState(0);
-
   const [invoiceCount, setInvoiceCount] = useState(0);
-
-  const [closingChecklistCount, setClosingChecklistCount] = useState(0);
-
+  const [taskCount, setTaskCount] = useState(0);
   const [latestFridgeTemp, setLatestFridgeTemp] = useState('--°C');
-
   const [refreshing, setRefreshing] = useState(false);
 
   // Hide Android navigation bar
@@ -55,13 +44,10 @@ const DashboardScreen = ({ navigation }) => {
     const fetchUserName = async () => {
       try {
         const user = auth.currentUser;
-
         if (user) {
           const userDoc = await getDoc(doc(db, 'users', user.uid));
-
           if (userDoc.exists()) {
             const userData = userDoc.data();
-
             const fullName = userData.fullName || userData.name || 'Chef';
             // Extract first name (everything before the first space)
             const firstName = fullName.split(' ')[0];
@@ -70,32 +56,28 @@ const DashboardScreen = ({ navigation }) => {
             setChefName(capitalizedFirstName);
           }
         }
-      } catch (error) {setChefName('Chef'); // Fallback
+      } catch (error) {
+        console.warn('Error fetching user name:', error);
+        setChefName('Chef'); // Fallback
       }
     };
 
     fetchUserName();
     
-    // Real-time listener for prep list with error handling (count items that are not done within 48-hour window)
+    // Real-time listener for prep list with error handling (count items that are not done or don't have done property)
     const unsubPrep = onSnapshot(
       getRestaurantCollection(restaurantId, "preplist"),
       (snapshot) => {
-        // Get all prep items
-        const allPrepItems = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        
-        // Filter items within 48-hour window using the same logic as PrepListsScreen
-        const { todayItems, yesterdayItems } = groupPrepItemsByDay(allPrepItems);
-
-        const visibleItems = [...todayItems, ...yesterdayItems];
-        
-        // Count incomplete items from visible items only
-        const incompleteCount = visibleItems.filter(item => !item.done).length;
+        // Count items where done is false or doesn't exist
+        const incompleteCount = snapshot.docs.filter(doc => {
+          const data = doc.data();
+          return !data.done; // This will be true if done is false or undefined
+        }).length;
         setPrepCount(incompleteCount);
       },
-      (error) => {setPrepCount(0);
+      (error) => {
+        console.warn('Prep list listener error:', error);
+        setPrepCount(0);
       }
     );
     
@@ -108,68 +90,23 @@ const DashboardScreen = ({ navigation }) => {
       (snapshot) => {
         setOrderCount(snapshot.size);
       },
-      (error) => {setOrderCount(0);
+      (error) => {
+        console.warn('Order list listener error:', error);
+        setOrderCount(0);
       }
     );
     
-    // Real-time listener for invoices with error handling (count all invoices)
-    const unsubInvoices = onSnapshot(
-      getRestaurantCollection(restaurantId, "invoices"),
+    // Real-time listener for recipes with error handling
+    const unsubRecipes = onSnapshot(
+      getRestaurantCollection(restaurantId, "recipes"), 
       (snapshot) => {
-        setInvoiceCount(snapshot.size);
+        setRecipeCount(snapshot.size);
       },
-      (error) => {setInvoiceCount(0);
+      (error) => {
+        console.warn('Recipes listener error:', error);
+        setRecipeCount(0);
       }
     );
-    
-    // Real-time listener for closing checklist with error handling (count all closing checklist items)
-    const unsubClosingChecklist = onSnapshot(
-      getRestaurantCollection(restaurantId, "closinglist"),
-      (snapshot) => {
-        // needs to check if the task is pending  
-        const pendingTasks = snapshot.docs.filter(doc => !doc.data().done);
-        setClosingChecklistCount(pendingTasks.length);
-      },
-      (error) => {setClosingChecklistCount(0);
-      }
-    );
-    
-    // Real-time listener for recipes with error handling (recipes are stored in category subcollections)
-    const fetchRecipeCount = async () => {
-      try {
-        // First get category names
-        const categoryNamesDoc = await getDoc(doc(db, 'restaurants', restaurantId, 'recipes', 'categories'));
-
-        let categoryNames = [];
-
-        
-        if (categoryNamesDoc.exists()) {
-          const data = categoryNamesDoc.data();
-          categoryNames = data?.names || [];
-        } else {
-          categoryNames = ['Desserts', 'Main', 'Starters']; // Fallback categories
-        }
-        
-        // Count recipes across all categories
-        let totalRecipes = 0;
-
-        for (const categoryName of categoryNames) {
-          const categoryCollection = getRestaurantCollection(restaurantId, `recipes/categories/${categoryName}`);
-
-          const categorySnapshot = await getDocs(categoryCollection);
-          totalRecipes += categorySnapshot.size;
-        }
-        
-        setRecipeCount(totalRecipes);
-      } catch (error) {setRecipeCount(0);
-      }
-    };
-    
-    // Initial fetch
-    fetchRecipeCount();
-    
-    // Set up periodic refresh for recipe count (since recipes don't change frequently)
-    const recipeCountInterval = setInterval(fetchRecipeCount, 30000); // Refresh every 30 seconds
     
     // Real-time listener for latest fridge temperature
     const unsubFridgeTemp = onSnapshot(
@@ -181,9 +118,7 @@ const DashboardScreen = ({ navigation }) => {
       (snapshot) => {
         if (!snapshot.empty) {
           const latestLog = snapshot.docs[0].data();
-
           const temp = latestLog.temperature;
-
           if (temp && temp !== '') {
             setLatestFridgeTemp(`${temp}°C`);
           } else {
@@ -193,16 +128,46 @@ const DashboardScreen = ({ navigation }) => {
           setLatestFridgeTemp('--°C');
         }
       },
-      (error) => {setLatestFridgeTemp('--°C');
+      (error) => {
+        console.warn('Fridge temperature listener error:', error);
+        setLatestFridgeTemp('--°C');
+      }
+    );
+    
+    // Real-time listener for invoices with error handling
+    const unsubInvoices = onSnapshot(
+      getRestaurantCollection(restaurantId, "invoices"), 
+      (snapshot) => {
+        setInvoiceCount(snapshot.size);
+      },
+      (error) => {
+        console.warn('Invoice listener error:', error);
+        setInvoiceCount(0);
+      }
+    );
+
+    // Real-time listener for tasks (closing checklist) with error handling
+    const unsubTasks = onSnapshot(
+      query(
+        getRestaurantCollection(restaurantId, "closinglist"),
+        where("done", "==", false)
+      ),
+      (snapshot) => {
+        setTaskCount(snapshot.size);
+      },
+      (error) => {
+        console.warn('Closing checklist listener error:', error);
+        setTaskCount(0);
       }
     );
     
     return () => {
       unsubPrep();
       unsubOrder();
-      unsubInvoices();
-      clearInterval(recipeCountInterval);
+      unsubRecipes();
       unsubFridgeTemp();
+      unsubInvoices();
+      unsubTasks();
     };
   }, [restaurantId]);
 
@@ -212,92 +177,55 @@ const DashboardScreen = ({ navigation }) => {
       title: 'Prep List', 
       value: prepCount.toString(), 
       subtitle: prepCount === 1 ? 'Item pending' : 'Items pending',
-      iconUri: 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/prep-list-icon-7OGiBj3xTb4oUzsdkEHvYfd6U6uST2.png',
-      screen: 'PrepLists',
+      icon: 'clipboard',
+      iconColor: Colors.primary,
     },
     { 
       title: 'Order List', 
       value: orderCount.toString(), 
       subtitle: orderCount === 1 ? 'Active order' : 'Active orders',
-      iconUri: 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/order-list-icon-Z5JTOiHoj7KslxsJDGqVam7GH6o46F.png',
-      screen: 'OrderLists',
+      icon: 'bag',
+      iconColor: '#22c55e',
     },
     { 
       title: 'Invoices', 
       value: invoiceCount.toString(), 
-      subtitle: invoiceCount === 1 ? 'Invoice total' : 'Invoices total',
-      iconUri: 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/invoice-icon.png',
-      icon: <Ionicons name="receipt-outline" size={22} color={Colors.primary} />,
-      screen: 'Invoices',
+      subtitle: 'Invoices total',
+      icon: 'document-text-outline',
+      iconColor: Colors.primary,
     },
     { 
-      title: 'Closing Checklist', 
-      value: closingChecklistCount.toString(), 
-      subtitle: 'Tasks pending',
-      iconUri: 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/cleaning-icon.png',
-      icon: <Ionicons name="shield-checkmark-outline" size={22} color={Colors.primary} />,
-      screen: 'CleaningChecklist',
+      title: 'Closing', 
+      value: taskCount.toString(), 
+      subtitle: taskCount === 1 ? 'Task pending' : 'Tasks pending',
+      icon: 'shield-checkmark-outline',
+      iconColor: Colors.primary,
     },
   ];
-
 
   const kitchenManagement = [
     {
       title: 'Fridge Temperature',
-      subtitle: 'Monitor fridge temperatures',
+      subtitle: 'Monitor and log fridge temps',
       icon: 'thermometer-outline',
       iconColor: Colors.primary,
-      iconType: 'ionicon',
-      screen: 'FridgeTempLogs',
+      iconType: 'ionicon'
     },
     {
       title: 'Delivery Temperature',
-      subtitle: 'Monitor delivery temperatures',
+      subtitle: 'Log and monitor delivery temps',
       icon: 'thermometer-outline',
       iconColor: Colors.primary,
       iconType: 'ionicon',
-      screen: 'DeliveryTempLogs',
+      screen: 'DeliveryTempLogs', // This should match the Stack.Screen name in App.js
     },
     {
       title: 'Cooling & Reheating',
-      subtitle: 'Log food temperature safety',
-      icon: 'thermometer-outline',
+      subtitle: 'Temperature safety logs',
+      icon: 'snow-outline',
       iconColor: Colors.primary,
       iconType: 'ionicon',
-      screen: 'CoolingReheating',
-    },
-    {
-      title: 'Kitchen Handover',
-      subtitle: 'Complete shift handover',
-      icon: 'people-outline',
-      iconColor: Colors.primary,
-      iconType: 'ionicon',
-      screen: 'Handover',
-    },
-  ];
-
-
-  const downloadables = [
-    {
-      title: 'Invoices',
-      subtitle: `${invoiceCount} invoice${invoiceCount === 1 ? '' : 's'} total`,
-      icon: 'document-outline',
-      iconColor: Colors.primary,
-      iconType: 'ionicon'
-    },
-    {
-      title: 'Temperature Records',
-      subtitle: 'Download temperature logs',
-      icon: 'thermometer-outline',
-      iconColor: Colors.textPrimary,
-      iconType: 'ionicon'
-    },
-    {
-      title: 'Shift Handovers',
-      subtitle: 'View previous handovers',
-      icon: 'people-outline',
-      iconColor: Colors.textPrimary,
-      iconType: 'ionicon'
+      screen: 'CoolingAndReheating',
     },
   ];
 
@@ -339,60 +267,35 @@ const DashboardScreen = ({ navigation }) => {
 
         {/* Stats Grid */}
         <View style={styles.statsGrid}>
-          <View style={styles.statsRow}>
-            {stats.slice(0, 2).map((stat, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.statCard}
-                onPress={() => {
-                  if (stat.screen) {
-                    navigation.navigate(stat.screen);
-                  }
-                }}
-              >
-                <View style={styles.statHeader}>
-                  <Image 
-                    source={{ uri: stat.iconUri }} 
-                    style={styles.statIcon}
-                    resizeMode="contain"
-                  />
-                  <Text style={styles.statTitle}>{stat.title}</Text>
-                </View>
-                <Text style={styles.statValue}>{stat.value}</Text>
-                <Text style={styles.statSubtitle}>{stat.subtitle}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <View style={styles.statsRow}>
-            {stats.slice(2).map((stat, index) => (
-              <TouchableOpacity
-                key={index + 2}
-                style={styles.statCard}
-                onPress={() => {
-                  if (stat.screen) {
-                    navigation.navigate(stat.screen);
-                  }
-                }}
-              >
-                <View style={styles.statHeader}>
-                  {stat.icon ? (
-                    <View style={styles.statIconContainer}>
-                      {stat.icon}
-                    </View>
-                  ) : (
-                    <Image 
-                      source={{ uri: stat.iconUri }} 
-                      style={styles.statIcon}
-                      resizeMode="contain"
-                    />
-                  )}
-                  <Text style={styles.statTitle}>{stat.title}</Text>
-                </View>
-                <Text style={styles.statValue}>{stat.value}</Text>
-                <Text style={styles.statSubtitle}>{stat.subtitle}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          {stats.map((stat, index) => (
+            <TouchableOpacity
+              key={index}
+              style={styles.statCard}
+              onPress={() => {
+                if (stat.title === 'Prep List') {
+                  navigation.navigate('PrepLists');
+                } else if (stat.title === 'Order List') {
+                  navigation.navigate('OrderLists');
+                } else if (stat.title === 'Invoices') {
+                  navigation.navigate('Invoices');
+                } else if (stat.title === 'Closing') {
+                  navigation.navigate('CleaningChecklist');
+                }
+              }}
+            >
+              <View style={styles.statHeader}>
+                <Ionicons 
+                  name={stat.icon} 
+                  size={24} 
+                  color={stat.iconColor}
+                  style={styles.statIcon}
+                />
+                <Text style={styles.statTitle}>{stat.title}</Text>
+              </View>
+              <Text style={styles.statValue}>{stat.value}</Text>
+              <Text style={styles.statSubtitle}>{stat.subtitle}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
         {/* Kitchen Management */}
@@ -404,16 +307,20 @@ const DashboardScreen = ({ navigation }) => {
                 key={index}
                 style={styles.menuItem}
                 onPress={() => {
-                  if (item.title === 'Fridge Temperature') {
+                  if (item.title === 'Order Lists') {
+                    navigation.navigate('OrderLists');
+                  } else if (item.title === 'Prep Lists') {
+                    navigation.navigate('PrepLists');
+                  } else if (item.title === 'Recipe Library') {
+                    navigation.navigate('Recipes');
+                  } else if (item.title === 'Fridge Temperature') {
                     navigation.navigate('FridgeTempLogs');
+                  } else if (item.title === 'Closing Checklist') {
+                    navigation.navigate('CleaningChecklist');
                   } else if (item.title === 'Delivery Temperature') {
                     navigation.navigate('DeliveryTempLogs');
                   } else if (item.title === 'Cooling & Reheating') {
-                    navigation.navigate('CoolingReheating');
-                  } else if (item.title === 'Invoices') {
-                    navigation.navigate('Invoices');
-                  } else if (item.title === 'Kitchen Handover') {
-                    navigation.navigate('Handover');
+                    navigation.navigate('CoolingAndReheating');
                   } else if (item.screen) {
                     navigation.navigate(item.screen);
                   }
@@ -440,7 +347,6 @@ const DashboardScreen = ({ navigation }) => {
     </SafeAreaView>
   );
 };
-
 
 const styles = StyleSheet.create({
   container: {
@@ -477,62 +383,41 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   statsGrid: {
-    flexDirection: 'column',
-    paddingHorizontal: Spacing.md,
-    marginBottom: Spacing.xl,
-  },
-  statsRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: Spacing.lg,
+    marginBottom: Spacing.xl,
     justifyContent: 'space-between',
-    marginBottom: Spacing.md,
   },
   statCard: {
-    width: '46%',
-    paddingVertical: Spacing.xl,
+    width: '48%',
+    aspectRatio: 1.2,
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: Spacing.md,
+    marginBottom: Spacing.md,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  statCardCenter: {
-    width: '46%',
-    paddingVertical: Spacing.xl,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: Spacing.md,
-    alignSelf: 'flex-start',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    justifyContent: 'space-between',
   },
   statHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing.xs,
+    justifyContent: 'flex-start',
   },
   statIcon: {
-    width: 25,
-    height: 25,
-    marginRight: Spacing.sm,
-  },
-  statIconContainer: {
-    width: 25,
-    height: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
     marginRight: Spacing.sm,
   },
   statTitle: {
     fontSize: Typography.base,
     fontFamily: Typography.fontMedium,
     color: Colors.textPrimary,
-    flexWrap: 'wrap',
     flex: 1,
   },
   statValue: {
@@ -540,11 +425,14 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontBold,
     color: Colors.textPrimary,
     marginBottom: Spacing.xs,
+    marginTop: Spacing.xs,
+    marginLeft: 0,
   },
   statSubtitle: {
     fontSize: Typography.sm,
     fontFamily: Typography.fontRegular,
     color: Colors.textSecondary,
+    marginLeft: 0,
   },
   section: {
     marginBottom: Spacing.xl,

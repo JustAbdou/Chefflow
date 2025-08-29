@@ -60,11 +60,8 @@ export const getRestaurantDisplayName = (restaurantId) => {
  */
 export const isValidRestaurantId = (restaurantId) => {
   if (!restaurantId || typeof restaurantId !== 'string') return false;
-
   if (restaurantId.length === 0 || restaurantId.length > 1500) return false;
-
   if (restaurantId === '.' || restaurantId === '..') return false;
-
   if (restaurantId.includes('/')) return false;
   
   return true;

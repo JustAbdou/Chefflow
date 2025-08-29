@@ -3,6 +3,8 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import { ActivityIndicator, View } from 'react-native';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from './firebase';
 
 import LoginScreen from './src/screens/auth/LoginScreen';
 import TabNavigator from './src/navigation/TabNavigator'; // <-- Make sure this exists and is default export
@@ -11,7 +13,7 @@ import { OrderListsScreen } from './src/screens/orders/OrderListsScreen';
 import InvoiceUploadScreen from './src/screens/invoices/InvoiceUploadScreen';
 import { RestaurantProvider } from './src/contexts/RestaurantContext';
 import { setupFirestoreErrorHandling } from './src/utils/firestoreConnectionManager';
-import { clearFirestoreCache, resetFirestoreConnection, testFirebaseConnection } from './firebase';
+import { clearFirestoreCache, resetFirestoreConnection } from './firebase';
 import navigationBarUtils from './src/utils/navigationBar';
 import InvoicesScreen from './src/screens/invoices/InvoicesScreen';
 import InvoiceDetailScreen from './src/screens/invoices/InvoiceDetailScreen';
@@ -20,19 +22,16 @@ import PrepListsScreen from './src/screens/prep/PrepListsScreen';
 import InvoicesDownloadsScreen from './src/screens/invoices/InvoicesDownloadsScreen';
 import AddRecipeScreen from './src/screens/recipes/AddRecipeScreen';
 import FridgeTempLogsScreen from './src/screens/fridge/FridgeTempLogsScreen';
-import CleaningChecklistScreen from './src/screens/cleaning/ClosingChecklistScreen';
+import CleaningChecklistScreen from './src/screens/cleaning/CleaningChecklistScreen';
 import DeliveryTempLogsScreen from "./src/screens/delivery/DeliveryTempLogsScreen";
+import CoolingAndReheatingScreen from './src/screens/temperature/CoolingAndReheatingScreen';
 import HandoverScreen from './src/screens/handover/HandoverScreen';
 import HandoverCompletionScreen from './src/screens/handover/HandoverCompletionScreen';
 import PreviousHandoversScreen from './src/screens/handover/PreviousHandoversScreen';
 import TemperatureRecordsScreen from './src/screens/temperature/TemperatureRecordsScreen';
 import TemperatureDownloadsScreen from './src/screens/temperature/TemperatureDownloadsScreen';
-import CoolingReheatingScreen from './src/screens/temperature/CoolingReheatingScreen';
-import ErrorBoundary from './src/components/ErrorBoundary';
-
 
 const Stack = createStackNavigator();
-
 
 const downloadables = [
   {
@@ -41,42 +40,58 @@ const downloadables = [
     iconColor: Colors.textPrimary,
     iconType: 'ionicon'
   },
+  // ...other items
 ];
 
 export default function App() {
-  const [fontsLoaded] = useFonts({
+  const [isUserLoggedIn, setIsUserLoggedIn] = React.useState(null); // null = checking, true = logged in, false = not logged in
+  
+  let [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
   });
 
-  const [appReady, setAppReady] = React.useState(false);
+  // Check authentication state on app start
+  React.useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      console.log('🔐 Auth state changed:', user ? 'User logged in' : 'User not logged in');
+      setIsUserLoggedIn(!!user); // Convert to boolean, null becomes false
+    });
 
+    return unsubscribe;
+  }, []);
+
+  // Initialize Firestore error handling and clear cache for new project
   React.useEffect(() => {
     const initializeApp = async () => {
       try {
-        // Test Firebase connection first
-        await testFirebaseConnection();
+        console.log('🚀 Initializing ChefFlow app...');
         
+        // Clear any cached data from the previous project
         await clearFirestoreCache();
+        
+        // Reset the connection to ensure fresh start
         await resetFirestoreConnection();
         
+        // Setup error handling
         setupFirestoreErrorHandling();
+        
+        // Initialize Android navigation bar (hide bottom buttons)
         await navigationBarUtils.initializeNavigationBar();
         
-        setAppReady(true);
+        console.log('✅ ChefFlow app initialization complete');
       } catch (error) {
-        console.error('App initialization failed:', error);
-        // Still set app as ready to show error boundary
-        setAppReady(true);
+        console.error('❌ Error during app initialization:', error);
       }
     };
 
     initializeApp();
   }, []);
 
-  if (!fontsLoaded || !appReady) {
+  // Show loading screen while checking auth or loading fonts
+  if (!fontsLoaded || isUserLoggedIn === null) {
     return (
       <View style={{ 
         flex: 1, 
@@ -90,37 +105,35 @@ export default function App() {
   }
 
   return (
-    <ErrorBoundary>
-      <RestaurantProvider>
-        <NavigationContainer>
-          <Stack.Navigator
-            initialRouteName="Login"
-            screenOptions={{
-              headerShown: false,
-            }}
-          >
-            <Stack.Screen name="Login" component={LoginScreen} />
-            <Stack.Screen name="Main" component={TabNavigator} />
-            <Stack.Screen name="OrderLists" component={OrderListsScreen} />
-            <Stack.Screen name="PrepLists" component={PrepListsScreen} />
-            <Stack.Screen name="InvoiceUpload" component={InvoiceUploadScreen} />
-            <Stack.Screen name="Invoices" component={InvoicesScreen} />
-            <Stack.Screen name="InvoicesDownloads" component={InvoicesDownloadsScreen} />
-            <Stack.Screen name="InvoiceDetail" component={InvoiceDetailScreen} />
-            <Stack.Screen name="RecipeDetail" component={RecipeDetailScreen} />
-            <Stack.Screen name="AddRecipe" component={AddRecipeScreen} />
-            <Stack.Screen name="FridgeTempLogs" component={FridgeTempLogsScreen} />
-            <Stack.Screen name="CleaningChecklist" component={CleaningChecklistScreen} />
-            <Stack.Screen name="DeliveryTempLogs" component={DeliveryTempLogsScreen} />
-            <Stack.Screen name="Handover" component={HandoverScreen} />
-            <Stack.Screen name="HandoverCompletion" component={HandoverCompletionScreen} />
-            <Stack.Screen name="PreviousHandovers" component={PreviousHandoversScreen} />
-            <Stack.Screen name="TemperatureRecords" component={TemperatureRecordsScreen} />
-            <Stack.Screen name="TemperatureDownloads" component={TemperatureDownloadsScreen} />
-            <Stack.Screen name="CoolingReheating" component={CoolingReheatingScreen} />
-          </Stack.Navigator>
-        </NavigationContainer>
-      </RestaurantProvider>
-    </ErrorBoundary>
+    <RestaurantProvider>
+      <NavigationContainer>
+        <Stack.Navigator
+          initialRouteName={isUserLoggedIn ? "Main" : "Login"}
+          screenOptions={{
+            headerShown: false,
+          }}
+        >
+          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="Main" component={TabNavigator} />
+          <Stack.Screen name="OrderLists" component={OrderListsScreen} />
+          <Stack.Screen name="PrepLists" component={PrepListsScreen} />
+          <Stack.Screen name="InvoiceUpload" component={InvoiceUploadScreen} />
+          <Stack.Screen name="Invoices" component={InvoicesScreen} />
+          <Stack.Screen name="InvoiceDetail" component={InvoiceDetailScreen} />
+          <Stack.Screen name="InvoicesDownloads" component={InvoicesDownloadsScreen} />
+          <Stack.Screen name="RecipeDetail" component={RecipeDetailScreen} />
+          <Stack.Screen name="AddRecipe" component={AddRecipeScreen} />
+          <Stack.Screen name="FridgeTempLogs" component={FridgeTempLogsScreen} />
+          <Stack.Screen name="CleaningChecklist" component={CleaningChecklistScreen} />
+          <Stack.Screen name="DeliveryTempLogs" component={DeliveryTempLogsScreen} />
+          <Stack.Screen name="CoolingAndReheating" component={CoolingAndReheatingScreen} />
+          <Stack.Screen name="Handover" component={HandoverScreen} />
+          <Stack.Screen name="HandoverCompletion" component={HandoverCompletionScreen} />
+          <Stack.Screen name="PreviousHandovers" component={PreviousHandoversScreen} />
+          <Stack.Screen name="TemperatureRecords" component={TemperatureRecordsScreen} />
+          <Stack.Screen name="TemperatureDownloads" component={TemperatureDownloadsScreen} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </RestaurantProvider>
   );
 }

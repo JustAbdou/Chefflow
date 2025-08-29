@@ -9,7 +9,7 @@ This Firebase Cloud Function automatically resets daily restaurant data at 3 AM 
 2. **Prep Lists** → Deletes ONLY completed items (`done: true`), keeps incomplete items
 3. **Fridge Temp Logs** → Deletes ALL logs from current collection  
 4. **Delivery Temp Logs** → Deletes ALL logs from current collection
-5. **Cleaning Checklist** → Deletes ONLY completed tasks (`done: true`), keeps incomplete tasks
+5. **Closing Checklist** → Deletes ONLY completed tasks (`done: true`), keeps incomplete tasks
 
 ## ⚠️ **Important:** 
 Items are **permanently deleted** - no archiving is performed. This ensures a clean start each day without storing old data.

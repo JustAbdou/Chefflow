@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -6,104 +6,59 @@ import {
   SafeAreaView,
   TouchableOpacity,
   ScrollView,
-  TextInput,
   ActivityIndicator,
   RefreshControl,
-  KeyboardAvoidingView,
-  Platform,
-  Animated,
+  TextInput,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { Swipeable } from "react-native-gesture-handler";
+import { Ionicons, Feather } from "@expo/vector-icons";
+import DateTimePickerModal from 'react-native-modal-datetime-picker';
+import { getDocs, addDoc, serverTimestamp, doc, getDoc, updateDoc, query, where, orderBy } from "firebase/firestore";
+import { useRestaurant } from "../../contexts/RestaurantContext";
+import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
+import { auth } from "../../../firebase";
+
 import { Colors } from "../../constants/Colors";
 import { Typography } from "../../constants/Typography";
 import { Spacing } from "../../constants/Spacing";
 import { getAndroidTitleMargin } from "../../utils/responsive";
 import useNavigationBar from "../../hooks/useNavigationBar";
-import { addDoc, getDocs, updateDoc, serverTimestamp, doc, getDoc, deleteDoc } from "firebase/firestore";
-import { useRestaurant } from "../../contexts/RestaurantContext";
-import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
-import { auth } from "../../../firebase";
-import DateTimePickerModal from "react-native-modal-datetime-picker";
 
 export default function DeliveryTempLogsScreen({ navigation }) {
   const { restaurantId } = useRestaurant();
-
-  const [suppliers, setSuppliers] = useState([]);
-
   const [logs, setLogs] = useState([]);
-
-  const [expanded, setExpanded] = useState({});
-
   const [loading, setLoading] = useState(true);
-
-  const [refreshing, setRefreshing] = useState(false);
-
-  const [showDatePicker, setShowDatePicker] = useState(false);
-
-  const [selectedDate, setSelectedDate] = useState(new Date());
-
-  const [inputValues, setInputValues] = useState({});
-
-  const animationRefs = useRef({});
+  const [expandedCards, setExpandedCards] = useState(new Set());
+  const [tempInputs, setTempInputs] = useState({});
 
   // Hide Android navigation bar
   const navigationBar = useNavigationBar();
   navigationBar.useHidden(); // Use hidden mode for complete immersion
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
-  // Date formatting
-  const formatSelectedDate = (date) => {
-    const dayName = date.toLocaleDateString(undefined, { weekday: "long" });
-
-    const monthName = date.toLocaleDateString(undefined, { month: "long" });
-
-    const dayNum = date.getDate();
-    return `${dayName}, ${monthName} ${dayNum}`;
-  };
-
-
-  const todayString = formatSelectedDate(selectedDate);
-
-  // Fetch suppliers from existing deliverylogs documents
-  const fetchSuppliers = async () => {
-    if (!restaurantId) return;
-    
-    try {
-      const deliveryLogsCollection = getRestaurantCollection(restaurantId, 'deliverylogs');
-
-      const logsSnapshot = await getDocs(deliveryLogsCollection);
-      
-      // Extract unique supplier names from all logs
-      const uniqueSupplierNames = new Set();
-      logsSnapshot.forEach(docSnap => {
-        const data = docSnap.data();
-
-        if (data.supplierName) {
-          uniqueSupplierNames.add(data.supplierName);
-        }
-        // Also check for legacy 'supplier' field
-        if (data.supplier) {
-          uniqueSupplierNames.add(data.supplier);
-        }
-      });
-      
-      // Convert Set to Array and sort alphabetically
-      const supplierNamesArray = Array.from(uniqueSupplierNames).sort();
-      setSuppliers(supplierNamesArray);
-    } catch (error) {
-      setSuppliers([]);
-    }
-  };
-
-  // Reusable function to fetch logs
+  // Fetch logs from deliverylogs collection
   const fetchLogs = async () => {
     if (!restaurantId) return;
     
     try {
+      console.log('🔍 Fetching delivery logs for restaurant:', restaurantId, 'for date:', selectedDate.toDateString());
+      
+      // Create date range for the selected date (start and end of day)
+      const startOfDay = new Date(selectedDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      
+      const endOfDay = new Date(selectedDate);
+      endOfDay.setHours(23, 59, 59, 999);
+      
       const deliveryLogsCollection = getRestaurantCollection(restaurantId, 'deliverylogs');
-
-      const logsSnapshot = await getDocs(deliveryLogsCollection);
-
+      const q = query(
+        deliveryLogsCollection,
+        where('createdAt', '>=', startOfDay),
+        where('createdAt', '<=', endOfDay),
+        orderBy('createdAt', 'desc')
+      );
+      const logsSnapshot = await getDocs(q);
       
       let allLogs = [];
       logsSnapshot.forEach(docSnap => {
@@ -114,741 +69,578 @@ export default function DeliveryTempLogsScreen({ navigation }) {
         });
       });
       
-      // Filter logs for the selected date
-      const selectedDateString = selectedDate.toISOString().split('T')[0]; // Get YYYY-MM-DD format
-      const filteredLogs = allLogs.filter(log => {
-        // Check if log.date matches selected date
-        if (log.date === selectedDateString) {
-          return true;
-        }
-        
-        // Fallback: check createdAt if date field is missing
-        if (!log.date && log.createdAt) {
-          const logDate = log.createdAt.toDate ? log.createdAt.toDate() : new Date(log.createdAt.seconds * 1000);
-
-          const logDateString = logDate.toISOString().split('T')[0];
-          return logDateString === selectedDateString;
-        }
-        
-        return false;
-      });
-      
-      // Sort logs by createdAt (newest first)
-      filteredLogs.sort((a, b) => {
-        if (a.createdAt && b.createdAt) {
-          return b.createdAt.seconds - a.createdAt.seconds;
+      // Sort logs by supplierName for consistent display
+      allLogs.sort((a, b) => {
+        if (a.supplierName && b.supplierName) {
+          return a.supplierName.localeCompare(b.supplierName);
         }
         return 0;
       });
       
-      setLogs(filteredLogs);
+      console.log(`✅ Fetched ${allLogs.length} delivery logs for ${selectedDate.toDateString()}`);
+      setLogs(allLogs);
+      
+      // Initialize temp inputs with current values
+      const initialInputs = {};
+      allLogs.forEach(log => {
+        initialInputs[`${log.id}_chilled`] = log.chilled || '';
+        initialInputs[`${log.id}_frozen`] = log.frozen || '';
+      });
+      setTempInputs(initialInputs);
     } catch (error) {
-      // Error fetching delivery logs
+      console.error('❌ Error fetching delivery logs:', error);
     }
   };
 
-  // Initialize input values when logs change
   useEffect(() => {
-    const newInputValues = {};
-    logs.forEach(log => {
-      if (log.frozen !== undefined) {
-        newInputValues[`${log.id}-frozen`] = log.frozen;
-      }
-      if (log.chilled !== undefined) {
-        newInputValues[`${log.id}-chilled`] = log.chilled;
-      }
-    });
-    // Replace completely instead of merging to avoid stale values
-    setInputValues(newInputValues);
-  }, [logs]);
-
-  // Clear input values when date changes
-  useEffect(() => {
-    setInputValues({});
-  }, [selectedDate]);
-
-  // Initialize animation values when suppliers are loaded
-  useEffect(() => {
-    suppliers.forEach(supplierName => {
-      getAnimationValue(supplierName);
-    });
-  }, [suppliers]);
-
-  // Fetch data from Firestore
-  useEffect(() => {
-    const loadData = async () => {
+    const loadInitialData = async () => {
       setLoading(true);
-
-      await Promise.all([fetchSuppliers(), fetchLogs()]);
+      await fetchLogs();
       setLoading(false);
-      setRefreshing(false);
     };
-    loadData();
+    
+    loadInitialData();
   }, [restaurantId, selectedDate]);
 
-  // Pull to refresh handler
-  const onRefresh = async () => {
+  // Handle pull-to-refresh
+  const handleRefresh = async () => {
     setRefreshing(true);
-
-    await Promise.all([fetchSuppliers(), fetchLogs()]);
+    await fetchLogs();
     setRefreshing(false);
   };
 
-  // Utility function for individual temperature updates (if needed elsewhere)
-  const handleSetTemp = async (supplierName, logId, type, value) => {
-    if (!supplierName || !type || !restaurantId || !logId || logId === 'new') {
+  // Helper for time display
+  const formatTime = (createdAt) => {
+    if (!createdAt) return "--:--";
+    const date = new Date(createdAt.seconds * 1000);
+    let hours = date.getHours();
+    let minutes = date.getMinutes();
+    const ampm = hours >= 12 ? "PM" : "AM";
+    hours = hours % 12 || 12;
+    return `${hours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
+  };
+
+  // Helper to check if delivery has been logged
+  const isLogged = (log) => {
+    return (log.chilled && log.chilled.trim() !== '') || 
+           (log.frozen && log.frozen.trim() !== '') ||
+           log.done === true;
+  };
+
+  // Helper to get status text
+  const getStatusText = (log) => {
+    // Check if there are pending changes (input values different from saved values)
+    const chilledInput = tempInputs[`${log.id}_chilled`] || '';
+    const frozenInput = tempInputs[`${log.id}_frozen`] || '';
+    const chilledSaved = log.chilled || '';
+    const frozenSaved = log.frozen || '';
+    
+    const hasPendingChanges = chilledInput !== chilledSaved || frozenInput !== frozenSaved;
+    
+    if (hasPendingChanges && (chilledInput.trim() !== '' || frozenInput.trim() !== '')) {
+      return 'Pending';
+    }
+    
+    if (log.done) return 'Logged';
+    if (log.chilled && log.frozen) return 'Logged';
+    if (log.chilled || log.frozen) return 'Partial';
+    return 'Pending';
+  };
+
+  // Helper to get status color
+  const getStatusColor = (log) => {
+    const status = getStatusText(log);
+    switch (status) {
+      case 'Logged':
+        return '#059669';
+      case 'Partial':
+        return '#d97706';
+      case 'Pending':
+        // Check if there are unsaved changes
+        const chilledInput = tempInputs[`${log.id}_chilled`] || '';
+        const frozenInput = tempInputs[`${log.id}_frozen`] || '';
+        const chilledSaved = log.chilled || '';
+        const frozenSaved = log.frozen || '';
+        
+        const hasPendingChanges = chilledInput !== chilledSaved || frozenInput !== frozenSaved;
+        return hasPendingChanges && (chilledInput.trim() !== '' || frozenInput.trim() !== '') ? '#dc2626' : '#6b7280';
+      default:
+        return '#6b7280';
+    }
+  };
+
+  // Toggle card expansion
+  const toggleCardExpansion = (logId) => {
+    setExpandedCards(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(logId)) {
+        newSet.delete(logId);
+      } else {
+        newSet.add(logId);
+      }
+      return newSet;
+    });
+  };
+
+  // Handle temperature input change
+  const handleTempInputChange = (logId, type, value) => {
+    const key = `${logId}_${type}`;
+    setTempInputs(prev => ({
+      ...prev,
+      [key]: value
+    }));
+  };
+
+  // Save complete log for delivery
+  const saveCompleteLog = async (logId) => {
+    if (!restaurantId || !auth.currentUser) {
+      console.error('❌ Missing restaurant ID or user authentication');
       return;
     }
-    
-    try {
-      const fieldName = type;
 
-      await updateDoc(getRestaurantDoc(restaurantId, "deliverylogs", logId), {
-        [fieldName]: value,
-      });
+    const chilledTempValue = tempInputs[`${logId}_chilled`];
+    const frozenTempValue = tempInputs[`${logId}_frozen`];
+
+    // Validate that at least one temperature is provided
+    if ((!chilledTempValue || chilledTempValue.trim() === '') && (!frozenTempValue || frozenTempValue.trim() === '')) {
+      console.error('❌ At least one temperature value must be provided');
+      return;
+    }
+
+    // Validate temperature values if they are provided
+    if (chilledTempValue && chilledTempValue.trim() !== '') {
+      const chilledTempNumber = parseFloat(chilledTempValue);
+      if (isNaN(chilledTempNumber)) {
+        console.error('❌ Invalid chilled temperature value:', chilledTempValue);
+        return;
+      }
+    }
+
+    if (frozenTempValue && frozenTempValue.trim() !== '') {
+      const frozenTempNumber = parseFloat(frozenTempValue);
+      if (isNaN(frozenTempNumber)) {
+        console.error('❌ Invalid frozen temperature value:', frozenTempValue);
+        return;
+      }
+    }
+
+    try {
+      console.log(`📝 Saving complete delivery log for ${logId}:`, { chilled: chilledTempValue, frozen: frozenTempValue });
       
-      // Update local state
-      setLogs(prev =>
-        prev.map(l =>
-          l.id === logId ? { ...l, [fieldName]: value } : l
-        )
-      );
+      const deliveryDoc = logs.find(log => log.id === logId);
+      if (!deliveryDoc) {
+        console.error('❌ Delivery document not found:', logId);
+        return;
+      }
+
+      // Prepare update data
+      const updateData = {
+        done: true // Always set done to true when saving log
+      };
+
+      // Only update temperatures that have values
+      if (chilledTempValue && chilledTempValue.trim() !== '') {
+        updateData.chilled = chilledTempValue.trim();
+      }
+      if (frozenTempValue && frozenTempValue.trim() !== '') {
+        updateData.frozen = frozenTempValue.trim();
+      }
+
+      // Update the document
+      const deliveryDocRef = getRestaurantDoc(restaurantId, 'deliverylogs', logId);
+      await updateDoc(deliveryDocRef, updateData);
+
+      console.log('✅ Complete delivery log saved successfully');
+      
+      // Refresh logs
+      await fetchLogs();
     } catch (error) {
-      // Error handling
+      console.error('❌ Error saving complete delivery log:', error);
     }
   };
 
-  // Delete individual supplier log
-  const deleteSupplierLog = async (logId) => {
-    if (!restaurantId) return;
-    
-    try {
-      await deleteDoc(getRestaurantDoc(restaurantId, "deliverylogs", logId));
-      setLogs((logs) => logs.filter((log) => log.id !== logId));
-    } catch (error) {
-      // Error handling
-    }
-  };
+  // Filter logs - show all logs for now
+  const filteredLogs = logs;
 
-  // Render right action for swipe-to-delete
-  const renderRightActions = (logId) => (
-    <View style={styles.swipeActionContainer}>
-      <TouchableOpacity
-        style={styles.deleteAction}
-        onPress={() => deleteSupplierLog(logId)}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="trash-outline" size={24} color="white" />
-        <Text style={styles.deleteActionText}>Delete</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-
-  const handleDateConfirm = (date) => {
-    setSelectedDate(date);
-    setShowDatePicker(false);
-  };
-
-  // Get or create animation value for a supplier
-  const getAnimationValue = (supplierName) => {
-    if (!animationRefs.current[supplierName]) {
-      animationRefs.current[supplierName] = new Animated.Value(0);
-    }
-    return animationRefs.current[supplierName];
-  };
-
-  // Toggle supplier expansion with animation
-  const toggleSupplierExpansion = (supplierName) => {
-    const isCurrentlyExpanded = expanded[supplierName];
-
-    const animationValue = getAnimationValue(supplierName);
-    
-    setExpanded(prev => ({ ...prev, [supplierName]: !isCurrentlyExpanded }));
-    
-    Animated.timing(animationValue, {
-      toValue: isCurrentlyExpanded ? 0 : 1,
-      duration: 250,
-      useNativeDriver: false,
-    }).start();
+  // Format the selected date
+  const formatSelectedDate = (date) => {
+    const dayName = date.toLocaleDateString(undefined, { weekday: "long" });
+    const monthName = date.toLocaleDateString(undefined, { month: "long" });
+    const dayNum = date.getDate();
+    return `${dayName}, ${monthName} ${dayNum}`;
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.safeArea}>
       <ScrollView 
-        style={styles.scrollView}
+        style={{ flex: 1 }} 
+        contentContainerStyle={{ paddingBottom: 40 }}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={[Colors.primary]}
+            tintColor={Colors.primary}
+          />
         }
       >
+
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()} activeOpacity={0.7}>
             <Text style={styles.backArrow}>‹</Text>
           </TouchableOpacity>
-          <View style={styles.headerInfo}>
+          <View style={styles.headerContent}>
             <Text style={styles.title}>Delivery Temperature</Text>
-            <Text style={styles.subtitle}>Monitor Delivery Temps</Text>
+            <Text style={styles.subtitle}>Daily Temperature Logs</Text>
           </View>
-          <View style={{ width: 28 }} />
         </View>
 
         {/* Date Selector */}
-        <View style={styles.dateSection}>
-          <TouchableOpacity
-            style={styles.dateSelector}
-            onPress={() => setShowDatePicker(true)}
-            activeOpacity={0.7}
-          >
-            <View style={styles.dateIconContainer}>
-              <Ionicons name="calendar" size={22} color={Colors.primary} />
-            </View>
-            <View style={styles.dateContent}>
+        <TouchableOpacity style={styles.dateSelector} onPress={() => setShowDatePicker(true)}>
+          <View style={styles.dateLeft}>
+            <Ionicons name="calendar-outline" size={24} color="#2563eb" />
+            <View style={styles.dateInfo}>
               <Text style={styles.dateLabel}>Selected Date</Text>
-              <Text style={styles.dateText}>{todayString}</Text>
+              <Text style={styles.dateValue}>{formatSelectedDate(selectedDate)}</Text>
             </View>
-            <View style={styles.chevronContainer}>
-              <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
-            </View>
-          </TouchableOpacity>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#6B7280" />
+        </TouchableOpacity>
+
+        {/* Section Header */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Delivery Temperature Logs ({filteredLogs.length})</Text>
         </View>
 
-        {/* Suppliers List */}
-        <View style={styles.suppliersSection}>
-          <Text style={styles.sectionTitle}>
-            Delivery Temperature Logs ({suppliers.length})
-          </Text>
-          
-          {suppliers.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="thermometer-outline" size={48} color={Colors.gray300} />
-              <Text style={styles.emptyStateText}>No suppliers configured</Text>
-              <Text style={styles.emptyStateSubtext}>Please add supplier names in settings</Text>
-            </View>
+        {/* Logs */}
+        <View style={styles.logsContainer}>
+          {loading ? (
+            <ActivityIndicator size="large" style={{ marginTop: 40 }} />
           ) : (
-            suppliers.map((supplierName, index) => {
-              const log = logs.find(l => l.supplierName === supplierName || l.supplier === supplierName);
-
-              const isExpanded = expanded[supplierName];
-              
-              return (
-                <TouchableOpacity 
-                  key={index} 
-                  style={styles.supplierCard}
-                  onPress={() => toggleSupplierExpansion(supplierName)}
-                  activeOpacity={0.8}
-                >
-                  {/* Supplier Header */}
-                  <View style={styles.supplierHeader}>
-                    <View style={styles.supplierInfo}>
-                                                  <Ionicons name="car-outline" size={24} color={Colors.primary} />
-                      <Text style={styles.supplierName}>{supplierName}</Text>
-                    </View>
-                    <View style={styles.supplierStatus}>
-                      {log && (log.frozen || log.chilled) ? (
-                        <View style={styles.statusIndicator}>
-                          <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
-                          <Text style={styles.statusText}>Logged</Text>
-                        </View>
-                      ) : (
-                        <View style={styles.statusIndicator}>
-                          <Ionicons name="alert-circle" size={20} color={Colors.warning} />
-                          <Text style={styles.statusText}>Pending</Text>
-                        </View>
-                      )}
-                      <Ionicons 
-                        name={isExpanded ? "chevron-up" : "chevron-down"} 
-                        size={20} 
-                        color={Colors.gray400} 
-                      />
-                    </View>
-                  </View>
-
-                  {/* Expanded Temperature Inputs */}
-                  <Animated.View 
-                    style={[
-                      styles.temperatureInputs,
-                      {
-                        height: getAnimationValue(supplierName).interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0, 280], // Height for delivery temp inputs without current values
-                        }),
-                        opacity: getAnimationValue(supplierName),
-                        overflow: 'hidden',
-                      }
-                    ]}
-                    onStartShouldSetResponder={() => true}
-                  >
-                      {/* Frozen Items Temperature */}
-                      <View style={styles.tempInputGroup}>
-                        <Text style={styles.tempLabel}>Frozen Items Temperature</Text>
-                        <View style={styles.tempInputContainer}>
-                          <TextInput
-                            style={styles.tempInput}
-                            value={inputValues[`${log?.id || `placeholder-${supplierName}`}-frozen`] !== undefined ? inputValues[`${log?.id || `placeholder-${supplierName}`}-frozen`] : (log?.frozen || '')}
-                            onChangeText={(value) => {
-                              // Only allow numbers, decimal point, and negative sign
-                              const numericValue = value.replace(/[^0-9.-]/g, '');
-
-                              const inputKey = `${log?.id || `placeholder-${supplierName}`}-frozen`;
-                              setInputValues(prev => ({ ...prev, [inputKey]: numericValue }));
-                            }}
-                            placeholder="0"
-                            placeholderTextColor={Colors.gray400}
-                            keyboardType="decimal-pad"
-                            inputMode="decimal"
-                          />
-                          <Text style={styles.tempUnit}>°C</Text>
-                        </View>
+            filteredLogs.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Ionicons name="thermometer-outline" size={48} color="#CBD5E1" />
+                <Text style={styles.emptyText}>No delivery logs for today</Text>
+                <Text style={styles.emptySubtext}>Delivery logs will appear here when suppliers are configured</Text>
+              </View>
+            ) : (
+              filteredLogs.map((log, idx) => {
+                const isExpanded = expandedCards.has(log.id);
+                return (
+                  <View key={log.id} style={styles.logCard}>
+                    <TouchableOpacity 
+                      style={styles.logContent} 
+                      onPress={() => toggleCardExpansion(log.id)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.logIcon}>
+                        <Ionicons name="car-outline" size={24} color="#2563eb" />
                       </View>
-
-                      {/* Chilled Items Temperature */}
-                      <View style={styles.tempInputGroup}>
-                        <Text style={styles.tempLabel}>Chilled Items Temperature</Text>
-                        <View style={styles.tempInputContainer}>
-                          <TextInput
-                            style={styles.tempInput}
-                            value={inputValues[`${log?.id || `placeholder-${supplierName}`}-chilled`] !== undefined ? inputValues[`${log?.id || `placeholder-${supplierName}`}-chilled`] : (log?.chilled || '')}
-                            onChangeText={(value) => {
-                              // Only allow numbers, decimal point, and negative sign
-                              const numericValue = value.replace(/[^0-9.-]/g, '');
-
-                              const inputKey = `${log?.id || `placeholder-${supplierName}`}-chilled`;
-                              setInputValues(prev => ({ ...prev, [inputKey]: numericValue }));
-                            }}
-                            placeholder="0"
-                            placeholderTextColor={Colors.gray400}
-                            keyboardType="decimal-pad"
-                            inputMode="decimal"
-                          />
-                          <Text style={styles.tempUnit}>°C</Text>
-                        </View>
+                      <View style={styles.logInfo}>
+                        <Text style={styles.logName}>{log.supplierName || log.id}</Text>
+                        <Text style={styles.logTime}>
+                          {log.createdAt ? formatTime(log.createdAt) : 'No time set'}
+                        </Text>
                       </View>
-
-                      {/* Save Button */}
-                      <TouchableOpacity
-                        style={styles.saveButton}
-                        onPress={async (e) => {
-                          e.stopPropagation();
-
-                          const frozenValue = inputValues[`${log?.id || `placeholder-${supplierName}`}-frozen`] || '';
-
-                          const chilledValue = inputValues[`${log?.id || `placeholder-${supplierName}`}-chilled`] || '';
-                          
-                          // Get original values for comparison
-                          const originalFrozen = log?.frozen || '';
-
-                          const originalChilled = log?.chilled || '';
-                          
-                          // Check if any values have actually changed
-                          const frozenChanged = frozenValue !== originalFrozen;
-
-                          const chilledChanged = chilledValue !== originalChilled;
-                          
-                          // Allow saving if there are any changes OR if we're creating a new log
-                          if (frozenChanged || chilledChanged || !log?.id) {
-                            try {
-                              let currentLogId = log?.id;
-                              
-                              // If no existing log, create one first
-                              if (!currentLogId) {
-                                const selectedDateString = selectedDate.toISOString().split('T')[0];
-
-                                
-                                const newLogRef = await addDoc(getRestaurantCollection(restaurantId, "deliverylogs"), {
-                                  supplierName: supplierName,
-                                  date: selectedDateString,
-                                  frozen: "",
-                                  chilled: "",
-                                  done: false,
-                                  createdAt: serverTimestamp(),
-                                  createdBy: auth.currentUser.uid,
-                                  restaurantId: restaurantId,
-                                });
-                                
-                                currentLogId = newLogRef.id;
-                                
-                                // Add the new log to local state
-                                const newLog = {
-                                  id: newLogRef.id,
-                                  supplierName: supplierName,
-                                  date: selectedDateString,
-                                  frozen: "",
-                                  chilled: "",
-                                  done: false,
-                                  createdAt: new Date(),
-                                  isPlaceholder: false,
-                                };
-                                
-                                setLogs(prev => [...prev, newLog]);
-                              }
-                              
-                              // Update both values in a single operation to avoid race conditions
-                              const updateData = {};
-
-                              if (frozenChanged) {
-                                updateData['frozen'] = frozenValue;
-                              }
-                              if (chilledChanged) {
-                                updateData['chilled'] = chilledValue;
-                              }
-                              
-                              // Check if both temperatures are filled to mark as done
-                              const finalFrozenValue = frozenChanged ? frozenValue : (log?.frozen || '');
-
-                              const finalChilledValue = chilledChanged ? chilledValue : (log?.chilled || '');
-
-                              const isDone = finalFrozenValue !== '' && finalChilledValue !== '';
-                              updateData['done'] = isDone;
-
-                              
-                              if (Object.keys(updateData).length > 0 && currentLogId) {
-                                await updateDoc(getRestaurantDoc(restaurantId, "deliverylogs", currentLogId), updateData);
-                                
-                                // Update local state
-                                setLogs(prev =>
-                                  prev.map(l =>
-                                    l.id === currentLogId ? { 
-                                      ...l, 
-                                      ...(frozenChanged ? { frozen: frozenValue !== '' ? frozenValue : '' } : {}),
-                                      ...(chilledChanged ? { chilled: chilledValue !== '' ? chilledValue : '' } : {}),
-                                      done: isDone
-                                    } : l
-                                  )
-                                );
-                              }
-                              
-                              // Clear input values
-                              setInputValues(prev => {
-                                const newValues = { ...prev };
-
-                                const keyBase = currentLogId || `placeholder-${supplierName}`;
-                                delete newValues[`${keyBase}-frozen`];
-                                delete newValues[`${keyBase}-chilled`];
-                                return newValues;
-                              });
-                            } catch (error) {
-                              // Error saving delivery log
-                            }
-                          }
-                        }}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={styles.saveButtonText}>Save Log</Text>
-                      </TouchableOpacity>
-
-                      {/* Current Values Display
-                      {(log?.temps?.frozen || log?.temps?.chilled) && (
-                        <View style={styles.currentValues}>
-                          <Text style={styles.currentValuesTitle}>Current Values:</Text>
-                          <View style={styles.valuesRow}>
-                            {log.temps?.frozen && (
-                              <View style={styles.valueChip}>
-                                <Text style={styles.valueChipLabel}>Frozen</Text>
-                                <Text style={styles.valueChipTemp}>-{log.temps.frozen}°C</Text>
-                              </View>
-                            )}
-                            {log.temps?.chilled && (
-                              <View style={styles.valueChip}>
-                                <Text style={styles.valueChipLabel}>Chilled</Text>
-                                <Text style={styles.valueChipTemp}>{log.temps.chilled}°C</Text>
-                              </View>
-                            )}
+                      <View style={styles.logStatus}>
+                        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(log) + '20' }]}>
+                          <Ionicons 
+                            name={isLogged(log) ? "checkmark" : "time-outline"} 
+                            size={16} 
+                            color={getStatusColor(log)} 
+                          />
+                          <Text style={[styles.statusText, { color: getStatusColor(log) }]}>
+                            {getStatusText(log)}
+                          </Text>
+                        </View>
+                        <Ionicons 
+                          name={isExpanded ? "chevron-up" : "chevron-down"} 
+                          size={20} 
+                          color="#6B7280" 
+                        />
+                      </View>
+                    </TouchableOpacity>
+                    
+                    {isExpanded && (
+                      <View style={styles.temperatureInfo}>
+                        {/* Chilled Temperature Input */}
+                        <View style={styles.tempInputRow}>
+                          <Text style={styles.temperatureLabel}>Chilled Temperature:</Text>
+                          <View style={styles.tempInputContainer}>
+                            <TextInput
+                              style={styles.tempInput}
+                              value={tempInputs[`${log.id}_chilled`] || ''}
+                              onChangeText={(value) => handleTempInputChange(log.id, 'chilled', value)}
+                              placeholder="--"
+                              keyboardType="numeric"
+                              maxLength={5}
+                            />
+                            <Text style={styles.tempUnit}>℃</Text>
                           </View>
                         </View>
-                      )} */}
-                  </Animated.View>
-                </TouchableOpacity>
-              );
-            })
+                        
+                        {/* Frozen Temperature Input */}
+                        <View style={styles.tempInputRow}>
+                          <Text style={styles.temperatureLabel}>Frozen Temperature:</Text>
+                          <View style={styles.tempInputContainer}>
+                            <TextInput
+                              style={styles.tempInput}
+                              value={tempInputs[`${log.id}_frozen`] || ''}
+                              onChangeText={(value) => handleTempInputChange(log.id, 'frozen', value)}
+                              placeholder="--"
+                              keyboardType="numeric"
+                              maxLength={5}
+                            />
+                            <Text style={styles.tempUnit}>℃</Text>
+                          </View>
+                        </View>
+
+                        {/* Save Log Button */}
+                        <TouchableOpacity
+                          style={styles.saveLogButton}
+                          onPress={() => saveCompleteLog(log.id)}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="save-outline" size={20} color="#fff" />
+                          <Text style={styles.saveLogButtonText}>Save Log</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                );
+              })
+            )
           )}
         </View>
-
-        {/* Date Picker Modal */}
-        <DateTimePickerModal
-          isVisible={showDatePicker}
-          mode="date"
-          onConfirm={handleDateConfirm}
-          onCancel={() => setShowDatePicker(false)}
-          date={selectedDate}
-          maximumDate={new Date()}
-          themeVariant="light"
-        />
       </ScrollView>
+
+      {/* Date Picker Modal */}
+      <DateTimePickerModal
+        isVisible={showDatePicker}
+        mode="date"
+        onConfirm={(date) => {
+          setSelectedDate(date);
+          setShowDatePicker(false);
+        }}
+        onCancel={() => setShowDatePicker(false)}
+        maximumDate={new Date()}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
-  scrollView: { flex: 1 },
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.md,
     paddingTop: Spacing.lg + getAndroidTitleMargin(),
+    paddingBottom: Spacing.md,
   },
   backButton: {
     padding: Spacing.xs,
+    marginRight: Spacing.md,
   },
   backArrow: {
-    fontSize: 35,
+    fontSize: 32,
     color: Colors.textPrimary,
     fontWeight: "300",
   },
-  headerInfo: {
+  headerContent: {
     flex: 1,
-    marginLeft: Spacing.md,
   },
   title: {
-    fontSize: 22,
+    fontSize: 24,
     fontFamily: Typography.fontBold,
     color: Colors.textPrimary,
+    marginBottom: 2,
   },
   subtitle: {
-    fontSize: Typography.md,
+    fontSize: 16,
+    fontFamily: Typography.fontRegular,
     color: Colors.textSecondary,
-    marginTop: Spacing.xs,
-  },
-  dateSection: {
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.lg,
   },
   dateSelector: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+    marginHorizontal: Spacing.lg,
+    marginVertical: Spacing.md,
+    padding: Spacing.md,
     backgroundColor: "#f8fafc",
-    paddingVertical: Spacing.lg,
-    paddingHorizontal: Spacing.md,
-    borderRadius: 16,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
   },
-  dateIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#fff",
+  dateLeft: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
   },
-  dateContent: {
-    flex: 1,
+  dateInfo: {
     marginLeft: Spacing.md,
   },
   dateLabel: {
-    fontSize: Typography.sm,
-    color: Colors.textSecondary,
+    fontSize: 14,
     fontFamily: Typography.fontRegular,
+    color: Colors.textSecondary,
     marginBottom: 2,
   },
-  dateText: {
-    fontSize: Typography.lg,
+  dateValue: {
+    fontSize: 16,
+    fontFamily: Typography.fontSemiBold,
     color: Colors.textPrimary,
-    fontFamily: Typography.fontBold,
   },
-  chevronContainer: {
-    width: 32,
-    height: 32,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  suppliersSection: {
+  sectionHeader: {
     paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.lg,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.sm,
   },
   sectionTitle: {
-    fontSize: 22,
-    fontFamily: Typography.fontBold,
+    fontSize: 18,
+    fontFamily: Typography.fontSemiBold,
     color: Colors.textPrimary,
-    marginBottom: 12,
   },
-  supplierCard: {
+  logsContainer: {
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: 100,
+  },
+  logCard: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    overflow: "hidden",
+  },
+  logContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+  },
+  logIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#eff6ff",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: Spacing.md,
+  },
+  logInfo: {
+    flex: 1,
+  },
+  logName: {
+    fontSize: 16,
+    fontFamily: Typography.fontSemiBold,
+    color: Colors.textPrimary,
+    marginBottom: 2,
+  },
+  logTime: {
+    fontSize: 14,
+    fontFamily: Typography.fontRegular,
+    color: Colors.textSecondary,
+  },
+  logStatus: {
+    alignItems: "flex-end",
+  },
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ecfdf5",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginBottom: 4,
+  },
+  statusText: {
+    fontSize: 12,
+    fontFamily: Typography.fontMedium,
+    color: "#059669",
+    marginLeft: 4,
+  },
+  temperatureInfo: {
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.md,
+    paddingTop: Spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: "#f1f5f9",
     backgroundColor: "#f8fafc",
-    borderRadius: 16,
-    paddingVertical: 18,
-    paddingHorizontal: 16,
-    marginBottom: 12,
   },
-  supplierHeader: {
+  tempInputRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: Spacing.sm,
+    paddingVertical: Spacing.xs,
   },
-  supplierInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  supplierName: {
-    fontFamily: Typography.fontBold,
-    fontSize: 18,
-    color: "#111",
-    marginLeft: Spacing.sm,
-  },
-  supplierStatus: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  statusIndicator: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff3cd",
-    borderRadius: 12,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    marginRight: Spacing.sm,
-  },
-  statusText: {
-    fontFamily: Typography.fontBold,
+  temperatureLabel: {
     fontSize: 14,
-    color: "#856404",
-    marginLeft: Spacing.xs,
-  },
-  temperatureInputs: {
-    marginTop: 18,
-    gap: 12,
-  },
-  tempInputGroup: {
-    marginBottom: 12,
-  },
-  tempLabel: {
-    fontFamily: Typography.fontRegular,
-    fontSize: 15,
-    color: "#8B96A5",
-    marginBottom: 2,
+    fontFamily: Typography.fontMedium,
+    color: Colors.textSecondary,
+    flex: 1,
   },
   tempInputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f8fafc",
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    minWidth: 80,
   },
   tempInput: {
-    fontFamily: Typography.fontBold,
-    fontSize: 22,
-    color: "#111",
-    flex: 1,
-    marginRight: 8,
+    fontSize: 16,
+    fontFamily: Typography.fontMedium,
+    color: Colors.textPrimary,
+    textAlign: "center",
+    minWidth: 40,
+    paddingVertical: 0,
   },
   tempUnit: {
-    fontFamily: Typography.fontBold,
-    fontSize: 22,
-    color: "#8B96A5",
+    fontSize: 14,
+    fontFamily: Typography.fontRegular,
+    color: Colors.textSecondary,
+    marginLeft: 4,
   },
-  // currentValues: {
-  //   marginTop: 18,
-  //   paddingTop: 12,
-  //   borderTopWidth: 1,
-  //   borderTopColor: "#e0e0e0",
-  // },
-  // currentValuesTitle: {
-  //   fontFamily: Typography.fontBold,
-  //   fontSize: 16,
-  //   color: "#222",
-  //   marginBottom: 8,
-  // },
-  valuesRow: {
+  saveLogButton: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  valueChip: {
-    backgroundColor: "#e0f2fe",
-    borderRadius: 12,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-  },
-  valueChipLabel: {
-    fontFamily: Typography.fontBold,
-    fontSize: 14,
-    color: "#111",
-  },
-  valueChipTemp: {
-    fontFamily: Typography.fontBold,
-    fontSize: 14,
-    color: "#2563eb",
-  },
-  swipeableContainer: {
-    backgroundColor: "transparent",
-    marginHorizontal: 16,
-    marginBottom: 18,
-  },
-  swipeActionContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "flex-end",
-    paddingRight: Spacing.md,
-  },
-  deleteAction: {
-    backgroundColor: "#FF3B30",
-    justifyContent: "center",
     alignItems: "center",
-    width: 80,
-    height: "85%",
-    borderRadius: 16,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    justifyContent: "center",
+    backgroundColor: Colors.primary,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginTop: Spacing.md,
   },
-  deleteActionText: {
-    color: "white",
-    fontSize: Typography.sm,
-    fontWeight: Typography.bold,
-    marginTop: 4,
+  saveLogButtonText: {
+    fontSize: 16,
+    fontFamily: Typography.fontSemiBold,
+    color: "#fff",
+    marginLeft: 8,
   },
   emptyState: {
     alignItems: "center",
-    paddingVertical: 40,
-    backgroundColor: "#f0f2f5",
-    borderRadius: 16,
-    marginTop: 12,
+    paddingVertical: 60,
   },
-  emptyStateText: {
-    fontFamily: Typography.fontBold,
-    fontSize: 20,
-    color: "#222",
-    marginTop: 12,
+  emptyText: {
+    fontSize: 18,
+    fontFamily: Typography.fontSemiBold,
+    color: Colors.textPrimary,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.xs,
   },
-  emptyStateSubtext: {
+  emptySubtext: {
+    fontSize: 14,
     fontFamily: Typography.fontRegular,
-    fontSize: 16,
-    color: "#8B96A5",
-    marginTop: 4,
-  },
-  saveButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    alignItems: "center",
-    marginTop: 18,
-  },
-  saveButtonText: {
-    color: "white",
-    fontFamily: Typography.fontBold,
-    fontSize: 16,
+    color: Colors.textSecondary,
+    textAlign: "center",
+    lineHeight: 20,
   },
 });

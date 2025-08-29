@@ -5,6 +5,7 @@ import {
   StyleSheet,
   SafeAreaView,
   TouchableOpacity,
+  Image,
   TextInput,
   KeyboardAvoidingView,
   Platform,
@@ -12,8 +13,8 @@ import {
   Modal,
   FlatList,
   Animated,
-  Alert,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, Typography } from '../../constants';
 import Button from '../../components/ui/Button';
@@ -23,33 +24,24 @@ import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 
-
 const InvoiceUploadScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
-
+  const [image, setImage] = useState(null);
   const [uploading, setUploading] = useState(false);
 
   // Invoice details state
   const [invoiceNumber, setInvoiceNumber] = useState('#INV-2025-0421');
-
   const [date, setDate] = useState(new Date());
-
   const [amount, setAmount] = useState('0'); // <-- Set default amount to 0
   const [supplier, setSupplier] = useState('');
-
   const [showDatePicker, setShowDatePicker] = useState(false);
 
-
   const [editField, setEditField] = useState(null);
-
   const [supplierModalVisible, setSupplierModalVisible] = useState(false);
-
 
   const [supplierList, setSupplierList] = useState([]);
 
-
   const animatedListHeight = useRef(new Animated.Value(0)).current;
-
   const animatedOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -86,39 +78,44 @@ const InvoiceUploadScreen = ({ navigation }) => {
     const fetchSuppliers = async () => {
       if (!restaurantId) return;
       
-      try {const deliveryLogsCollection = getRestaurantCollection(restaurantId, 'deliverylogs');
-
-        const logsSnapshot = await getDocs(deliveryLogsCollection);
+      try {
+        console.log('🔍 Fetching suppliers for restaurant:', restaurantId);
         
-        // Extract unique supplier names from all delivery logs
-        const uniqueSupplierNames = new Set();
-        logsSnapshot.forEach(docSnap => {
-          const data = docSnap.data();
-
-          if (data.supplierName) {
-            uniqueSupplierNames.add(data.supplierName);
+        const suppliersDocRef = getRestaurantDoc(restaurantId, 'suppliers', 'suppliers');
+        const suppliersDoc = await getDoc(suppliersDocRef);
+        
+        if (suppliersDoc.exists()) {
+          const data = suppliersDoc.data();
+          const suppliersArray = data.names || [];
+          console.log('✅ Fetched suppliers:', suppliersArray);
+          setSupplierList(suppliersArray);
+          // Set first supplier as default if supplier is empty and there are suppliers
+          if (!supplier && suppliersArray.length > 0) {
+            setSupplier(suppliersArray[0]);
           }
-          // Also check for legacy 'supplier' field
-          if (data.supplier) {
-            uniqueSupplierNames.add(data.supplier);
-          }
-        });
-        
-        // Convert Set to Array and sort alphabetically
-        const suppliersArray = Array.from(uniqueSupplierNames).sort();setSupplierList(suppliersArray);
-        
-        // Set first supplier as default if supplier is empty and there are suppliers
-        if (!supplier && suppliersArray.length > 0) {
-          setSupplier(suppliersArray[0]);
+        } else {
+          console.log('⚠️ Suppliers document not found, no suppliers available');
+          setSupplierList([]);
         }
-      } catch (error) {setSupplierList([]);
+      } catch (error) {
+        console.error('❌ Error fetching suppliers:', error);
+        setSupplierList([]);
       }
     };
     fetchSuppliers();
   }, [restaurantId]);
 
+  const pickImage = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaType.IMAGE, // <-- updated line
+      allowsEditing: true,
+      quality: 0.7,
+    });
 
-
+    if (!result.canceled) {
+      setImage(result.assets[0].uri);
+    }
+  };
 
   const handleUpload = async () => {
     if (!restaurantId) return;
@@ -131,19 +128,24 @@ const InvoiceUploadScreen = ({ navigation }) => {
         amount: parseFloat(amount.replace(/[£,]/g, "")),
         supplier,
         createdAt: serverTimestamp(),
+        image: image || null,
       });
       setUploading(false);
       navigation.goBack();
     } catch (error) {
-      setUploading(false);}
+      setUploading(false);
+      console.error(error);
+    }
+  };
+
+  const handleRetake = () => {
+    setImage(null);
   };
 
   // Helper to format date as YYYY-MM-DD
   const formatDate = (dateObj) => {
     const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-
     const day = String(dateObj.getDate()).padStart(2, '0');
-
     const year = dateObj.getFullYear();
     return `${year}-${month}-${day}`;
   };
@@ -151,9 +153,7 @@ const InvoiceUploadScreen = ({ navigation }) => {
   // Update invoice number when date changes
   useEffect(() => {
     const year = date.getFullYear();
-
     const month = String(date.getMonth() + 1).padStart(2, '0');
-
     const day = String(date.getDate()).padStart(2, '0');
     setInvoiceNumber(`#INV-${year}-${month}${day}`);
   }, [date]);
@@ -161,7 +161,6 @@ const InvoiceUploadScreen = ({ navigation }) => {
   // Date picker handler
   const handleDateConfirm = (selectedDate) => {
     setShowDatePicker(false);
-
     if (selectedDate) {
       setDate(selectedDate);
     }
@@ -186,7 +185,17 @@ const InvoiceUploadScreen = ({ navigation }) => {
             <View style={{ width: 28 }} />
           </View>
 
-
+          {/* Upload Box */}
+          {/* <TouchableOpacity style={styles.uploadBox} onPress={pickImage}>
+            {image ? (
+              <Image source={{ uri: image }} style={styles.preview} />
+            ) : (
+              <View style={styles.uploadPlaceholder}>
+                <Ionicons name="camera-outline" size={48} color={Colors.gray300} />
+                <Text style={styles.uploadText}>Tap to scan or upload invoice</Text>
+              </View>
+            )}
+          </TouchableOpacity> */}
 
           {/* Invoice Details */}
           <Text style={styles.sectionTitle}>Invoice Details</Text>
@@ -294,7 +303,6 @@ const InvoiceUploadScreen = ({ navigation }) => {
   );
 };
 
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -329,7 +337,34 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: 2,
   },
-
+  uploadBox: {
+    width: '100%',
+    aspectRatio: 1.6,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: Colors.gray200,
+    backgroundColor: Colors.gray100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.xl,
+    overflow: 'hidden',
+    alignSelf: 'center',
+  },
+  uploadPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  uploadText: {
+    marginTop: Spacing.md,
+    color: Colors.gray400,
+    ...Typography.body,
+    textAlign: 'center',
+  },
+  preview: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
   sectionTitle: {
     fontFamily: Typography.fontBold,
     fontSize: Typography.xl,
@@ -388,6 +423,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: Spacing.md,
+  },
+  retakeButton: {
+    borderWidth: 1,
+    borderColor: Colors.gray200,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    backgroundColor: Colors.backgroundPrimary,
+  },
+  retakeText: {
+    color: Colors.gray500,
+    ...Typography.body,
   },
   modalOverlay: {
     flex: 1,

@@ -13,8 +13,9 @@ import {
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing, Typography } from '../../constants';
 import { getFormattedTodayDate } from '../../utils/dateUtils';
+import { getAndroidTitleMargin } from '../../utils/responsive';
 import DateTimePickerModal from "react-native-modal-datetime-picker";
-import { query, where, getDocs, Timestamp, orderBy, addDoc, serverTimestamp, deleteDoc } from "firebase/firestore";
+import { query, where, getDocs, Timestamp, orderBy, addDoc, serverTimestamp } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantSubCollection } from "../../utils/firestoreHelpers";
 import { uploadPdfToStorage, uploadPdfToStorageTemporary, generatePdfFileName } from "../../utils/pdfUpload";
@@ -22,40 +23,28 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 
-
 const InvoicesDownloadsScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
-
   const [selectedRange, setSelectedRange] = useState(null); // Changed from '7' to null
   const [startDate, setStartDate] = useState(null);
-
   const [endDate, setEndDate] = useState(null);
-
   const [invoices, setInvoices] = useState([]);
-
   const [showStartPicker, setShowStartPicker] = useState(false);
-
   const [showEndPicker, setShowEndPicker] = useState(false);
-
   const [recentDownloads, setRecentDownloads] = useState([]);
-
   const today = getFormattedTodayDate();
 
   useEffect(() => {
     const fetchInvoicesInRange = async () => {
       if (!restaurantId || !startDate || !endDate) return;
-
       
       const start = Timestamp.fromDate(new Date(startDate.setHours(0,0,0,0)));
-
       const end = Timestamp.fromDate(new Date(endDate.setHours(23,59,59,999)));
-
       const q = query(
         getRestaurantCollection(restaurantId, "invoices"),
         where("createdAt", ">=", start),
         where("createdAt", "<=", end)
       );
-
       const snapshot = await getDocs(q);
       setInvoices(snapshot.docs.map(doc => ({
         ...doc.data(),
@@ -77,166 +66,111 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
         "invoices", 
         "recent_downloads"
       );
-
       const q = query(recentDownloadsRef, orderBy("createdAt", "desc"));
-
       const snapshot = await getDocs(q);
-
       const downloads = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
       }));
       setRecentDownloads(downloads);
-    } catch (e) {}
+    } catch (e) {
+      console.error("Failed to fetch recent downloads", e);
+    }
   };
 
   useEffect(() => {
     fetchRecentDownloads();
   }, [restaurantId]);
 
-
-  const renderDownloadItem = ({ item }) => {
-    // Helper function to handle local file access
-    const handleLocalFileAccess = async (fileUri) => {
-      try {
-        const fileInfo = await FileSystem.getInfoAsync(fileUri);
-
-        if (fileInfo.exists) {
-          await Sharing.shareAsync(fileUri, { mimeType: 'application/pdf' });
+  const renderDownloadItem = ({ item }) => (
+    <TouchableOpacity
+      style={styles.downloadItem}
+      onPress={() => {
+        if (item.link && item.link.startsWith('http')) {
+          Linking.openURL(item.link);
         } else {
-          Alert.alert(
-            'File Not Found', 
-            'This file is no longer accessible. It may have been moved or deleted.',
-            [
-              {
-                text: 'Remove Invalid Download',
-                onPress: () => removeInvalidDownload(item.id),
-                style: 'destructive'
-              },
-              {
-                text: 'OK',
-                style: 'cancel'
-              }
-            ]
-          );
+          Alert.alert('Invalid Link', 'This download link is not accessible.');
         }
-      } catch (error) {Alert.alert('Error', 'Could not access this file.');
-      }
-    };
-
-    // Helper function to remove invalid downloads
-    const removeInvalidDownload = async (downloadId) => {
-      try {
-        const downloadRef = getRestaurantSubCollection(
-          restaurantId,
-          "downloads",
-          "invoices", 
-          "recent_downloads"
-        ).doc(downloadId);
-
-        await deleteDoc(downloadRef);
-        
-        // Update local state
-        setRecentDownloads(prev => prev.filter(download => download.id !== downloadId));
-        Alert.alert('Success', 'Invalid download removed.');
-      } catch (error) {Alert.alert('Error', 'Could not remove the invalid download.');
-      }
-    };
-
-    return (
+      }}
+    >
+      <MaterialIcons name="description" size={28} color="#E53935" style={{ marginRight: 12 }} />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.downloadName}>
+          {(item.name || item.id).replace(/\.pdf$/i, '')}
+        </Text>
+        <Text style={styles.downloadMeta}>
+          {item.createdAt?.toDate
+            ? item.createdAt.toDate().toLocaleDateString()
+            : ''}
+        </Text>
+      </View>
       <TouchableOpacity
-        style={styles.downloadItem}
-        onPress={() => {
-          if (item.link && item.link.startsWith('http')) {
-            Linking.openURL(item.link);
-          } else if (item.link && item.link.startsWith('file')) {
-            handleLocalFileAccess(item.link);
-          } else {
-            Alert.alert('Invalid Link', 'This download link is not accessible.');
+        onPress={async (e) => {
+          e.stopPropagation();
+          if (!item.link) {
+            Alert.alert('No Link', 'No download link available for this item.');
+            return;
+          }
+          
+          try {
+            if (item.link.startsWith('http')) {
+              // For cloud URLs, we can either open in browser or download
+              Alert.alert(
+                'Download Options',
+                'How would you like to access this file?',
+                [
+                  {
+                    text: 'Open in Browser',
+                    onPress: () => Linking.openURL(item.link)
+                  },
+                  {
+                    text: 'Download to Device',
+                    onPress: async () => {
+                      try {
+                        const fileUri = FileSystem.documentDirectory + (item.name || 'invoice.pdf');
+                        const downloadResumable = FileSystem.createDownloadResumable(item.link, fileUri);
+                        const result = await downloadResumable.downloadAsync();
+                        if (result) {
+                          await Sharing.shareAsync(result.uri, { mimeType: 'application/pdf' });
+                        }
+                      } catch (downloadError) {
+                        console.error('Download error:', downloadError);
+                        Alert.alert('Download Failed', 'Could not download the file.');
+                      }
+                    }
+                  },
+                  {
+                    text: 'Cancel',
+                    style: 'cancel'
+                  }
+                ]
+              );
+            } else if (item.link.startsWith('file')) {
+              // Legacy local files
+              await Sharing.shareAsync(item.link, { mimeType: 'application/pdf' });
+            } else {
+              Alert.alert('Invalid Link', 'This download link is not supported.');
+            }
+          } catch (error) {
+            console.error('Error handling download:', error);
+            Alert.alert('Error', 'Could not process the download.');
           }
         }}
+        style={{ padding: 8 }}
       >
-        <MaterialIcons name="description" size={28} color="#E53935" style={{ marginRight: 12 }} />
-        <View style={{ flex: 1 }}>
-          <Text style={styles.downloadName}>
-            {(item.name || item.id).replace(/\.pdf$/i, '')}
-          </Text>
-          <Text style={styles.downloadMeta}>
-            {item.createdAt?.toDate
-              ? item.createdAt.toDate().toLocaleDateString()
-              : ''}
-          </Text>
-        </View>
-        <TouchableOpacity
-          onPress={async (e) => {
-            e.stopPropagation();
-
-            if (!item.link) {
-              Alert.alert('No Link', 'No download link available for this item.');
-              return;
-            }
-            
-            try {
-              if (item.link.startsWith('http')) {
-                // For cloud URLs, we can either open in browser or download
-                Alert.alert(
-                  'Download Options',
-                  'How would you like to access this file?',
-                  [
-                    {
-                      text: 'Open in Browser',
-                      onPress: () => Linking.openURL(item.link)
-                    },
-                    {
-                      text: 'Download to Device',
-                      onPress: async () => {
-                        try {
-                          const fileUri = FileSystem.documentDirectory + (item.name || 'invoice.pdf');
-
-                          const downloadResumable = FileSystem.createDownloadResumable(item.link, fileUri);
-
-                          const result = await downloadResumable.downloadAsync();
-
-                          if (result) {
-                            await Sharing.shareAsync(result.uri, { mimeType: 'application/pdf' });
-                          }
-                        } catch (downloadError) {Alert.alert('Download Failed', 'Could not download the file.');
-                        }
-                      }
-                    },
-                    {
-                      text: 'Cancel',
-                      style: 'cancel'
-                    }
-                  ]
-                );
-              } else if (item.link.startsWith('file')) {
-                // Local files - use the helper function
-                await handleLocalFileAccess(item.link);
-              } else {
-                Alert.alert('Invalid Link', 'This download link is not supported.');
-              }
-            } catch (error) {Alert.alert('Error', 'Could not process the download.');
-            }
-          }}
-          style={{ padding: 8 }}
-        >
-          <Ionicons 
-            name={item.link && item.link.startsWith('http') ? "cloud-download-outline" : "download-outline"} 
-            size={20} 
-            color={Colors.gray300} 
-          />
-        </TouchableOpacity>
+        <Ionicons 
+          name={item.link && item.link.startsWith('http') ? "cloud-download-outline" : "download-outline"} 
+          size={20} 
+          color={Colors.gray300} 
+        />
       </TouchableOpacity>
-    );
-  };
-
+    </TouchableOpacity>
+  );
 
   const formatDate = (date) => {
     // Implement your date formatting logic here
     return date.toLocaleDateString();
   };
-
 
   const exportToPDF = async () => {
     if (!invoices.length) {
@@ -251,234 +185,205 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
       // Generate unique filename
       const fileName = generatePdfFileName('invoice', startDate, endDate);
 
-      // Calculate totals
-      const totalAmount = invoices.reduce((sum, inv) => sum + (parseFloat(inv.amount) || 0), 0);
+      // Calculate total value
+      const totalValue = invoices.reduce((sum, inv) => sum + (parseFloat(inv.amount) || 0), 0);
 
-      
       let html = `
         <!DOCTYPE html>
         <html>
         <head>
           <meta charset="utf-8">
-          <title>Invoice Records</title>
+          <title>Invoice Records Report</title>
           <style>
-            body { 
-              font-family: 'Helvetica', Arial, sans-serif; 
-              margin: 20px; 
-              color: #333; 
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+              margin: 0;
+              padding: 40px;
+              color: #333;
               line-height: 1.4;
             }
-            .logo-section {
+            .header {
               text-align: center;
-              margin-bottom: 25px;
-              padding: 15px 0;
+              margin-bottom: 40px;
+              border-bottom: 2px solid #e5e7eb;
+              padding-bottom: 30px;
             }
-            .chefflow-logo {
-              display: inline-block;
-              font-size: 36px;
-              font-weight: 700;
+            .logo {
+              font-size: 32px;
+              font-weight: bold;
               color: #2563eb;
-              text-decoration: none;
-              font-family: 'Helvetica', Arial, sans-serif;
-
-              letter-spacing: -1px;
               margin-bottom: 8px;
             }
-            .chef-icon {
-              font-size: 32px;
-              margin-right: 8px;
-              vertical-align: middle;
-            }
-            .tagline {
+            .subtitle {
               color: #6b7280;
-              font-size: 12px;
-              font-style: italic;
-              margin-top: 5px;
+              font-size: 14px;
+              margin-bottom: 30px;
             }
-            .header { 
-              text-align: center; 
-              margin-bottom: 30px; 
-              border-bottom: 2px solid #2563eb;
-              padding: 20px 0;
-              background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-              border-radius: 8px;
+            .report-title {
+              font-size: 24px;
+              font-weight: bold;
+              color: #1f2937;
+              margin-bottom: 15px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              gap: 10px;
             }
-            .header h1 { 
-              color: #2563eb; 
-              font-size: 28px; 
-              margin: 15px 0 10px 0;
-              font-weight: 600;
+            .report-meta {
+              color: #6b7280;
+              font-size: 14px;
+              margin-bottom: 5px;
             }
-            .header-info { 
-              color: #666; 
-              font-size: 14px; 
-            }
-            .summary-box {
+            .summary-section {
               background-color: #f8fafc;
-              border: 1px solid #e2e8f0;
               border-radius: 8px;
-              padding: 15px;
-              margin: 20px 0;
-              text-align: center;
+              padding: 20px;
+              margin: 30px 0;
+              border-left: 4px solid #2563eb;
             }
-            .summary-box h3 {
-              color: #2563eb;
-              margin: 0 0 10px 0;
+            .summary-title {
+              font-size: 18px;
+              font-weight: bold;
+              color: #1f2937;
+              margin-bottom: 15px;
+              display: flex;
+              align-items: center;
+              gap: 8px;
+            }
+            .summary-content {
+              font-size: 16px;
+              color: #374151;
+            }
+            .summary-value {
+              color: #16a34a;
+              font-weight: bold;
               font-size: 18px;
             }
-            .invoice-table { 
-              width: 100%; 
-              border-collapse: collapse; 
-              margin: 20px 0;
-              box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            .table-container {
+              margin: 30px 0;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              background: white;
               border-radius: 8px;
               overflow: hidden;
+              box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             }
-            .invoice-table th { 
-              background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-              color: white; 
-              font-weight: 600; 
-              font-size: 16px;
-              padding: 18px 14px; 
-              text-align: center;
-              border: none;
-            }
-            .invoice-table th:first-child { 
-              text-align: left;
-              border-radius: 8px 0 0 0; 
-            }
-            .invoice-table th:last-child { border-radius: 0 8px 0 0; }
-            .invoice-table td { 
-              padding: 14px 12px; 
-              border-bottom: 1px solid #f1f5f9;
-              font-size: 15px;
-              text-align: center;
-            }
-            .invoice-table td:first-child {
-              text-align: left;
-            }
-            .invoice-table tr:nth-child(even) { 
-              background-color: #f8fafc; 
-            }
-            .invoice-table tr:hover { 
-              background-color: #e0f2fe; 
-            }
-            .amount-cell { 
-              text-align: center; 
-              font-weight: 600; 
-              color: #059669;
-              font-size: 16px;
-            }
-            .date-cell { 
-              color: #6b7280;
-              font-size: 14px;
-              text-align: center;
-            }
-            .supplier-cell {
-              font-weight: 500;
+            th {
+              background-color: #f8fafc;
               color: #374151;
-              text-align: center;
-              font-size: 15px;
+              font-weight: 600;
+              padding: 16px 12px;
+              text-align: left;
+              border-bottom: 2px solid #e5e7eb;
+              font-size: 14px;
+            }
+            td {
+              padding: 14px 12px;
+              border-bottom: 1px solid #f1f5f9;
+              font-size: 14px;
+            }
+            tr:nth-child(even) {
+              background-color: #fafbfc;
+            }
+            tr:hover {
+              background-color: #f1f5f9;
             }
             .invoice-number {
-              font-family: 'Courier New', monospace;
-              background-color: #eff6ff;
-              padding: 6px 10px;
-              border-radius: 4px;
-              font-size: 14px;
-              color: #1d4ed8;
+              color: #2563eb;
               font-weight: 600;
             }
-            .totals-row { 
-              background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
-              color: white; 
-              font-weight: 700;
-              border-top: 3px solid #15803d;
+            .amount {
+              font-weight: 600;
+              color: #059669;
             }
-            .totals-row td { 
-              padding: 16px 12px;
-              border: none;
-              font-size: 15px;
-            }
-            .total-amount {
-              font-size: 20px;
+            .total-section {
+              background-color: #1f2937;
+              color: white;
+              padding: 20px;
+              border-radius: 8px;
+              margin: 30px 0;
               text-align: center;
             }
+            .total-label {
+              font-size: 16px;
+              margin-bottom: 5px;
+            }
+            .total-value {
+              font-size: 24px;
+              font-weight: bold;
+              color: #10b981;
+            }
             .footer {
-              margin-top: 30px;
+              margin-top: 40px;
               padding-top: 20px;
               border-top: 1px solid #e5e7eb;
               text-align: center;
               color: #6b7280;
               font-size: 12px;
+              line-height: 1.6;
             }
           </style>
         </head>
         <body>
-          <div class="logo-section">
-            <div class="chefflow-logo">
-              <span class="chef-icon">👨‍🍳</span>ChefFlow
-            </div>
-            <div class="tagline">Restaurant Management System</div>
-          </div>
-          
           <div class="header">
-            <h1>📋 Invoice Records Report</h1>
-            <div class="header-info">
-              <strong>Generated:</strong> ${new Date().toLocaleDateString('en-GB', { 
-                weekday: 'long', 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
-              })}<br>
-              <strong>Period:</strong> ${startDate ? startDate.toLocaleDateString('en-GB') : ''} - ${endDate ? endDate.toLocaleDateString('en-GB') : ''}
+            <div class="logo">👨‍🍳 ChefFlow</div>
+            <div class="subtitle">Restaurant Management System</div>
+            <div class="report-title">
+              📋 Invoice Records Report
+            </div>
+            <div class="report-meta">Generated: ${new Date().toLocaleDateString('en-GB', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            })}</div>
+            <div class="report-meta">Period: ${startDate ? startDate.toLocaleDateString('dd/MM/yyyy') : ''} - ${endDate ? endDate.toLocaleDateString('dd/MM/yyyy') : ''}</div>
+          </div>
+
+          <div class="summary-section">
+            <div class="summary-title">📊 Summary</div>
+            <div class="summary-content">
+              <strong>${invoices.length}</strong> invoices • Total Value: <span class="summary-value">£${totalValue.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
           </div>
 
-          <div class="summary-box">
-            <h3>📊 Summary</h3>
-            <p><strong>${invoices.length}</strong> invoice${invoices.length === 1 ? '' : 's'} • Total Value: <strong style="color: #16a34a;">£${totalAmount.toFixed(2)}</strong></p>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Invoice Number</th>
+                  <th>Supplier</th>
+                  <th>Amount</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${invoices.map(inv => `
+                  <tr>
+                    <td class="invoice-number">${inv.invoiceNumber || 'N/A'}</td>
+                    <td>${inv.supplier || 'Unknown'}</td>
+                    <td class="amount">£${(parseFloat(inv.amount) || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td>${inv.createdAt ? inv.createdAt.toLocaleDateString('en-GB', { 
+                      day: 'numeric',
+                      month: 'short', 
+                      year: 'numeric'
+                    }) : 'N/A'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
           </div>
 
-          <table class="invoice-table">
-            <thead>
-              <tr>
-                <th style="width: 30%;">Invoice Number</th>
-                <th style="width: 35%;">Supplier</th>
-                <th style="width: 20%;">Amount</th>
-                <th style="width: 15%;">Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${invoices.map((inv, index) => `
-                <tr>
-                  <td><span class="invoice-number">${inv.invoiceNumber || `INV-${String(index + 1).padStart(3, '0')}`}</span></td>
-                  <td class="supplier-cell">${inv.supplier || 'Unknown Supplier'}</td>
-                  <td class="amount-cell">£${parseFloat(inv.amount || 0).toFixed(2)}</td>
-                  <td class="date-cell">${inv.date ? new Date(inv.date).toLocaleDateString('en-GB', { 
-                    day: '2-digit', 
-                    month: 'short', 
-                    year: 'numeric' 
-                  }) : 'N/A'}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-            <tfoot>
-              <tr class="totals-row">
-                <td colspan="2" style="text-align: right; font-size: 18px;">
-                  <strong>📋 GRAND TOTAL (${invoices.length} invoice${invoices.length === 1 ? '' : 's'})</strong>
-                </td>
-                <td class="total-amount" style="font-size: 20px;">
-                  <strong>£${totalAmount.toFixed(2)}</strong>
-                </td>
-                <td></td>
-              </tr>
-            </tfoot>
-          </table>
+          <div class="total-section">
+            <div class="total-label">📊 GRAND TOTAL (${invoices.length} invoices)</div>
+            <div class="total-value">£${totalValue.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          </div>
 
           <div class="footer">
-            <p>This report was automatically generated by <strong>ChefFlow</strong> restaurant management system.<br>
-            All amounts are in British Pounds (GBP). Report generated at ${new Date().toLocaleTimeString('en-GB')}.</p>
+            This report was automatically generated by <strong>ChefFlow</strong> restaurant management system.<br>
+            All amounts are in British Pounds (GBP). Report generated at ${new Date().toLocaleTimeString('en-GB', { hour12: false })}.
           </div>
         </body>
         </html>
@@ -489,17 +394,21 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
         html, 
         base64: false, 
         fileName: fileName.replace('.pdf', '') 
-      });// Use temporary storage solution until Firebase Storage blob issues are resolved
+      });
+
+      console.log('📄 PDF generated locally:', uri);
+
+      // Use temporary storage solution until Firebase Storage blob issues are resolved
       let downloadURL;
       try {
         // Try the original method first
-        downloadURL = await uploadPdfToStorage(uri, fileName, restaurantId, 'invoices');} catch (storageError) {// Use temporary local storage as fallback
-        downloadURL = await uploadPdfToStorageTemporary(uri, fileName, restaurantId, 'invoices');// Alert user about local storage limitation
-        Alert.alert(
-          'Local Storage Used',
-          'Your PDF has been saved locally. Note that local files may have limited accessibility across app sessions.',
-          [{ text: 'OK' }]
-        );
+        downloadURL = await uploadPdfToStorage(uri, fileName, restaurantId, 'invoices');
+        console.log('☁️ PDF uploaded to Firebase Storage successfully:', downloadURL);
+      } catch (storageError) {
+        console.log('⚠️ Firebase Storage upload failed, using temporary local storage:', storageError.message);
+        // Use temporary local storage as fallback
+        downloadURL = await uploadPdfToStorageTemporary(uri, fileName, restaurantId, 'invoices');
+        console.log('💾 PDF saved to local storage:', downloadURL);
       }
 
       // Save download info to Firestore with the cloud URL
@@ -510,9 +419,17 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
           link: downloadURL, // This is now a cloud URL, not local path
           createdAt: serverTimestamp(),
         }
-      );// Clean up the original temporary file (keep the permanent copy)
+      );
+
+      console.log('💾 Download record saved to Firestore');
+
+      // Clean up the original temporary file (keep the permanent copy)
       try {
-        await FileSystem.deleteAsync(uri, { idempotent: true });} catch (cleanupError) {}
+        await FileSystem.deleteAsync(uri, { idempotent: true });
+        console.log('🗑️ Original temporary file cleaned up');
+      } catch (cleanupError) {
+        console.warn('⚠️ Could not clean up original temporary file:', cleanupError);
+      }
 
       // Refresh the downloads list
       await fetchRecentDownloads();
@@ -534,7 +451,9 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
         ]
       );
 
-    } catch (error) {Alert.alert(
+    } catch (error) {
+      console.error('❌ Error exporting PDF:', error);
+      Alert.alert(
         'Export Failed', 
         'Failed to export PDF: ' + error.message,
         [{ text: 'OK' }]
@@ -542,12 +461,9 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
     }
   };
 
-
   const handleRangeSelect = (days) => {
     setSelectedRange(days);
-
     const end = new Date();
-
     const start = new Date();
     start.setDate(end.getDate() - (parseInt(days) - 1));
     setStartDate(start);
@@ -557,7 +473,7 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
-        <View style={[styles.headerRow]}>
+        <View style={styles.headerRow}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
             <Text style={styles.backArrow}>‹</Text>
           </TouchableOpacity>
@@ -654,7 +570,6 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
   );
 };
 
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -676,6 +591,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginHorizontal: Spacing.lg,
     marginVertical: Spacing.md,
+    paddingTop: Spacing.lg + getAndroidTitleMargin(),
   },
   backButton: {
     marginRight: Spacing.md,
@@ -688,7 +604,6 @@ const styles = StyleSheet.create({
   },
   titleContainer: {
     flex: 1,
-    marginTop: Spacing.xl,
   },
   title: {
     fontFamily: Typography.fontBold,

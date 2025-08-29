@@ -24,16 +24,11 @@ import { auth } from '../../../firebase';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 
-
 function PreviousHandoversScreen() {
   const navigation = useNavigation();
-
   const { restaurantId } = useRestaurant();
-
   const [handovers, setHandovers] = useState([]);
-
   const [loading, setLoading] = useState(true);
-
   const [refreshing, setRefreshing] = useState(false);
 
   // Initialize navigation bar for immersive experience
@@ -45,7 +40,6 @@ function PreviousHandoversScreen() {
   // Get current date
   const getCurrentDate = () => {
     const date = new Date();
-
     const options = { weekday: 'long', month: 'long', day: 'numeric' };
     return date.toLocaleDateString('en-US', options);
   };
@@ -59,22 +53,32 @@ function PreviousHandoversScreen() {
       const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
       
       // Check if date is valid
-      if (isNaN(date.getTime())) {return 'Invalid Date';
+      if (isNaN(date.getTime())) {
+        console.warn('Invalid date:', timestamp);
+        return 'Invalid Date';
       }
       
       const options = { weekday: 'long', month: 'long', day: 'numeric' };
       return date.toLocaleDateString('en-US', options);
-    } catch (error) {return 'Date Error';
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return 'Date Error';
     }
   };
 
   // Fetch handovers from Firestore
   const fetchHandovers = async () => {
-    if (!restaurantId || !auth.currentUser) {setLoading(false);
+    if (!restaurantId || !auth.currentUser) {
+      console.log('No restaurant ID or user available');
+      setLoading(false);
       return;
     }
 
-    try {const handoversRef = getRestaurantCollection(restaurantId, 'handovers');
+    try {
+      console.log('🔍 Fetching handovers for user:', auth.currentUser.uid);
+      console.log('🏪 Restaurant ID:', restaurantId);
+      
+      const handoversRef = getRestaurantCollection(restaurantId, 'handovers');
       
       // Create query to get handovers by current user, sorted by creation date
       const q = query(
@@ -83,29 +87,37 @@ function PreviousHandoversScreen() {
         orderBy('createdAt', 'desc'),
         limit(50) // Limit to last 50 handovers for performance
       );
-const querySnapshot = await getDocs(q);
-
+      
+      console.log('📋 Executing Firestore query...');
+      const querySnapshot = await getDocs(q);
       const handoversList = [];
       
       querySnapshot.forEach((doc) => {
-        const data = doc.data();handoversList.push({
+        const data = doc.data();
+        console.log('📄 Found handover:', doc.id, data);
+        handoversList.push({
           id: doc.id,
           ...data
         });
-      });setHandovers(handoversList);
+      });
       
-    } catch (error) {// If the composite index error occurs, fall back to a simpler query
-      if (error.code === 'failed-precondition' || error.message.includes('index')) {try {
+      console.log(`✅ Successfully fetched ${handoversList.length} handovers for user`);
+      setHandovers(handoversList);
+      
+    } catch (error) {
+      console.error('❌ Error fetching handovers:', error);
+      
+      // If the composite index error occurs, fall back to a simpler query
+      if (error.code === 'failed-precondition' || error.message.includes('index')) {
+        console.log('🔄 Trying fallback query without orderBy...');
+        try {
           const handoversRef = getRestaurantCollection(restaurantId, 'handovers');
-
           const fallbackQuery = query(
             handoversRef,
             where('createdBy', '==', auth.currentUser.uid)
           );
-
           
           const querySnapshot = await getDocs(fallbackQuery);
-
           const handoversList = [];
           
           querySnapshot.forEach((doc) => {
@@ -119,12 +131,16 @@ const querySnapshot = await getDocs(q);
           // Sort manually by createdAt
           handoversList.sort((a, b) => {
             const dateA = a.createdAt?.toDate() || new Date(0);
-
             const dateB = b.createdAt?.toDate() || new Date(0);
             return dateB - dateA; // Descending order (newest first)
-          });setHandovers(handoversList);
+          });
           
-        } catch (fallbackError) {Alert.alert('Error', 'Failed to load previous handovers. Please try again.');
+          console.log(`✅ Fallback query successful: ${handoversList.length} handovers`);
+          setHandovers(handoversList);
+          
+        } catch (fallbackError) {
+          console.error('❌ Fallback query also failed:', fallbackError);
+          Alert.alert('Error', 'Failed to load previous handovers. Please try again.');
         }
       } else {
         Alert.alert('Error', 'Failed to load previous handovers. Please check your connection.');
@@ -135,14 +151,23 @@ const querySnapshot = await getDocs(q);
     }
   };
 
-  useEffect(() => {if (restaurantId && auth.currentUser) {
+  useEffect(() => {
+    console.log('🔄 PreviousHandoversScreen mounted, checking dependencies...');
+    console.log('Restaurant ID:', restaurantId);
+    console.log('User:', auth.currentUser?.uid);
+    
+    if (restaurantId && auth.currentUser) {
       fetchHandovers();
-    } else {// Set a timeout to retry if dependencies are not available
+    } else {
+      console.log('⏳ Waiting for restaurant ID and user authentication...');
+      // Set a timeout to retry if dependencies are not available
       const timeout = setTimeout(() => {
         if (restaurantId && auth.currentUser) {
           fetchHandovers();
         } else {
-          setLoading(false);}
+          setLoading(false);
+          console.log('⚠️ Dependencies not available after timeout');
+        }
       }, 2000);
       
       return () => clearTimeout(timeout);
@@ -152,15 +177,17 @@ const querySnapshot = await getDocs(q);
   // Handle refresh
   const onRefresh = async () => {
     setRefreshing(true);
-
     await fetchHandovers();
   };
 
   // Handle PDF download
   const handleDownloadPDF = async (handover) => {
     try {
+      console.log('📄 Attempting to download PDF for handover:', handover.id);
+      
       if (handover.pdf && handover.pdf.trim() !== '') {
         // If PDF link exists, provide download options
+        console.log('Opening PDF:', handover.pdf);
         Alert.alert(
           'Download PDF',
           `Download handover from ${formatDate(handover.createdAt)}?`,
@@ -182,18 +209,17 @@ const querySnapshot = await getDocs(q);
                 try {
                   if (handover.pdf.startsWith('http')) {
                     const fileUri = FileSystem.documentDirectory + `handover_${handover.id}.pdf`;
-
                     const downloadResumable = FileSystem.createDownloadResumable(handover.pdf, fileUri);
-
                     const result = await downloadResumable.downloadAsync();
-
                     if (result) {
                       await Sharing.shareAsync(result.uri, { mimeType: 'application/pdf' });
                     }
                   } else {
                     Alert.alert('Invalid Link', 'This PDF link is not supported for download.');
                   }
-                } catch (downloadError) {Alert.alert('Download Failed', 'Could not download the PDF.');
+                } catch (downloadError) {
+                  console.error('Download error:', downloadError);
+                  Alert.alert('Download Failed', 'Could not download the PDF.');
                 }
               }
             }
@@ -209,14 +235,15 @@ const querySnapshot = await getDocs(q);
           ]
         );
       }
-    } catch (error) {Alert.alert('Error', 'Failed to process PDF request');
+    } catch (error) {
+      console.error('Error handling PDF download:', error);
+      Alert.alert('Error', 'Failed to process PDF request');
     }
   };
 
   // Render handover item
   const renderHandoverItem = (handover) => {
     const hasIssues = handover.problems || handover.stockIssues;
-
     const hasNotes = handover.serviceNotes;
     
     return (
@@ -332,7 +359,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.xl,
-    paddingTop: Spacing.xl + getAndroidTitleMargin(),
+    paddingTop: Spacing.lg + getAndroidTitleMargin(),
   },
   backButton: {
     padding: Spacing.sm,

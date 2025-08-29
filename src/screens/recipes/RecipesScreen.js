@@ -12,16 +12,11 @@ import { getRestaurantDoc, getRestaurantSubCollection, getRestaurantNestedCollec
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 
-
 function RecipesScreen() {
   const { restaurantId } = useRestaurant();
-
   const [categories, setCategories] = useState([]);
-
   const [selectedCategory, setSelectedCategory] = useState("All Recipes");
-
   const [recipesByCategory, setRecipesByCategory] = useState({});
-
   const [loading, setLoading] = useState(true);
 
   // Hide Android navigation bar
@@ -29,42 +24,52 @@ function RecipesScreen() {
   navigationBar.useHidden(); // Use hidden mode for complete immersion
   const [search, setSearch] = useState(""); // <-- Add search state
   const [refreshing, setRefreshing] = useState(false);
-
   const navigation = useNavigation();
 
   // Fetch categories and all recipes from category documents
   const fetchCategoriesAndRecipes = async () => {
-    if (!restaurantId) {return;
+    if (!restaurantId) {
+      console.log('No restaurantId available, skipping fetch');
+      return;
     }
     setLoading(true);
-    try {// Fetch category names from restaurants/{restaurantId}/recipes/categories/names
+    try {
+      console.log('Fetching recipes for restaurantId:', restaurantId);
+      
+      // Fetch category names from restaurants/{restaurantId}/recipes/categories/names
       const categoryNamesDoc = await getDoc(getRestaurantDoc(restaurantId, "recipes", "categories"));
-
       let categoryNames = [];
-
       
       if (categoryNamesDoc.exists()) {
         const data = categoryNamesDoc.data();
-        categoryNames = data?.names || [];} else {categoryNames = ['Desserts', 'Main', 'Starters']; // Fallback categories
+        categoryNames = data?.names || [];
+        console.log('Fetched category names from Firestore:', categoryNames);
+      } else {
+        console.warn('No category names document found, using default categories');
+        categoryNames = ['Desserts', 'Main', 'Starters']; // Fallback categories
       }
       
       const fetchedCategories = [];
-
       const recipesObj = {};
-
       let allRecipes = [];
 
       // For each category name from the array
-      for (const categoryName of categoryNames) {fetchedCategories.push({ id: categoryName, name: categoryName });
+      for (const categoryName of categoryNames) {
+        console.log('Processing category:', categoryName);
+        fetchedCategories.push({ id: categoryName, name: categoryName });
 
         try {
           // Fetch recipe documents directly from the category path
           // Path: restaurants/{restaurantId}/recipes/categories/{categoryName}/
           const categoryRecipesSnapshot = await getDocs(getRestaurantSubCollection(restaurantId, "recipes", "categories", categoryName));
-const categoryRecipes = [];
+          console.log(`Found ${categoryRecipesSnapshot.size} documents in category: ${categoryName}`);
+          
+          const categoryRecipes = [];
           categoryRecipesSnapshot.forEach(recipeDoc => {
             const recipeData = recipeDoc.data();
-const recipe = { 
+            console.log(`Recipe document ${recipeDoc.id} data:`, recipeData);
+            
+            const recipe = { 
               id: recipeDoc.id, 
               ...recipeData, 
               category: categoryName
@@ -73,16 +78,21 @@ const recipe = {
             allRecipes.push(recipe);
           });
           
-          recipesObj[categoryName] = categoryRecipes;} catch (categoryError) {recipesObj[categoryName] = [];
+          recipesObj[categoryName] = categoryRecipes;
+          console.log(`Fetched ${categoryRecipes.length} recipes from category: ${categoryName}`);
+        } catch (categoryError) {
+          console.error(`Error fetching recipes for category ${categoryName}:`, categoryError);
+          recipesObj[categoryName] = [];
         }
       }
 
       setCategories(fetchedCategories);
       setRecipesByCategory({ "All Recipes": allRecipes, ...recipesObj });
-
+      console.log('Total recipes fetched:', allRecipes.length);
+      console.log('Categories:', fetchedCategories.map(cat => cat.name));
       if (!selectedCategory && fetchedCategories.length > 0) setSelectedCategory("All Recipes");
     } catch (error) {
-      // Error handling
+      console.error("Error fetching categories/recipes:", error);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -96,7 +106,6 @@ const recipe = {
   // Swipe down to refresh handler
   const onRefresh = async () => {
     setRefreshing(true);
-
     await fetchCategoriesAndRecipes();
   };
 
@@ -106,21 +115,24 @@ const recipe = {
     
     // Get all possible name fields from the recipe
     const recipeName = recipe["recipe name"] || recipe.name || recipe.title || recipe.recipeName || "";
-
     const ingredients = recipe.ingredients || "";
-
     const description = recipe.description || "";
-
     const category = recipe.category || "";
     
     // Debug: Log recipe data for first few recipes when searching
     if (search && recipe === (recipesByCategory[selectedCategory] || [])[0]) {
-      // Debug info available in development mode
+      console.log('🔍 Search Debug - Recipe fields:', {
+        'recipe name': recipe["recipe name"],
+        name: recipe.name,
+        title: recipe.title,
+        recipeName: recipe.recipeName,
+        searchTerm: search,
+        allFields: Object.keys(recipe)
+      });
     }
     
     // Create a searchable string with all relevant fields
     const searchableText = `${recipeName} ${ingredients} ${description} ${category}`.toLowerCase();
-
     const searchTerm = search.toLowerCase().trim();
     
     // Return true if any part matches
@@ -220,7 +232,7 @@ const recipe = {
                   source={{ 
                     uri: Array.isArray(recipe.image) && recipe.image.length > 0 
                       ? recipe.image[0] 
-                      : recipe.image || "https://placehold.co/200x200?text=No+Image" 
+                      : recipe.image || "https://placehold.co/200x200?text=No+Image"
                   }} 
                   style={styles.recipeImage} 
                   resizeMode="cover" 
