@@ -31,6 +31,7 @@ import PreviousHandoversScreen from './src/screens/handover/PreviousHandoversScr
 import TemperatureRecordsScreen from './src/screens/temperature/TemperatureRecordsScreen';
 import TemperatureDownloadsScreen from './src/screens/temperature/TemperatureDownloadsScreen';
 
+
 const Stack = createStackNavigator();
 
 const downloadables = [
@@ -45,6 +46,7 @@ const downloadables = [
 
 export default function App() {
   const [isUserLoggedIn, setIsUserLoggedIn] = React.useState(null); // null = checking, true = logged in, false = not logged in
+  const [servicesInitialized, setServicesInitialized] = React.useState(false);
   
   let [fontsLoaded] = useFonts({
     Inter_400Regular,
@@ -63,14 +65,15 @@ export default function App() {
     return unsubscribe;
   }, []);
 
-  // Initialize Firestore error handling and clear cache for new project
+  // Initialize Firestore error handling and connection setup
   React.useEffect(() => {
     const initializeApp = async () => {
       try {
         console.log('🚀 Initializing ChefFlow app...');
         
-        // Clear any cached data from the previous project
-        await clearFirestoreCache();
+        // NOTE: Cache clearing is now manual - uncomment if needed for debugging
+        // await clearFirestoreCache();
+        
         
         // Reset the connection to ensure fresh start
         await resetFirestoreConnection();
@@ -81,9 +84,11 @@ export default function App() {
         // Initialize Android navigation bar (hide bottom buttons)
         await navigationBarUtils.initializeNavigationBar();
         
+        setServicesInitialized(true);
         console.log('✅ ChefFlow app initialization complete');
       } catch (error) {
         console.error('❌ Error during app initialization:', error);
+        setServicesInitialized(true); // Continue anyway
       }
     };
 
@@ -91,7 +96,7 @@ export default function App() {
   }, []);
 
   // Show loading screen while checking auth or loading fonts
-  if (!fontsLoaded || isUserLoggedIn === null) {
+  if (!fontsLoaded || isUserLoggedIn === null || !servicesInitialized) {
     return (
       <View style={{ 
         flex: 1, 

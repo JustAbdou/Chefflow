@@ -14,6 +14,8 @@ import { getDocs, addDoc, serverTimestamp, query, orderBy, deleteDoc, updateDoc,
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
 import { auth, db } from "../../../firebase";
+import { initializeOfflineSync, offlineCapableCreate, offlineCapableUpdate, offlineCapableDelete, cachePrepItemsOffline, getCachedPrepItems } from '../../utils/offlineSync';
+import { addNetworkListener, getNetworkStatus } from '../../utils/networkMonitor';
 
 export default function PrepListsScreen() {
   const { restaurantId } = useRestaurant();
@@ -25,6 +27,7 @@ export default function PrepListsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showFlagModal, setShowFlagModal] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState(null);
+  const [isNetworkOnline, setIsNetworkOnline] = useState(true);
 
   // Hide Android navigation bar
   const navigationBar = useNavigationBar();
@@ -34,50 +37,226 @@ export default function PrepListsScreen() {
     setCurrentDate(getFormattedTodayDate());
   }, []);
 
+  // Initialize network monitoring
   useEffect(() => {
-    const fetchPrepItems = async () => {
+    if (!restaurantId) return;
+
+    // Set initial network status
+    setIsNetworkOnline(getNetworkStatus());
+
+    // Add network listener
+    const removeNetworkListener = addNetworkListener((isOnline) => {
+      setIsNetworkOnline(isOnline);
+      console.log(`🌐 Network status updated: ${isOnline ? 'Online' : 'Offline'}`);
+    });
+
+    return removeNetworkListener;
+  }, [restaurantId]);
+
+  // Initialize offline sync
+  useEffect(() => {
+    if (!restaurantId) return;
+
+    const initSync = async () => {
+      await initializeOfflineSync(restaurantId);
+    };
+
+    initSync();
+  }, [restaurantId]);
+
+  useEffect(() => {
+    const fetchPrepItems = async (forceRefresh = false) => {
       if (!restaurantId) return;
       
       setLoading(true);
       try {
-        const q = query(getRestaurantCollection(restaurantId, "preplist"), orderBy("createdAt", "desc"));
-        const snapshot = await getDocs(q);
-        const items = snapshot.docs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            ...data,
-            createdAt: data.createdAt, // Ensure createdAt is preserved
-            completed: false, // or from Firestore if you store it
-          };
-        });
-        setPrepItems(items);
+        if (isNetworkOnline || forceRefresh) {
+          // Try to fetch from Firestore
+          const q = query(getRestaurantCollection(restaurantId, "preplist"), orderBy("createdAt", "desc"));
+          const snapshot = await getDocs(q);
+          const items = snapshot.docs.map(doc => {
+            const data = doc.data();
+            
+            // Validate and sanitize the createdAt field
+            let validCreatedAt = data.createdAt;
+            if (data.createdAt) {
+              try {
+                // Test if the date is valid
+                let testDate;
+                if (typeof data.createdAt.toDate === 'function') {
+                  testDate = data.createdAt.toDate();
+                } else if (data.createdAt instanceof Date) {
+                  testDate = data.createdAt;
+                } else {
+                  testDate = new Date(data.createdAt);
+                }
+                
+                // If the date is invalid, use current date as fallback
+                if (isNaN(testDate.getTime())) {
+                  console.warn('Invalid createdAt date for item:', doc.id, data.createdAt);
+                  validCreatedAt = new Date();
+                }
+              } catch (error) {
+                console.error('Error validating createdAt for item:', doc.id, error);
+                validCreatedAt = new Date();
+              }
+            } else {
+              // If no createdAt, use current date
+              validCreatedAt = new Date();
+            }
+            
+            return {
+              id: doc.id,
+              ...data,
+              createdAt: validCreatedAt,
+              completed: false,
+            };
+          });
+          
+          // Sort items by creation date (newest first) before setting state
+          const sortedItems = items.sort((a, b) => {
+            let aTime, bTime;
+            
+            try {
+              if (a.createdAt && typeof a.createdAt.toDate === 'function') {
+                aTime = a.createdAt.toDate();
+              } else if (a.createdAt instanceof Date && !isNaN(a.createdAt.getTime())) {
+                aTime = a.createdAt;
+              } else {
+                aTime = new Date(0);
+              }
+            } catch (error) {
+              aTime = new Date(0);
+            }
+            
+            try {
+              if (b.createdAt && typeof b.createdAt.toDate === 'function') {
+                bTime = b.createdAt.toDate();
+              } else if (b.createdAt instanceof Date && !isNaN(b.createdAt.getTime())) {
+                bTime = b.createdAt;
+              } else {
+                bTime = new Date(0);
+              }
+            } catch (error) {
+              bTime = new Date(0);
+            }
+            
+            return bTime.getTime() - aTime.getTime(); // Newest first
+          });
+          
+          setPrepItems(sortedItems);
+          
+          // Cache items for offline use
+          await cachePrepItemsOffline(items);
+          console.log(`📱 Cached ${items.length} prep items for offline use`);
+        } else {
+          // Use cached data when offline
+          console.log('📱 Offline mode: Using cached prep items');
+          const cachedItems = await getCachedPrepItems();
+          setPrepItems(cachedItems);
+          // If offline and no cache was loaded, show empty state
+          if (cachedItems.length > 0) {
+            console.log(`📱 Loaded ${cachedItems.length} prep items from cache (offline)`);
+          }
+        }
       } catch (error) {
         console.error("Error fetching prep items:", error);
+        // Try to load from cache as fallback
+        const cachedItems = await getCachedPrepItems();
+        setPrepItems(cachedItems);
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     };
     fetchPrepItems();
-  }, [restaurantId]);
+  }, [restaurantId, isNetworkOnline]);
 
   // Pull to refresh handler
   const onRefresh = async () => {
+    if (!isNetworkOnline) {
+      console.log('📱 Offline: Cannot refresh, using cached data');
+      return;
+    }
+    
     setRefreshing(true);
     try {
       const q = query(getRestaurantCollection(restaurantId, "preplist"), orderBy("createdAt", "desc"));
       const snapshot = await getDocs(q);
       const items = snapshot.docs.map(doc => {
         const data = doc.data();
+        
+        // Validate and sanitize the createdAt field
+        let validCreatedAt = data.createdAt;
+        if (data.createdAt) {
+          try {
+            // Test if the date is valid
+            let testDate;
+            if (typeof data.createdAt.toDate === 'function') {
+              testDate = data.createdAt.toDate();
+            } else if (data.createdAt instanceof Date) {
+              testDate = data.createdAt;
+            } else {
+              testDate = new Date(data.createdAt);
+            }
+            
+            // If the date is invalid, use current date as fallback
+            if (isNaN(testDate.getTime())) {
+              console.warn('Invalid createdAt date for item in refresh:', doc.id, data.createdAt);
+              validCreatedAt = new Date();
+            }
+          } catch (error) {
+            console.error('Error validating createdAt for item in refresh:', doc.id, error);
+            validCreatedAt = new Date();
+          }
+        } else {
+          // If no createdAt, use current date
+          validCreatedAt = new Date();
+        }
+        
         return {
           id: doc.id,
           ...data,
-          createdAt: data.createdAt, // Ensure createdAt is preserved
+          createdAt: validCreatedAt,
           completed: false,
         };
       });
-      setPrepItems(items);
+      
+      // Sort items by creation date (newest first) before setting state
+      const sortedItems = items.sort((a, b) => {
+        let aTime, bTime;
+        
+        try {
+          if (a.createdAt && typeof a.createdAt.toDate === 'function') {
+            aTime = a.createdAt.toDate();
+          } else if (a.createdAt instanceof Date && !isNaN(a.createdAt.getTime())) {
+            aTime = a.createdAt;
+          } else {
+            aTime = new Date(0);
+          }
+        } catch (error) {
+          aTime = new Date(0);
+        }
+        
+        try {
+          if (b.createdAt && typeof b.createdAt.toDate === 'function') {
+            bTime = b.createdAt.toDate();
+          } else if (b.createdAt instanceof Date && !isNaN(b.createdAt.getTime())) {
+            bTime = b.createdAt;
+          } else {
+            bTime = new Date(0);
+          }
+        } catch (error) {
+          bTime = new Date(0);
+        }
+        
+        return bTime.getTime() - aTime.getTime(); // Newest first
+      });
+      
+      setPrepItems(sortedItems);
+      
+      // Update cache
+      await cachePrepItemsOffline(items);
     } catch (error) {
       console.error("Error refreshing prep items:", error);
     } finally {
@@ -95,8 +274,7 @@ export default function PrepListsScreen() {
       )
     );
     try {
-      const itemRef = getRestaurantDoc(restaurantId, "preplist", id);
-      await updateDoc(itemRef, { done: !currentDone });
+      await offlineCapableUpdate(restaurantId, "preplist", id, { done: !currentDone }, isNetworkOnline);
     } catch (error) {
       console.error("Error updating done field:", error);
     }
@@ -138,16 +316,26 @@ export default function PrepListsScreen() {
         }
       }
 
-      const docRef = await addDoc(getRestaurantCollection(restaurantId, "preplist"), {
+      // Create the item for local state (with offline ID if needed)
+      const itemData = {
         name: itemName,
-        done: false, // Default to not done
-        createdAt: serverTimestamp(),
+        done: false,
+        createdAt: isNetworkOnline ? serverTimestamp() : new Date(), // Use current date for offline items
         createdBy: userInfo,
-      });
-      setPrepItems((items) => [
-        { id: docRef.id, name: itemName, done: false, completed: false, flagged: false, createdBy: userInfo },
-        ...items,
-      ]);
+      };
+
+      const result = await offlineCapableCreate(restaurantId, "preplist", itemData, isNetworkOnline);
+      
+      // Ensure the new item has a proper createdAt timestamp for sorting
+      const newItem = { 
+        ...result, 
+        completed: false, 
+        flagged: false,
+        createdAt: new Date() // Always use current date for immediate display
+      };
+      
+      // Add the new item directly to the top of the list for immediate visibility
+      setPrepItems((items) => [newItem, ...items]);
       setShowAddModal(false);
     } catch (error) {
       console.error("Error adding prep item:", error);
@@ -169,8 +357,7 @@ export default function PrepListsScreen() {
       )
     );
     try {
-      const itemRef = getRestaurantDoc(restaurantId, "preplist", selectedItemId);
-      await updateDoc(itemRef, { urgent: flagValue });
+      await offlineCapableUpdate(restaurantId, "preplist", selectedItemId, { urgent: flagValue }, isNetworkOnline);
     } catch (error) {
       console.error("Error updating urgent flag:", error);
     }
@@ -193,9 +380,9 @@ export default function PrepListsScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              // Delete all items from Firestore
+              // Delete all items using offline-capable delete
               const deletePromises = prepItems.map(item =>
-                deleteDoc(getRestaurantDoc(restaurantId, "preplist", item.id))
+                offlineCapableDelete(restaurantId, "preplist", item.id, isNetworkOnline)
               );
               
               await Promise.all(deletePromises);
@@ -205,6 +392,79 @@ export default function PrepListsScreen() {
             } catch (error) {
               console.error("Error clearing all prep items:", error);
               Alert.alert("Error", "Failed to delete all items. Please try again.");
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const clearYesterdayItems = async () => {
+    // Sort prep items by creation date (newest first) for getting yesterday's items
+    const sortedItems = [...prepItems].sort((a, b) => {
+      let aTime, bTime;
+      
+      try {
+        if (a.createdAt && typeof a.createdAt.toDate === 'function') {
+          aTime = a.createdAt.toDate();
+        } else if (a.createdAt instanceof Date && !isNaN(a.createdAt.getTime())) {
+          aTime = a.createdAt;
+        } else if (a.createdAt) {
+          const parsedDate = new Date(a.createdAt);
+          aTime = !isNaN(parsedDate.getTime()) ? parsedDate : new Date(0);
+        } else {
+          aTime = new Date(0);
+        }
+      } catch (error) {
+        aTime = new Date(0);
+      }
+      
+      try {
+        if (b.createdAt && typeof b.createdAt.toDate === 'function') {
+          bTime = b.createdAt.toDate();
+        } else if (b.createdAt instanceof Date && !isNaN(b.createdAt.getTime())) {
+          bTime = b.createdAt;
+        } else if (b.createdAt) {
+          const parsedDate = new Date(b.createdAt);
+          bTime = !isNaN(parsedDate.getTime()) ? parsedDate : new Date(0);
+        } else {
+          bTime = new Date(0);
+        }
+      } catch (error) {
+        bTime = new Date(0);
+      }
+      
+      return bTime.getTime() - aTime.getTime();
+    });
+    
+    const { yesterdayItems } = groupPrepItemsByDay(sortedItems);
+    if (!restaurantId || yesterdayItems.length === 0) return;
+    
+    Alert.alert(
+      "Clear Yesterday's Items",
+      `Are you sure you want to delete all ${yesterdayItems.length} items from yesterday's list? This action cannot be undone.`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Delete All",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              // Delete yesterday's items using offline-capable delete
+              const deletePromises = yesterdayItems.map(item =>
+                offlineCapableDelete(restaurantId, "preplist", item.id, isNetworkOnline)
+              );
+              
+              await Promise.all(deletePromises);
+              
+              // Remove yesterday's items from local state
+              setPrepItems(items => items.filter(item => !yesterdayItems.find(yi => yi.id === item.id)));
+            } catch (error) {
+              console.error("Error clearing yesterday's prep items:", error);
+              Alert.alert("Error", "Failed to delete yesterday's items. Please try again.");
             }
           }
         }
@@ -250,46 +510,21 @@ export default function PrepListsScreen() {
     </TouchableOpacity>
   );
 
-  // Sort prep items by creation date (newest first) - no flag priority sorting
-  const sortedPrepItems = [...prepItems].sort((a, b) => {
-    // Sort by creation date and time (newest first)
-    let aTime, bTime;
-    
-    // Handle Firestore timestamps properly
-    if (a.createdAt && typeof a.createdAt.toDate === 'function') {
-      aTime = a.createdAt.toDate();
-    } else if (a.createdAt instanceof Date) {
-      aTime = a.createdAt;
-    } else if (a.createdAt) {
-      aTime = new Date(a.createdAt);
-    } else {
-      aTime = new Date(0); // Fallback for missing date
-    }
-    
-    if (b.createdAt && typeof b.createdAt.toDate === 'function') {
-      bTime = b.createdAt.toDate();
-    } else if (b.createdAt instanceof Date) {
-      bTime = b.createdAt;
-    } else if (b.createdAt) {
-      bTime = new Date(b.createdAt);
-    } else {
-      bTime = new Date(0); // Fallback for missing date
-    }
-    
-    // Debug: Log the full timestamps for verification
-    if (__DEV__) {
-      console.log('Sorting prep items:', {
-        itemA: { name: a.name, createdAt: aTime.toISOString() },
-        itemB: { name: b.name, createdAt: bTime.toISOString() }
-      });
-    }
-    
-    // Compare full date and time (newest first)
-    return bTime.getTime() - aTime.getTime();
-  });
-
   // Group items by day (today/yesterday based on 3 AM cutoff)
-  const { todayItems, yesterdayItems } = groupPrepItemsByDay(sortedPrepItems);
+  // Note: prepItems are now kept sorted in state, so no need to sort again
+  let todayItems = [];
+  let yesterdayItems = [];
+  
+  try {
+    const grouped = groupPrepItemsByDay(prepItems);
+    todayItems = grouped.todayItems || [];
+    yesterdayItems = grouped.yesterdayItems || [];
+  } catch (error) {
+    console.error('Error grouping prep items by day:', error);
+    // Fallback: just show all items as today's items
+    todayItems = prepItems;
+    yesterdayItems = [];
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -312,6 +547,13 @@ export default function PrepListsScreen() {
             </View>
           </View>
         </View>
+
+        {/* Offline Indicator */}
+        {!isNetworkOnline && (
+          <View style={styles.offlineIndicator}>
+            <Text style={styles.offlineText}>📱 Offline Mode - Changes will sync when connected</Text>
+          </View>
+        )}
 
         {/* Prep Items List */}
         <View style={styles.listContainer}>
@@ -341,6 +583,13 @@ export default function PrepListsScreen() {
                 <>
                   <View style={styles.sectionHeader}>
                     <Text style={[styles.sectionTitle, styles.yesterdaySectionTitle]}>Yesterday's List</Text>
+                    <TouchableOpacity
+                      style={styles.clearAllButton}
+                      onPress={clearYesterdayItems}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.clearAllText}>Clear All</Text>
+                    </TouchableOpacity>
                   </View>
                   {yesterdayItems.map(renderPrepItem)}
                 </>
@@ -528,5 +777,19 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 12,
     elevation: 8,
+  },
+  offlineIndicator: {
+    backgroundColor: Colors.warning,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+    borderRadius: 8,
+  },
+  offlineText: {
+    color: Colors.background,
+    fontSize: Typography.sm,
+    fontWeight: Typography.medium,
+    textAlign: 'center',
   },
 });

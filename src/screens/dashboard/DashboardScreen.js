@@ -14,7 +14,7 @@ import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { Colors, Spacing, Typography } from '../../constants';
 import { getAndroidTitleMargin } from '../../utils/responsive';
 import useNavigationBar from '../../hooks/useNavigationBar';
-import { onSnapshot, query, orderBy, limit, where, doc, getDoc } from "firebase/firestore";
+import { onSnapshot, query, orderBy, limit, where, doc, getDoc, collectionGroup } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection } from "../../utils/firestoreHelpers";
 import { auth, db } from "../../../firebase";
@@ -68,12 +68,34 @@ const DashboardScreen = ({ navigation }) => {
     const unsubPrep = onSnapshot(
       getRestaurantCollection(restaurantId, "preplist"),
       (snapshot) => {
-        // Count items where done is false or doesn't exist
-        const incompleteCount = snapshot.docs.filter(doc => {
+        // Debug: Log all items to see their structure
+        console.log(`📊 Dashboard: Analyzing ${snapshot.size} prep items:`);
+        
+        const pendingItems = [];
+        const completedItems = [];
+        
+        snapshot.docs.forEach((doc, index) => {
           const data = doc.data();
-          return !data.done; // This will be true if done is false or undefined
-        }).length;
-        setPrepCount(incompleteCount);
+          console.log(`📋 Item ${index + 1}:`, { 
+            id: doc.id, 
+            name: data.name, 
+            done: data.done, 
+            typeof_done: typeof data.done 
+          });
+          
+          // Count only items that are explicitly not done (false, undefined, or null)
+          if (data.done === true) {
+            completedItems.push({ id: doc.id, name: data.name });
+          } else {
+            pendingItems.push({ id: doc.id, name: data.name });
+          }
+        });
+        
+        console.log(`📊 Dashboard: ${pendingItems.length} pending, ${completedItems.length} completed`);
+        console.log('📝 Pending items:', pendingItems.map(item => item.name));
+        console.log('✅ Completed items:', completedItems.map(item => item.name));
+        
+        setPrepCount(pendingItems.length);
       },
       (error) => {
         console.warn('Prep list listener error:', error);
@@ -97,6 +119,7 @@ const DashboardScreen = ({ navigation }) => {
     );
     
     // Real-time listener for recipes with error handling
+    // Query the recipes document to get category count
     const unsubRecipes = onSnapshot(
       getRestaurantCollection(restaurantId, "recipes"), 
       (snapshot) => {
@@ -146,13 +169,14 @@ const DashboardScreen = ({ navigation }) => {
       }
     );
 
-    // Real-time listener for tasks (closing checklist) with error handling
+    // Real-time listener for tasks (closing checklist) with error handling - show all tasks
     const unsubTasks = onSnapshot(
-      query(
-        getRestaurantCollection(restaurantId, "closinglist"),
-        where("done", "==", false)
-      ),
+      getRestaurantCollection(restaurantId, "closinglist"),
       (snapshot) => {
+        console.log('📊 Dashboard: Found', snapshot.size, 'closing tasks');
+        snapshot.docs.forEach((doc, index) => {
+          console.log(`📋 Dashboard Task ${index + 1}:`, doc.data());
+        });
         setTaskCount(snapshot.size);
       },
       (error) => {
@@ -197,7 +221,7 @@ const DashboardScreen = ({ navigation }) => {
     { 
       title: 'Closing', 
       value: taskCount.toString(), 
-      subtitle: taskCount === 1 ? 'Task pending' : 'Tasks pending',
+      subtitle: taskCount === 1 ? 'Task total' : 'Tasks total',
       icon: 'shield-checkmark-outline',
       iconColor: Colors.primary,
     },

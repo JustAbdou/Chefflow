@@ -86,7 +86,7 @@ const TemperatureRecordsScreen = ({ navigation }) => {
         <Text style={styles.recordLocation}>{item.fridgeName || 'Unknown Fridge'}</Text>
         <Text style={styles.recordDate}>
           {item.date || (item.createdAt?.seconds 
-            ? new Date(item.createdAt.seconds * 1000).toLocaleDateString()
+            ? new Date(item.createdAt.seconds * 1000).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
             : 'Unknown Date')}
         </Text>
       </View>
@@ -111,7 +111,7 @@ const TemperatureRecordsScreen = ({ navigation }) => {
         <Text style={styles.recordLocation}>{item.supplierName || 'Unknown Supplier'}</Text>
         <Text style={styles.recordDate}>
           {item.date || (item.createdAt?.seconds 
-            ? new Date(item.createdAt.seconds * 1000).toLocaleDateString()
+            ? new Date(item.createdAt.seconds * 1000).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
             : 'Unknown Date')}
         </Text>
       </View>
@@ -138,7 +138,7 @@ const TemperatureRecordsScreen = ({ navigation }) => {
         <Text style={styles.recordLocation}>{item.item || 'Unknown Item'}</Text>
         <Text style={styles.recordDate}>
           {item.createdAt?.seconds 
-            ? new Date(item.createdAt.seconds * 1000).toLocaleDateString()
+            ? new Date(item.createdAt.seconds * 1000).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
             : 'Unknown Date'}
         </Text>
       </View>

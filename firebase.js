@@ -11,31 +11,36 @@ import {
   setDoc
 } from "firebase/firestore";
 import { 
-  getAuth
+  initializeAuth,
+  getReactNativePersistence
 } from "firebase/auth";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   getStorage, 
   ref as storageRef, 
   uploadBytes, 
   getDownloadURL 
 } from "firebase/storage";
-import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 
 const firebaseConfig = {
-  apiKey: "replace-with-your-api-key",
-  authDomain: "replace-with-your-auth-domain",
-  projectId: "replace-with-your-project-id",
-  storageBucket: "replace-with-your-storage-bucket",
-  messagingSenderId: "replace-with-your-messaging-sender-id",
-  appId: "replace-with-your-app-id",
-  measurementId: "replace-with-your-measurement-id"
+  apiKey: "AIzaSyBYv2mXBoG331ihDQobE4JGv6hqCZxFd84",
+  authDomain: "chefflow-c8581.firebaseapp.com",
+  projectId: "chefflow-c8581",
+  storageBucket: "chefflow-c8581.firebasestorage.app",
+  messagingSenderId: "461434725803",
+  appId: "1:461434725803:web:b18a455453fd8343cadeee",
+  measurementId: "G-Q3B29F6JN3"
 };
+
+
 
 // Initialize Firebase app
 const app = initializeApp(firebaseConfig);
 
-// Initialize Auth
-export const auth = getAuth(app);
+// Initialize Firebase Authentication with AsyncStorage persistence
+export const auth = initializeAuth(app, {
+  persistence: getReactNativePersistence(AsyncStorage)
+});
 
 // Initialize Firestore with specific settings to resolve connection issues
 export const db = getFirestore(app);

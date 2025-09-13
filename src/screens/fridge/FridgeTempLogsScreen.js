@@ -16,6 +16,12 @@ import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
 import { auth } from "../../../firebase";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
+import { 
+  getCachedFridgeLogs, 
+  cacheFridgeLogsOffline,
+  addFridgeLogOffline
+} from "../../utils/offlineSync";
+import { addNetworkListener, getNetworkStatus } from '../../utils/networkMonitor';
 
 import { Colors } from "../../constants/Colors";
 import { Typography } from "../../constants/Typography";
@@ -31,18 +37,61 @@ export default function FridgeTempLogsScreen({ navigation }) {
   const [tempInputs, setTempInputs] = useState({});
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
+  const [isLoadingFromCache, setIsLoadingFromCache] = useState(false);
 
   // Hide Android navigation bar
   const navigationBar = useNavigationBar();
   navigationBar.useHidden(); // Use hidden mode for complete immersion
   const [refreshing, setRefreshing] = useState(false);
 
+  // Monitor network status
+  useEffect(() => {
+    if (!restaurantId) return;
+
+    // Set initial network status
+    setIsOffline(!getNetworkStatus());
+
+    // Add network listener
+    const removeNetworkListener = addNetworkListener((isOnline) => {
+      setIsOffline(!isOnline);
+      console.log(`🌐 Fridge logs network status updated: ${isOnline ? 'Online' : 'Offline'}`);
+    });
+
+    return removeNetworkListener;
+  }, [restaurantId]);
+
   // Fetch logs from fridgelogs collection with date filter
   const fetchLogs = async () => {
     if (!restaurantId) return;
     
     try {
-      console.log('🔍 Fetching fridge logs for restaurant:', restaurantId);
+      // Try to load from cache first for instant display
+      setIsLoadingFromCache(true);
+      const cachedLogs = await getCachedFridgeLogs();
+      if (cachedLogs && cachedLogs.length > 0) {
+        console.log(`📱 Loaded ${cachedLogs.length} fridge logs from cache`);
+        setLogs(cachedLogs);
+        setIsLoadingFromCache(false);
+        
+        // Initialize temp inputs with cached values
+        const initialInputs = {};
+        cachedLogs.forEach(log => {
+          initialInputs[`${log.id}_AM`] = log.temperatureAM || '';
+          initialInputs[`${log.id}_PM`] = log.temperaturePM || '';
+        });
+        setTempInputs(initialInputs);
+      } else {
+        setIsLoadingFromCache(false);
+      }
+      
+      // If offline, only show cached data
+      if (isOffline) {
+        console.log('� Offline mode: showing cached fridge logs only');
+        return;
+      }
+      
+      console.log('�🔍 Fetching fridge logs for restaurant:', restaurantId);
       
       // Create date range for the selected date (start and end of day)
       const startOfDay = new Date(selectedDate);
@@ -50,47 +99,140 @@ export default function FridgeTempLogsScreen({ navigation }) {
       const endOfDay = new Date(selectedDate);
       endOfDay.setHours(23, 59, 59, 999);
       
-      const startTimestamp = Timestamp.fromDate(startOfDay);
-      const endTimestamp = Timestamp.fromDate(endOfDay);
-      
+      // Get existing logs from fridgelogs collection
       const fridgeLogsCollection = getRestaurantCollection(restaurantId, 'fridgelogs');
-      const q = query(
-        fridgeLogsCollection,
-        where("createdAt", ">=", startTimestamp),
-        where("createdAt", "<=", endTimestamp),
-        orderBy("createdAt", "desc")
-      );
-      const logsSnapshot = await getDocs(q);
+      const allLogsSnapshot = await getDocs(fridgeLogsCollection);
       
-      let allLogs = [];
-      logsSnapshot.forEach(docSnap => {
+      let logsForDate = [];
+      
+      allLogsSnapshot.forEach(docSnap => {
         const data = docSnap.data();
-        allLogs.push({
-          id: docSnap.id,
-          ...data,
-        });
+        const logDate = data.createdAt;
+        
+        // Include logs for the selected date OR legacy logs without createdAt
+        if (!logDate) {
+          // Legacy log without createdAt - include for all dates
+          logsForDate.push({
+            id: docSnap.id,
+            fridgeName: data.fridgeName || data.name || 'Unknown Fridge',
+            fridgeId: data.fridgeId || docSnap.id,
+            temperatureAM: data.temperatureAM || '',
+            temperaturePM: data.temperaturePM || '',
+            createdAt: data.createdAt,
+            done: data.done || false,
+            isNew: false
+          });
+        } else {
+          // Safely handle date conversion
+          try {
+            let logDateTime;
+            if (typeof logDate.toDate === 'function') {
+              logDateTime = logDate.toDate();
+            } else if (logDate instanceof Date) {
+              logDateTime = logDate;
+            } else {
+              logDateTime = new Date(logDate);
+            }
+            
+            // Validate the date and check if it's in range
+            if (!isNaN(logDateTime.getTime()) && logDateTime >= startOfDay && logDateTime <= endOfDay) {
+              // Log within the selected date range
+              logsForDate.push({
+                id: docSnap.id,
+                fridgeName: data.fridgeName || data.name || 'Unknown Fridge',
+                fridgeId: data.fridgeId || docSnap.id,
+                temperatureAM: data.temperatureAM || '',
+                temperaturePM: data.temperaturePM || '',
+                createdAt: data.createdAt,
+                done: data.done || false,
+                isNew: false
+              });
+            }
+          } catch (error) {
+            console.warn('Error parsing date for fridge log:', docSnap.id, error);
+            // Include log anyway for backward compatibility
+            logsForDate.push({
+              id: docSnap.id,
+              fridgeName: data.fridgeName || data.name || 'Unknown Fridge',
+              fridgeId: data.fridgeId || docSnap.id,
+              temperatureAM: data.temperatureAM || '',
+              temperaturePM: data.temperaturePM || '',
+              createdAt: data.createdAt,
+              done: data.done || false,
+              isNew: false
+            });
+          }
+        }
+      });
+      
+      // Remove empty/duplicate entries when there are actual temperature logs
+      const filteredLogsForDate = [];
+      const fridgeNameTracker = new Map(); // Track which fridges have actual temperature data
+      
+      // First pass: identify fridges with actual temperature data
+      logsForDate.forEach(log => {
+        const hasActualData = (log.temperatureAM && log.temperatureAM.trim() !== '') || 
+                             (log.temperaturePM && log.temperaturePM.trim() !== '') ||
+                             log.done === true;
+        
+        if (hasActualData) {
+          const fridgeKey = log.fridgeName.toLowerCase();
+          if (!fridgeNameTracker.has(fridgeKey) || 
+              fridgeNameTracker.get(fridgeKey).priority < 2) {
+            fridgeNameTracker.set(fridgeKey, { log, priority: 2 }); // Priority 2 for logs with data
+          }
+        }
+      });
+      
+      // Second pass: add empty logs only if no actual data exists for that fridge
+      logsForDate.forEach(log => {
+        const fridgeKey = log.fridgeName.toLowerCase();
+        const hasActualData = (log.temperatureAM && log.temperatureAM.trim() !== '') || 
+                             (log.temperaturePM && log.temperaturePM.trim() !== '') ||
+                             log.done === true;
+        
+        if (!hasActualData && !fridgeNameTracker.has(fridgeKey)) {
+          fridgeNameTracker.set(fridgeKey, { log, priority: 1 }); // Priority 1 for empty logs
+        }
+      });
+      
+      // Extract the final filtered logs and sort them
+      fridgeNameTracker.forEach(({ log }) => {
+        filteredLogsForDate.push(log);
       });
       
       // Sort logs by fridgeName for consistent display
-      allLogs.sort((a, b) => {
-        if (a.fridgeName && b.fridgeName) {
-          return a.fridgeName.localeCompare(b.fridgeName);
-        }
-        return 0;
+      filteredLogsForDate.sort((a, b) => {
+        const nameA = a.fridgeName.toLowerCase();
+        const nameB = b.fridgeName.toLowerCase();
+        return nameA.localeCompare(nameB);
       });
       
-      console.log(`✅ Fetched ${allLogs.length} fridge logs`);
-      setLogs(allLogs);
+      console.log(`✅ Fetched ${logsForDate.length} raw fridge logs, filtered to ${filteredLogsForDate.length} for ${selectedDate.toDateString()}`);
+      console.log('📋 Logs to display:', filteredLogsForDate.map(log => ({ name: log.fridgeName, id: log.id, hasData: (log.temperatureAM || log.temperaturePM || log.done) })));
+      setLogs(filteredLogsForDate);
+      
+      // Cache the fetched logs
+      await cacheFridgeLogsOffline(logsForDate);
       
       // Initialize temp inputs with current values
       const initialInputs = {};
-      allLogs.forEach(log => {
+      filteredLogsForDate.forEach(log => {
         initialInputs[`${log.id}_AM`] = log.temperatureAM || '';
         initialInputs[`${log.id}_PM`] = log.temperaturePM || '';
       });
       setTempInputs(initialInputs);
     } catch (error) {
       console.error('❌ Error fetching fridge logs:', error);
+      
+      // On error, try to load from cache
+      const cachedLogs = await getCachedFridgeLogs();
+      if (cachedLogs && cachedLogs.length > 0) {
+        console.log('📱 Fallback to cached fridge logs after error');
+        setLogs(cachedLogs);
+      } else {
+        setLogs([]);
+      }
     }
   };
 
@@ -113,13 +255,34 @@ export default function FridgeTempLogsScreen({ navigation }) {
 
   // Helper for time display
   const formatTime = (createdAt) => {
-    if (!createdAt) return "--:--";
-    const date = new Date(createdAt.seconds * 1000);
-    let hours = date.getHours();
-    let minutes = date.getMinutes();
-    const ampm = hours >= 12 ? "PM" : "AM";
-    hours = hours % 12 || 12;
-    return `${hours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
+    if (!createdAt) return "New Entry";
+    
+    try {
+      let date;
+      if (typeof createdAt.toDate === 'function') {
+        date = createdAt.toDate();
+      } else if (createdAt instanceof Date) {
+        date = createdAt;
+      } else if (createdAt.seconds) {
+        date = new Date(createdAt.seconds * 1000);
+      } else {
+        date = new Date(createdAt);
+      }
+      
+      // Validate the date
+      if (isNaN(date.getTime())) {
+        return "Invalid Date";
+      }
+      
+      let hours = date.getHours();
+      let minutes = date.getMinutes();
+      const ampm = hours >= 12 ? "PM" : "AM";
+      hours = hours % 12 || 12;
+      return `${hours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
+    } catch (error) {
+      console.warn('Error formatting time:', error);
+      return "Invalid Time";
+    }
   };
 
   // Helper to check if fridge has been logged
@@ -235,27 +398,49 @@ export default function FridgeTempLogsScreen({ navigation }) {
         return;
       }
 
-      // Prepare update data
-      const updateData = {
-        done: true // Always set done to true when saving log
+      // Prepare data for saving
+      const saveData = {
+        fridgeName: fridgeDoc.fridgeName,
+        fridgeId: fridgeDoc.fridgeId,
+        done: true,
+        createdAt: Timestamp.fromDate(selectedDate), // Use selected date
+        loggedBy: {
+          userId: auth.currentUser.uid,
+          email: auth.currentUser.email
+        }
       };
 
-      // Only update temperatures that have values
+      // Only add temperatures that have values
       if (amTempValue && amTempValue.trim() !== '') {
-        updateData.temperatureAM = amTempValue.trim();
+        saveData.temperatureAM = amTempValue.trim();
       }
       if (pmTempValue && pmTempValue.trim() !== '') {
-        updateData.temperaturePM = pmTempValue.trim();
+        saveData.temperaturePM = pmTempValue.trim();
       }
 
-      // Update the document
-      const fridgeDocRef = getRestaurantDoc(restaurantId, 'fridgelogs', logId);
-      await updateDoc(fridgeDocRef, updateData);
-
-      console.log('✅ Complete log saved successfully');
-      
-      // Refresh logs
-      await fetchLogs();
+      // Use offline-capable function
+      if (isOffline) {
+        console.log('📱 Offline mode: adding fridge log to pending queue');
+        await addFridgeLogOffline(restaurantId, saveData);
+        
+        // Update local state immediately for instant feedback
+        const updatedLogs = logs.map(log => 
+          log.id === logId 
+            ? { ...log, temperatureAM: saveData.temperatureAM || '', temperaturePM: saveData.temperaturePM || '', done: true, isOffline: true }
+            : log
+        );
+        setLogs(updatedLogs);
+        await cacheFridgeLogsOffline(updatedLogs);
+      } else {
+        // Online: save directly to Firestore
+        const fridgeLogsCollection = getRestaurantCollection(restaurantId, 'fridgelogs');
+        saveData.recordedAt = serverTimestamp(); // When the record was actually created
+        await addDoc(fridgeLogsCollection, saveData);
+        console.log('✅ New fridge log created successfully');
+        
+        // Refresh logs
+        await fetchLogs();
+      }
     } catch (error) {
       console.error('❌ Error saving complete log:', error);
     }
@@ -294,7 +479,15 @@ export default function FridgeTempLogsScreen({ navigation }) {
             <Text style={styles.backArrow}>‹</Text>
           </TouchableOpacity>
           <View style={styles.headerContent}>
-            <Text style={styles.title}>Fridge Temperature</Text>
+            <View style={styles.titleRow}>
+              <Text style={styles.title}>Fridge Temperature</Text>
+              {isOffline && (
+                <View style={styles.offlineIndicator}>
+                  <Ionicons name="cloud-offline-outline" size={16} color="#dc2626" />
+                  <Text style={styles.offlineText}>Offline</Text>
+                </View>
+              )}
+            </View>
             <Text style={styles.subtitle}>Daily Temperature Logs</Text>
           </View>
         </View>
@@ -324,8 +517,8 @@ export default function FridgeTempLogsScreen({ navigation }) {
             filteredLogs.length === 0 ? (
               <View style={styles.emptyState}>
                 <Ionicons name="thermometer-outline" size={48} color="#CBD5E1" />
-                <Text style={styles.emptyText}>No temperature logs for today</Text>
-                <Text style={styles.emptySubtext}>Temperature logs will appear here when fridges are configured</Text>
+                <Text style={styles.emptyText}>No fridges configured</Text>
+                <Text style={styles.emptySubtext}>Configure fridges in restaurant settings to start logging temperatures</Text>
               </View>
             ) : (
               filteredLogs.map((log, idx) => {
@@ -422,12 +615,14 @@ export default function FridgeTempLogsScreen({ navigation }) {
       <DateTimePickerModal
         isVisible={showDatePicker}
         mode="date"
+        date={selectedDate}
         onConfirm={(date) => {
           setSelectedDate(date);
           setShowDatePicker(false);
         }}
         onCancel={() => setShowDatePicker(false)}
         maximumDate={new Date()}
+        themeVariant="light"
       />
     </SafeAreaView>
   );
@@ -457,11 +652,32 @@ const styles = StyleSheet.create({
   headerContent: {
     flex: 1,
   },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 2,
+  },
   title: {
     fontSize: 24,
     fontFamily: Typography.fontBold,
     color: Colors.textPrimary,
-    marginBottom: 2,
+    flex: 1,
+  },
+  offlineIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fef2f2",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#fca5a5",
+  },
+  offlineText: {
+    fontSize: 12,
+    fontFamily: Typography.fontMedium,
+    color: "#dc2626",
+    marginLeft: 4,
   },
   subtitle: {
     fontSize: 16,

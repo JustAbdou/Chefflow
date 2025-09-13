@@ -102,6 +102,7 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
           {item.createdAt?.toDate
             ? item.createdAt.toDate().toLocaleDateString()
             : ''}
+          {item.isLocalStorage && ' • Local only'}
         </Text>
       </View>
       <TouchableOpacity
@@ -113,8 +114,22 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
           }
           
           try {
-            if (item.link.startsWith('http')) {
-              // For cloud URLs, we can either open in browser or download
+            if (item.isLocalStorage && item.link.startsWith('file')) {
+              // Local storage files - direct sharing
+              try {
+                // Check if file still exists
+                const fileInfo = await FileSystem.getInfoAsync(item.link);
+                if (fileInfo.exists) {
+                  await Sharing.shareAsync(item.link, { mimeType: 'application/pdf' });
+                } else {
+                  Alert.alert('File Not Found', 'This file is no longer available on the device.');
+                }
+              } catch (error) {
+                console.error('Local file access error:', error);
+                Alert.alert('Error', 'Could not access the local file.');
+              }
+            } else if (item.link.startsWith('http')) {
+              // Cloud storage files
               Alert.alert(
                 'Download Options',
                 'How would you like to access this file?',
@@ -145,9 +160,6 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
                   }
                 ]
               );
-            } else if (item.link.startsWith('file')) {
-              // Legacy local files
-              await Sharing.shareAsync(item.link, { mimeType: 'application/pdf' });
             } else {
               Alert.alert('Invalid Link', 'This download link is not supported.');
             }
@@ -159,9 +171,10 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
         style={{ padding: 8 }}
       >
         <Ionicons 
-          name={item.link && item.link.startsWith('http') ? "cloud-download-outline" : "download-outline"} 
+          name={item.isLocalStorage ? "phone-portrait-outline" : 
+                item.link && item.link.startsWith('http') ? "cloud-download-outline" : "download-outline"} 
           size={20} 
-          color={Colors.gray300} 
+          color={item.isLocalStorage ? "#f59e0b" : Colors.gray300} 
         />
       </TouchableOpacity>
     </TouchableOpacity>
@@ -339,7 +352,7 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
               month: 'long', 
               day: 'numeric' 
             })}</div>
-            <div class="report-meta">Period: ${startDate ? startDate.toLocaleDateString('dd/MM/yyyy') : ''} - ${endDate ? endDate.toLocaleDateString('dd/MM/yyyy') : ''}</div>
+            <div class="report-meta">Period: ${startDate ? startDate.toLocaleDateString('en-GB') : ''} - ${endDate ? endDate.toLocaleDateString('en-GB') : ''}</div>
           </div>
 
           <div class="summary-section">
@@ -400,6 +413,7 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
 
       // Use temporary storage solution until Firebase Storage blob issues are resolved
       let downloadURL;
+      let isLocalStorage = false;
       try {
         // Try the original method first
         downloadURL = await uploadPdfToStorage(uri, fileName, restaurantId, 'invoices');
@@ -409,14 +423,16 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
         // Use temporary local storage as fallback
         downloadURL = await uploadPdfToStorageTemporary(uri, fileName, restaurantId, 'invoices');
         console.log('💾 PDF saved to local storage:', downloadURL);
+        isLocalStorage = true;
       }
 
-      // Save download info to Firestore with the cloud URL
+      // Save download info to Firestore with the download URL
       await addDoc(
         getRestaurantSubCollection(restaurantId, "downloads", "invoices", "recent_downloads"),
         {
           name: fileName,
-          link: downloadURL, // This is now a cloud URL, not local path
+          link: downloadURL,
+          isLocalStorage: isLocalStorage, // Flag to indicate storage type
           createdAt: serverTimestamp(),
         }
       );
@@ -435,8 +451,10 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
       await fetchRecentDownloads();
 
       Alert.alert(
-        'Success!', 
-        'Invoice records have been generated and saved. You can access them from the Recent Downloads section.',
+        'PDF Generated!', 
+        isLocalStorage 
+          ? 'Invoice records have been generated and saved locally on this device. Note: The file will only be accessible from this device until cloud storage is available.'
+          : 'Invoice records have been generated and uploaded to cloud storage. You can access them from the Recent Downloads section.',
         [
           {
             text: 'View Downloads',

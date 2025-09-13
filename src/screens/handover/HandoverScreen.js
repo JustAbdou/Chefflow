@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -11,6 +11,8 @@ import {
   Platform,
   Alert
 } from 'react-native';
+import { Ionicons } from "@expo/vector-icons";
+import NetInfo from '@react-native-community/netinfo';
 import { Colors } from '../../constants/Colors';
 import { Typography } from '../../constants/Typography';
 import { Spacing } from '../../constants/Spacing';
@@ -22,6 +24,7 @@ import { auth } from '../../../firebase';
 import { addDoc, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
 import { getRestaurantCollection } from '../../utils/firestoreHelpers';
 import { uploadPdfToStorage, uploadPdfToStorageTemporary, generatePdfFileName } from '../../utils/pdfUpload';
+import { addHandoverOffline } from '../../utils/offlineSync';
 import * as Print from 'expo-print';
 import * as FileSystem from 'expo-file-system';
 
@@ -32,10 +35,19 @@ function HandoverScreen() {
   const [stockIssues, setStockIssues] = useState('');
   const [problemsDuringShift, setProblemsDuringShift] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
 
   // Hide Android navigation bar
   const navigationBar = useNavigationBar();
   navigationBar.useHidden(); // Use hidden mode for complete immersion
+
+  // Monitor network status
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      setIsOffline(!state.isConnected);
+    });
+    return unsubscribe;
+  }, []);
 
   // Get current date
   const getCurrentDate = () => {
@@ -77,7 +89,7 @@ function HandoverScreen() {
     setIsSubmitting(true);
 
     try {
-      console.log('📝 Submitting handover to Firestore...');
+      console.log('📝 Submitting handover...');
       
       // Prepare handover data
       const handoverData = {
@@ -96,38 +108,62 @@ function HandoverScreen() {
 
       console.log('📋 Handover data:', handoverData);
 
-      // Get handovers collection reference
-      const handoversCollection = getRestaurantCollection(restaurantId, 'handovers');
-      
-      // Submit to Firestore first
-      const docRef = await addDoc(handoversCollection, handoverData);
-      console.log('✅ Handover submitted successfully with ID:', docRef.id);
-
-      // Generate PDF for this handover
-      try {
-        console.log('📄 Generating PDF for handover...');
-        const pdfUrl = await generateHandoverPDF(handoverData, docRef.id);
+      if (isOffline) {
+        console.log('📱 Offline mode: adding handover to pending queue');
+        await addHandoverOffline(restaurantId, handoverData);
         
-        if (pdfUrl) {
-          // Update the handover document with the PDF URL
-          await updateDoc(docRef, { pdf: pdfUrl });
-          console.log('✅ PDF generated and URL saved:', pdfUrl);
-        }
-      } catch (pdfError) {
-        console.error('⚠️ PDF generation failed, but handover was saved:', pdfError);
-        // Don't fail the entire operation if PDF generation fails
-      }
-      
-      // Navigate to completion screen with handover data
-      navigation.navigate('HandoverCompletion', {
-        handoverData: {
-          serviceNotes: handoverData.serviceNotes,
-          stockIssues: handoverData.stockIssues,
-          problems: handoverData.problems,
-          docId: docRef.id,
-        }
-      });
+        Alert.alert(
+          "Handover Saved",
+          "Your handover has been saved and will be synced when you're back online.",
+          [
+            {
+              text: "OK",
+              onPress: () => {
+                // Navigate to completion screen
+                navigation.navigate('HandoverCompletion', {
+                  handoverData: {
+                    serviceNotes: handoverData.serviceNotes,
+                    stockIssues: handoverData.stockIssues,
+                    problems: handoverData.problems,
+                    docId: 'offline',
+                    isOffline: true,
+                  }
+                });
+              }
+            }
+          ]
+        );
+      } else {
+        // Online: save directly to Firestore
+        const handoversCollection = getRestaurantCollection(restaurantId, 'handovers');
+        const docRef = await addDoc(handoversCollection, handoverData);
+        console.log('✅ Handover submitted successfully with ID:', docRef.id);
 
+        // Generate PDF for this handover
+        try {
+          console.log('📄 Generating PDF for handover...');
+          const pdfUrl = await generateHandoverPDF(handoverData, docRef.id);
+          
+          if (pdfUrl) {
+            // Update the handover document with the PDF URL
+            await updateDoc(docRef, { pdf: pdfUrl });
+            console.log('✅ PDF generated and URL saved:', pdfUrl);
+          }
+        } catch (pdfError) {
+          console.error('⚠️ PDF generation failed, but handover was saved:', pdfError);
+          // Don't fail the entire operation if PDF generation fails
+        }
+        
+        // Navigate to completion screen with handover data
+        navigation.navigate('HandoverCompletion', {
+          handoverData: {
+            serviceNotes: handoverData.serviceNotes,
+            stockIssues: handoverData.stockIssues,
+            problems: handoverData.problems,
+            docId: docRef.id,
+          }
+        });
+      }
     } catch (error) {
       console.error('❌ Error submitting handover:', error);
       Alert.alert(
@@ -184,7 +220,7 @@ function HandoverScreen() {
           <body>
             <div class="header">
               <h1>Kitchen Handover Report</h1>
-              <p>Generated on: ${currentDate.toLocaleDateString()} at ${currentDate.toLocaleTimeString()}</p>
+              <p>Generated on: ${currentDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} at ${currentDate.toLocaleTimeString('en-GB')}</p>
             </div>
             
             <div class="status ${status.includes('Problems') ? 'issues' : status.includes('Stock') ? 'issues' : status.includes('Notes') ? 'notes' : 'clean'}">
@@ -281,7 +317,15 @@ function HandoverScreen() {
             <Text style={styles.backButtonText}>‹</Text>
           </TouchableOpacity>
           <View style={styles.titleInfo}>
-            <Text style={styles.title}>Kitchen Handover</Text>
+            <View style={styles.titleRow}>
+              <Text style={styles.title}>Kitchen Handover</Text>
+              {isOffline && (
+                <View style={styles.offlineIndicator}>
+                  <Ionicons name="cloud-offline-outline" size={16} color="#dc2626" />
+                  <Text style={styles.offlineText}>Offline</Text>
+                </View>
+              )}
+            </View>
             <Text style={styles.date}>{getCurrentDate()}</Text>
           </View>
         </View>
@@ -404,10 +448,32 @@ const styles = StyleSheet.create({
   titleInfo: {
     flex: 1,
   },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
   title: {
     fontSize: 22,
     fontFamily: Typography.fontBold,
     color: Colors.textPrimary,
+    flex: 1,
+  },
+  offlineIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fef2f2",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#fca5a5",
+  },
+  offlineText: {
+    fontSize: 12,
+    fontFamily: Typography.fontMedium,
+    color: "#dc2626",
+    marginLeft: 4,
   },
   date: {
     fontSize: Typography.base,

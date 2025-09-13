@@ -1,25 +1,18 @@
-#!/bin/bash
-
-# ChefFlow Android Navigation Bar Update Script
-# This script helps add navigation bar hiding to remaining screens
 
 echo "🤖 ChefFlow Android Navigation Bar Update Script"
 echo "================================================"
 
-# Function to update a screen file
 update_screen() {
     local file_path="$1"
     local screen_name=$(basename "$file_path" .js)
     
     echo "📱 Updating $screen_name..."
     
-    # Check if file exists
     if [ ! -f "$file_path" ]; then
         echo "❌ File not found: $file_path"
         return 1
     fi
     
-    # Check if already has the import
     if grep -q "useNavigationBar" "$file_path"; then
         echo "✅ $screen_name already has navigation bar control"
         return 0
@@ -27,14 +20,12 @@ update_screen() {
     
     echo "🔧 Adding navigation bar control to $screen_name"
     
-    # Add import (this would need manual adjustment)
     echo "   - Add import: import useNavigationBar from '../../hooks/useNavigationBar';"
     echo "   - Add hook: const navigationBar = useNavigationBar();"
     echo "   - Add call: navigationBar.useLeanBack();"
     echo ""
 }
 
-# List of screen files to update
 SCREEN_FILES=(
     "src/screens/recipes/AddRecipeScreen.js"
     "src/screens/recipes/RecipeDetailScreen.js"

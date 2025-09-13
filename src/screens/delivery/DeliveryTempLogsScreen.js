@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
-import { getDocs, addDoc, serverTimestamp, doc, getDoc, updateDoc, query, where, orderBy } from "firebase/firestore";
+import { getDocs, addDoc, serverTimestamp, doc, getDoc, updateDoc, query, where, Timestamp, orderBy } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
 import { auth } from "../../../firebase";
@@ -47,48 +47,104 @@ export default function DeliveryTempLogsScreen({ navigation }) {
       // Create date range for the selected date (start and end of day)
       const startOfDay = new Date(selectedDate);
       startOfDay.setHours(0, 0, 0, 0);
-      
       const endOfDay = new Date(selectedDate);
       endOfDay.setHours(23, 59, 59, 999);
       
+      // Get existing logs from deliverylogs collection
       const deliveryLogsCollection = getRestaurantCollection(restaurantId, 'deliverylogs');
-      const q = query(
-        deliveryLogsCollection,
-        where('createdAt', '>=', startOfDay),
-        where('createdAt', '<=', endOfDay),
-        orderBy('createdAt', 'desc')
-      );
-      const logsSnapshot = await getDocs(q);
+      const allLogsSnapshot = await getDocs(deliveryLogsCollection);
       
-      let allLogs = [];
-      logsSnapshot.forEach(docSnap => {
+      let logsForDate = [];
+      
+      allLogsSnapshot.forEach(docSnap => {
         const data = docSnap.data();
-        allLogs.push({
-          id: docSnap.id,
-          ...data,
-        });
+        const logDate = data.createdAt;
+        
+        // Include logs for the selected date OR legacy logs without createdAt
+        if (!logDate) {
+          // Legacy log without createdAt - include for all dates
+          logsForDate.push({
+            id: docSnap.id,
+            supplierName: data.supplierName || data.name || 'Unknown Supplier',
+            supplierId: data.supplierId || docSnap.id,
+            chilled: data.chilled || '',
+            frozen: data.frozen || '',
+            createdAt: data.createdAt,
+            done: data.done || false,
+            isNew: false
+          });
+        } else if (logDate.toDate() >= startOfDay && logDate.toDate() <= endOfDay) {
+          // Log within the selected date range
+          logsForDate.push({
+            id: docSnap.id,
+            supplierName: data.supplierName || data.name || 'Unknown Supplier',
+            supplierId: data.supplierId || docSnap.id,
+            chilled: data.chilled || '',
+            frozen: data.frozen || '',
+            createdAt: data.createdAt,
+            done: data.done || false,
+            isNew: false
+          });
+        }
+      });
+      
+      // Remove empty/duplicate entries when there are actual temperature logs
+      const filteredLogsForDate = [];
+      const supplierNameTracker = new Map(); // Track which suppliers have actual temperature data
+      
+      // First pass: identify suppliers with actual temperature data
+      logsForDate.forEach(log => {
+        const hasActualData = (log.chilled && log.chilled.trim() !== '') || 
+                             (log.frozen && log.frozen.trim() !== '') ||
+                             log.done === true;
+        
+        if (hasActualData) {
+          const supplierKey = log.supplierName.toLowerCase();
+          if (!supplierNameTracker.has(supplierKey) || 
+              supplierNameTracker.get(supplierKey).priority < 2) {
+            supplierNameTracker.set(supplierKey, { log, priority: 2 }); // Priority 2 for logs with data
+          }
+        }
+      });
+      
+      // Second pass: add empty logs only if no actual data exists for that supplier
+      logsForDate.forEach(log => {
+        const supplierKey = log.supplierName.toLowerCase();
+        const hasActualData = (log.chilled && log.chilled.trim() !== '') || 
+                             (log.frozen && log.frozen.trim() !== '') ||
+                             log.done === true;
+        
+        if (!hasActualData && !supplierNameTracker.has(supplierKey)) {
+          supplierNameTracker.set(supplierKey, { log, priority: 1 }); // Priority 1 for empty logs
+        }
+      });
+      
+      // Extract the final filtered logs and sort them
+      supplierNameTracker.forEach(({ log }) => {
+        filteredLogsForDate.push(log);
       });
       
       // Sort logs by supplierName for consistent display
-      allLogs.sort((a, b) => {
-        if (a.supplierName && b.supplierName) {
-          return a.supplierName.localeCompare(b.supplierName);
-        }
-        return 0;
+      filteredLogsForDate.sort((a, b) => {
+        const nameA = a.supplierName.toLowerCase();
+        const nameB = b.supplierName.toLowerCase();
+        return nameA.localeCompare(nameB);
       });
       
-      console.log(`✅ Fetched ${allLogs.length} delivery logs for ${selectedDate.toDateString()}`);
-      setLogs(allLogs);
+      console.log(`✅ Fetched ${logsForDate.length} raw delivery logs, filtered to ${filteredLogsForDate.length} for ${selectedDate.toDateString()}`);
+      console.log('📋 Logs to display:', filteredLogsForDate.map(log => ({ name: log.supplierName, id: log.id, hasData: (log.chilled || log.frozen || log.done) })));
+      setLogs(filteredLogsForDate);
       
       // Initialize temp inputs with current values
       const initialInputs = {};
-      allLogs.forEach(log => {
+      filteredLogsForDate.forEach(log => {
         initialInputs[`${log.id}_chilled`] = log.chilled || '';
         initialInputs[`${log.id}_frozen`] = log.frozen || '';
       });
       setTempInputs(initialInputs);
     } catch (error) {
       console.error('❌ Error fetching delivery logs:', error);
+      setLogs([]);
     }
   };
 
@@ -111,7 +167,7 @@ export default function DeliveryTempLogsScreen({ navigation }) {
 
   // Helper for time display
   const formatTime = (createdAt) => {
-    if (!createdAt) return "--:--";
+    if (!createdAt) return "New Entry";
     const date = new Date(createdAt.seconds * 1000);
     let hours = date.getHours();
     let minutes = date.getMinutes();
@@ -233,25 +289,32 @@ export default function DeliveryTempLogsScreen({ navigation }) {
         return;
       }
 
-      // Prepare update data
-      const updateData = {
-        done: true // Always set done to true when saving log
+      // Prepare data for saving
+      const saveData = {
+        supplierName: deliveryDoc.supplierName,
+        supplierId: deliveryDoc.supplierId,
+        done: true,
+        createdAt: Timestamp.fromDate(selectedDate), // Use selected date as Timestamp
+        loggedBy: {
+          userId: auth.currentUser.uid,
+          email: auth.currentUser.email
+        }
       };
 
-      // Only update temperatures that have values
+      // Only add temperatures that have values
       if (chilledTempValue && chilledTempValue.trim() !== '') {
-        updateData.chilled = chilledTempValue.trim();
+        saveData.chilled = chilledTempValue.trim();
       }
       if (frozenTempValue && frozenTempValue.trim() !== '') {
-        updateData.frozen = frozenTempValue.trim();
+        saveData.frozen = frozenTempValue.trim();
       }
 
-      // Update the document
-      const deliveryDocRef = getRestaurantDoc(restaurantId, 'deliverylogs', logId);
-      await updateDoc(deliveryDocRef, updateData);
+      // Always create a new document for delivery temperature logging
+      const deliveryLogsCollection = getRestaurantCollection(restaurantId, 'deliverylogs');
+      saveData.recordedAt = serverTimestamp(); // When the record was actually created
+      await addDoc(deliveryLogsCollection, saveData);
+      console.log('✅ New delivery log created successfully');
 
-      console.log('✅ Complete delivery log saved successfully');
-      
       // Refresh logs
       await fetchLogs();
     } catch (error) {
@@ -321,8 +384,8 @@ export default function DeliveryTempLogsScreen({ navigation }) {
             filteredLogs.length === 0 ? (
               <View style={styles.emptyState}>
                 <Ionicons name="thermometer-outline" size={48} color="#CBD5E1" />
-                <Text style={styles.emptyText}>No delivery logs for today</Text>
-                <Text style={styles.emptySubtext}>Delivery logs will appear here when suppliers are configured</Text>
+                <Text style={styles.emptyText}>No suppliers configured</Text>
+                <Text style={styles.emptySubtext}>Configure suppliers in restaurant settings to start logging delivery temperatures</Text>
               </View>
             ) : (
               filteredLogs.map((log, idx) => {
@@ -419,12 +482,14 @@ export default function DeliveryTempLogsScreen({ navigation }) {
       <DateTimePickerModal
         isVisible={showDatePicker}
         mode="date"
+        date={selectedDate}
         onConfirm={(date) => {
           setSelectedDate(date);
           setShowDatePicker(false);
         }}
         onCancel={() => setShowDatePicker(false)}
         maximumDate={new Date()}
+        themeVariant="light"
       />
     </SafeAreaView>
   );

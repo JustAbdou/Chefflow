@@ -6,15 +6,16 @@ import {
   SafeAreaView,
   FlatList,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, Typography } from '../../constants';
 import { getAndroidTitleMargin } from '../../utils/responsive';
 import useNavigationBar from '../../hooks/useNavigationBar';
 import { getFormattedTodayDate } from '../../utils/dateUtils';
-import { getDocs, query, orderBy } from "firebase/firestore";
+import { getDocs, query, orderBy, deleteDoc } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
-import { getRestaurantCollection } from "../../utils/firestoreHelpers";
+import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
 
 const InvoicesScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
@@ -41,11 +42,46 @@ const InvoicesScreen = ({ navigation }) => {
         ...doc.data(),
       }));
       setInvoices(items);
+      console.log(`📋 Loaded ${items.length} invoices`);
     } catch (error) {
       console.error("Error fetching invoices:", error);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Delete invoice function
+  const deleteInvoice = async (invoiceId, invoiceNumber) => {
+    Alert.alert(
+      "Delete Invoice",
+      `Are you sure you want to delete invoice ${invoiceNumber}? This action cannot be undone.`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteDoc(getRestaurantDoc(restaurantId, "invoices", invoiceId));
+              
+              // Remove from local state
+              setInvoices(prev => prev.filter(invoice => invoice.id !== invoiceId));
+              
+              console.log(`🗑️ Deleted invoice ${invoiceNumber}`);
+              
+              // Optional: Show success message
+              Alert.alert("Success", "Invoice deleted successfully");
+            } catch (error) {
+              console.error("Error deleting invoice:", error);
+              Alert.alert("Error", "Failed to delete invoice. Please try again.");
+            }
+          }
+        }
+      ]
+    );
   };
 
   useEffect(() => {
@@ -63,11 +99,25 @@ const InvoicesScreen = ({ navigation }) => {
     <TouchableOpacity 
       style={styles.invoiceCard}
       onPress={() => navigation.navigate('InvoiceDetail', { invoice: item })}
+      onLongPress={() => deleteInvoice(item.id, item.invoiceNumber)}
       activeOpacity={0.7}
     >
-      <View>
-        <Text style={styles.invoiceNumber}>{item.invoiceNumber}</Text>
-        {/* Optionally, add a subtitle or date here */}
+      <View style={styles.invoiceContent}>
+        <View>
+          <Text style={styles.invoiceNumber}>{item.invoiceNumber}</Text>
+          {item.createdAt && (
+            <Text style={styles.invoiceDate}>
+              {new Date(item.createdAt.seconds * 1000).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+            </Text>
+          )}
+        </View>
+        <TouchableOpacity
+          style={styles.deleteButton}
+          onPress={() => deleteInvoice(item.id, item.invoiceNumber)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="trash-outline" size={20} color={Colors.error} />
+        </TouchableOpacity>
       </View>
       <Text style={styles.amount}>£{item.amount}</Text>
     </TouchableOpacity>
@@ -197,10 +247,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     marginBottom: Spacing.md,
   },
+  invoiceContent: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   invoiceNumber: {
     ...Typography.h4,
     color: Colors.textPrimary,
     fontWeight: '500',
+  },
+  invoiceDate: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  deleteButton: {
+    padding: Spacing.xs,
+    marginLeft: Spacing.md,
   },
   amount: {
     ...Typography.h4,

@@ -7,14 +7,34 @@ export function getFormattedTodayDate() {
 export function isItemFromYesterday(itemCreatedAt) {
   if (!itemCreatedAt) return false;
   
-  // Convert Firestore timestamp to Date if needed
+  // Convert Firestore timestamp to Date with proper error handling
   let itemDate;
-  if (typeof itemCreatedAt.toDate === 'function') {
-    itemDate = itemCreatedAt.toDate();
-  } else if (itemCreatedAt instanceof Date) {
-    itemDate = itemCreatedAt;
-  } else {
-    itemDate = new Date(itemCreatedAt);
+  try {
+    if (typeof itemCreatedAt.toDate === 'function') {
+      itemDate = itemCreatedAt.toDate();
+    } else if (itemCreatedAt instanceof Date && !isNaN(itemCreatedAt.getTime())) {
+      itemDate = itemCreatedAt;
+    } else if (typeof itemCreatedAt === 'string' || typeof itemCreatedAt === 'number') {
+      const parsedDate = new Date(itemCreatedAt);
+      if (isNaN(parsedDate.getTime())) {
+        console.warn('Invalid date value in isItemFromYesterday:', itemCreatedAt);
+        return false;
+      }
+      itemDate = parsedDate;
+    } else {
+      console.warn('Unexpected date format in isItemFromYesterday:', itemCreatedAt);
+      return false;
+    }
+    
+    // Validate the parsed date
+    if (isNaN(itemDate.getTime())) {
+      console.warn('Invalid date after parsing in isItemFromYesterday');
+      return false;
+    }
+    
+  } catch (error) {
+    console.error('Error parsing date in isItemFromYesterday:', error);
+    return false;
   }
   
   // Get current date and time
@@ -69,14 +89,38 @@ export function groupPrepItemsByDay(items) {
       return;
     }
     
-    // Convert Firestore timestamp to Date if needed
+    // Convert Firestore timestamp to Date with proper error handling
     let itemDate;
-    if (typeof item.createdAt.toDate === 'function') {
-      itemDate = item.createdAt.toDate();
-    } else if (item.createdAt instanceof Date) {
-      itemDate = item.createdAt;
-    } else {
-      itemDate = new Date(item.createdAt);
+    try {
+      if (typeof item.createdAt.toDate === 'function') {
+        itemDate = item.createdAt.toDate();
+      } else if (item.createdAt instanceof Date && !isNaN(item.createdAt.getTime())) {
+        itemDate = item.createdAt;
+      } else if (typeof item.createdAt === 'string' || typeof item.createdAt === 'number') {
+        const parsedDate = new Date(item.createdAt);
+        if (isNaN(parsedDate.getTime())) {
+          console.warn('Invalid date value for item:', item.name || item.id, item.createdAt);
+          todayItems.push(item); // Fallback to today
+          return;
+        }
+        itemDate = parsedDate;
+      } else {
+        console.warn('Unexpected date format for item:', item.name || item.id, item.createdAt);
+        todayItems.push(item); // Fallback to today
+        return;
+      }
+      
+      // Validate the parsed date
+      if (isNaN(itemDate.getTime())) {
+        console.warn('Invalid date after parsing for item:', item.name || item.id);
+        todayItems.push(item); // Fallback to today
+        return;
+      }
+      
+    } catch (error) {
+      console.error('Error parsing date for item:', item.name || item.id, error);
+      todayItems.push(item); // Fallback to today
+      return;
     }
     
     // Check if item falls within the 48-hour window
@@ -124,14 +168,38 @@ export function groupCleaningTasksByDay(tasks) {
       return;
     }
     
-    // Convert Firestore timestamp to Date if needed
+    // Convert Firestore timestamp to Date with proper error handling
     let taskDate;
-    if (typeof task.createdAt.toDate === 'function') {
-      taskDate = task.createdAt.toDate();
-    } else if (task.createdAt instanceof Date) {
-      taskDate = task.createdAt;
-    } else {
-      taskDate = new Date(task.createdAt);
+    try {
+      if (typeof task.createdAt.toDate === 'function') {
+        taskDate = task.createdAt.toDate();
+      } else if (task.createdAt instanceof Date && !isNaN(task.createdAt.getTime())) {
+        taskDate = task.createdAt;
+      } else if (typeof task.createdAt === 'string' || typeof task.createdAt === 'number') {
+        const parsedDate = new Date(task.createdAt);
+        if (isNaN(parsedDate.getTime())) {
+          console.warn('Invalid date value for task:', task.name || task.id, task.createdAt);
+          todayTasks.push(task); // Fallback to today
+          return;
+        }
+        taskDate = parsedDate;
+      } else {
+        console.warn('Unexpected date format for task:', task.name || task.id, task.createdAt);
+        todayTasks.push(task); // Fallback to today
+        return;
+      }
+      
+      // Validate the parsed date
+      if (isNaN(taskDate.getTime())) {
+        console.warn('Invalid date after parsing for task:', task.name || task.id);
+        todayTasks.push(task); // Fallback to today
+        return;
+      }
+      
+    } catch (error) {
+      console.error('Error parsing date for task:', task.name || task.id, error);
+      todayTasks.push(task); // Fallback to today
+      return;
     }
     
     // Check if task falls within the 48-hour window

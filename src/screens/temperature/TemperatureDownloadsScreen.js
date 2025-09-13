@@ -134,7 +134,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         </Text>
         <Text style={styles.downloadMeta}>
           {item.createdAt?.toDate
-            ? item.createdAt.toDate().toLocaleDateString()
+            ? item.createdAt.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
             : ''}
         </Text>
       </View>
@@ -202,7 +202,11 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
   );
 
   const formatDate = (date) => {
-    return date.toLocaleDateString();
+    return date.toLocaleDateString('en-GB', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric' 
+    });
   };
 
   const exportToPDF = async () => {
