@@ -6,6 +6,8 @@ import { getRestaurantCollection, getRestaurantDoc } from './firestoreHelpers';
 const OFFLINE_PREP_ITEMS_KEY = 'offline_prep_items';
 const OFFLINE_ORDER_ITEMS_KEY = 'offline_order_items';
 const OFFLINE_FRIDGE_LOGS_KEY = 'offline_fridge_logs';
+const OFFLINE_RECIPES_KEY = 'offline_recipes';
+const OFFLINE_RECIPE_CATEGORIES_KEY = 'offline_recipe_categories';
 const OFFLINE_QUEUE_KEY = 'offline_queue';
 
 // Initialize offline sync system
@@ -84,6 +86,66 @@ export const getCachedFridgeLogs = async () => {
   }
 };
 
+// Store recipes offline
+export const cacheRecipesOffline = async (recipesByCategory, categories) => {
+  try {
+    await AsyncStorage.setItem(OFFLINE_RECIPES_KEY, JSON.stringify(recipesByCategory));
+    await AsyncStorage.setItem(OFFLINE_RECIPE_CATEGORIES_KEY, JSON.stringify(categories));
+    
+    const totalRecipes = Object.values(recipesByCategory).reduce((total, recipes) => {
+      return total + (Array.isArray(recipes) ? recipes.length : 0);
+    }, 0);
+    
+    console.log(`💾 Cached ${totalRecipes} recipes in ${categories.length} categories offline`);
+  } catch (error) {
+    console.error('❌ Error caching recipes offline:', error);
+  }
+};
+
+// Get cached recipes
+export const getCachedRecipes = async () => {
+  try {
+    const cachedRecipes = await AsyncStorage.getItem(OFFLINE_RECIPES_KEY);
+    const cachedCategories = await AsyncStorage.getItem(OFFLINE_RECIPE_CATEGORIES_KEY);
+    
+    return {
+      recipesByCategory: cachedRecipes ? JSON.parse(cachedRecipes) : {},
+      categories: cachedCategories ? JSON.parse(cachedCategories) : []
+    };
+  } catch (error) {
+    console.error('❌ Error getting cached recipes:', error);
+    return {
+      recipesByCategory: {},
+      categories: []
+    };
+  }
+};
+
+// Check if recipes cache exists and is recent
+export const isRecipesCacheValid = async (maxAgeHours = 24) => {
+  try {
+    const cacheTimestamp = await AsyncStorage.getItem('recipes_cache_timestamp');
+    if (!cacheTimestamp) return false;
+    
+    const cacheAge = Date.now() - parseInt(cacheTimestamp);
+    const maxAge = maxAgeHours * 60 * 60 * 1000; // Convert hours to milliseconds
+    
+    return cacheAge < maxAge;
+  } catch (error) {
+    console.error('❌ Error checking recipes cache validity:', error);
+    return false;
+  }
+};
+
+// Update recipes cache timestamp
+export const updateRecipesCacheTimestamp = async () => {
+  try {
+    await AsyncStorage.setItem('recipes_cache_timestamp', Date.now().toString());
+  } catch (error) {
+    console.error('❌ Error updating recipes cache timestamp:', error);
+  }
+};
+
 // Add fridge log offline (for offline mode)
 export const addFridgeLogOffline = async (restaurantId, logData) => {
   try {
@@ -139,7 +201,15 @@ const clearOfflineQueue = async () => {
 // Clear all offline data
 export const clearOfflineData = async () => {
   try {
-    await AsyncStorage.multiRemove([OFFLINE_PREP_ITEMS_KEY, OFFLINE_ORDER_ITEMS_KEY, OFFLINE_FRIDGE_LOGS_KEY, OFFLINE_QUEUE_KEY]);
+    await AsyncStorage.multiRemove([
+      OFFLINE_PREP_ITEMS_KEY, 
+      OFFLINE_ORDER_ITEMS_KEY, 
+      OFFLINE_FRIDGE_LOGS_KEY, 
+      OFFLINE_RECIPES_KEY,
+      OFFLINE_RECIPE_CATEGORIES_KEY,
+      'recipes_cache_timestamp',
+      OFFLINE_QUEUE_KEY
+    ]);
     console.log('🧹 Cleared all offline data');
   } catch (error) {
     console.error('❌ Error clearing offline data:', error);

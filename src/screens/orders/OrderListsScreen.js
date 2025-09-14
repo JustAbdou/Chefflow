@@ -12,7 +12,7 @@ import AddOrderItemModal from "./AddOrderItemModal"
 import { Swipeable } from "react-native-gesture-handler"
 import { useNavigation } from "@react-navigation/native"
 import { getFormattedTodayDate } from '../../utils/dateUtils';
-import { getDocs, addDoc, serverTimestamp, query, orderBy, deleteDoc, doc, getDoc, updateDoc } from "firebase/firestore";
+import { getDocs, addDoc, serverTimestamp, query, orderBy, deleteDoc, doc, getDoc, updateDoc, where } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
 import { auth, db } from "../../../firebase";
@@ -32,6 +32,8 @@ export function OrderListsScreen() {
   const navigation = useNavigation()
   const [showAddModal, setShowAddModal] = useState(false)
   const [orderItems, setOrderItems] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [ordersBySupplier, setOrdersBySupplier] = useState({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isNetworkOnline, setIsNetworkOnline] = useState(true);
@@ -81,39 +83,103 @@ export function OrderListsScreen() {
     initSync();
   }, [restaurantId]);
 
-  // Reusable function to fetch order items
+  // Function to fetch suppliers from delivery logs (documents without createdAt field)
+  const fetchSuppliers = async () => {
+    if (!restaurantId) return [];
+
+    try {
+      console.log('🚛 Fetching suppliers from delivery logs...');
+      
+      // Fetch all documents from deliverylogs collection
+      const deliveryLogsSnapshot = await getDocs(getRestaurantCollection(restaurantId, "deliverylogs"));
+      const suppliersList = [];
+
+      deliveryLogsSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        
+        // Only include documents that don't have createdAt field
+        if (!data.createdAt) {
+          suppliersList.push({
+            id: doc.id,
+            name: doc.id, // Use document ID as supplier name
+            ...data
+          });
+        }
+      });
+
+      console.log(`🚛 Found ${suppliersList.length} suppliers:`, suppliersList.map(s => s.name));
+      return suppliersList;
+    } catch (error) {
+      console.error("Error fetching suppliers:", error);
+      return [];
+    }
+  };
+
+  // Reusable function to fetch order items and organize by supplier
   const fetchOrderItems = async (forceRefresh = false) => {
     if (!restaurantId) return;
     
     try {
+      let suppliersList = [];
+      let items = [];
+
       if (isNetworkOnline || forceRefresh) {
-        // Try to fetch from Firestore
+        // Fetch suppliers and order items from Firestore
+        console.log('🌐 Fetching suppliers and orders from server...');
+        
+        suppliersList = await fetchSuppliers();
+        
         const q = query(getRestaurantCollection(restaurantId, "orderlist"), orderBy("createdAt", "desc"));
         const snapshot = await getDocs(q);
-        const items = snapshot.docs.map(doc => ({
+        items = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data(),
-          completed: doc.data().done || false, // completed UI state matches Firestore 'done' field
+          completed: doc.data().done || false,
         }));
-        setOrderItems(items);
         
         // Cache items for offline use
         await cacheOrderItemsOffline(items);
         console.log(`📱 Cached ${items.length} order items for offline use`);
       } else {
         // Use cached data when offline
-        console.log('📱 Offline mode: Using cached order items');
+        console.log('📱 Offline mode: Using cached data');
         const cachedItems = await getCachedOrderItems();
-        const itemsWithCompleted = cachedItems.map(item => ({
+        items = cachedItems.map(item => ({
           ...item,
           completed: item.done || false,
         }));
-        setOrderItems(itemsWithCompleted);
         
-        if (itemsWithCompleted.length > 0) {
-          console.log(`📱 Loaded ${itemsWithCompleted.length} order items from cache (offline)`);
-        }
+        // For offline mode, we'll need cached suppliers too (implement if needed)
+        suppliersList = suppliers; // Use existing suppliers state
       }
+
+      // Organize orders by supplier
+      const ordersBySup = {};
+      
+      // Initialize with empty arrays for each supplier
+      suppliersList.forEach(supplier => {
+        ordersBySup[supplier.name] = [];
+      });
+
+      // Add "No Supplier" category for items without supplier
+      ordersBySup["No Supplier"] = [];
+
+      // Group items by supplier
+      items.forEach(item => {
+        const supplierName = item.supplier || "No Supplier";
+        if (ordersBySup[supplierName]) {
+          ordersBySup[supplierName].push(item);
+        } else {
+          ordersBySup["No Supplier"].push(item);
+        }
+      });
+
+      setSuppliers(suppliersList);
+      setOrderItems(items);
+      setOrdersBySupplier(ordersBySup);
+      
+      console.log('📦 Orders organized by supplier:', Object.keys(ordersBySup).map(sup => `${sup}: ${ordersBySup[sup].length} items`));
+      
     } catch (error) {
       console.error("Error fetching order items:", error);
       // Try to load from cache as fallback
@@ -156,10 +222,19 @@ export function OrderListsScreen() {
     if (!item) return;
     
     const newCompletedStatus = !item.completed;
+    const supplierName = item.supplier || "No Supplier";
     
     setOrderItems((items) =>
       items.map((item) => (item.id === id ? { ...item, completed: newCompletedStatus } : item))
     );
+    
+    // Update supplier grouping
+    setOrdersBySupplier((prev) => ({
+      ...prev,
+      [supplierName]: prev[supplierName].map((item) => 
+        item.id === id ? { ...item, completed: newCompletedStatus } : item
+      )
+    }));
     
     // Update using offline-capable function
     try {
@@ -170,6 +245,12 @@ export function OrderListsScreen() {
       setOrderItems((items) =>
         items.map((item) => (item.id === id ? { ...item, completed: !newCompletedStatus } : item))
       );
+      setOrdersBySupplier((prev) => ({
+        ...prev,
+        [supplierName]: prev[supplierName].map((item) => 
+          item.id === id ? { ...item, completed: !newCompletedStatus } : item
+        )
+      }));
     }
   }
 
@@ -198,6 +279,7 @@ export function OrderListsScreen() {
               
               // Clear local state
               setOrderItems([]);
+              setOrdersBySupplier({});
             } catch (error) {
               console.error("Error clearing all order items:", error);
               Alert.alert("Error", "Failed to delete all items. Please try again.");
@@ -212,7 +294,7 @@ export function OrderListsScreen() {
     return orderItems.filter(item => item.completed).length;
   }
 
-  const addNewItem = async (itemName) => {
+  const addNewItem = async (itemName, supplier = "No Supplier") => {
     if (!restaurantId) return;
     
     try {
@@ -250,6 +332,7 @@ export function OrderListsScreen() {
 
       const itemData = {
         name: itemName,
+        supplier: supplier === "No Supplier" ? null : supplier, // Store null for no supplier
         createdAt: isNetworkOnline ? serverTimestamp() : new Date(),
         createdBy: userInfo,
         done: false, // Initialize as not done
@@ -264,6 +347,13 @@ export function OrderListsScreen() {
       };
       
       setOrderItems((items) => [newItem, ...items]);
+      
+      // Update the supplier grouping
+      setOrdersBySupplier((prev) => ({
+        ...prev,
+        [supplier]: [newItem, ...(prev[supplier] || [])]
+      }));
+      
       setShowAddModal(false);
     } catch (error) {
       console.error("Error adding order item:", error);
@@ -273,9 +363,19 @@ export function OrderListsScreen() {
   const deleteItem = async (id) => {
     if (!restaurantId) return;
     
+    // Find the item to get its supplier
+    const item = orderItems.find(item => item.id === id);
+    const supplierName = item ? (item.supplier || "No Supplier") : "No Supplier";
+    
     try {
       await offlineCapableDelete(restaurantId, "orderlist", id, isNetworkOnline);
       setOrderItems((items) => items.filter((item) => item.id !== id));
+      
+      // Update supplier grouping
+      setOrdersBySupplier((prev) => ({
+        ...prev,
+        [supplierName]: prev[supplierName] ? prev[supplierName].filter((item) => item.id !== id) : []
+      }));
     } catch (error) {
       console.error("Error deleting order item:", error);
     }
@@ -338,7 +438,7 @@ export function OrderListsScreen() {
 
         {/* Section Header */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Today's List</Text>
+          <Text style={styles.sectionTitle}>List by Supplier</Text>
           {orderItems.length > 0 && (
             <TouchableOpacity
               style={styles.clearAllButton}
@@ -350,32 +450,69 @@ export function OrderListsScreen() {
           )}
         </View>
 
-        {/* Order Items List */}
+        {/* Order Items by Supplier */}
         <View style={styles.listContainer}>
           {loading ? (
             <Text style={{ textAlign: "center", marginTop: 40 }}>Loading...</Text>
           ) : (
-            orderItems.map((item) => (
-              <Swipeable
-                key={item.id}
-                renderRightActions={() => renderRightActions(item.id)}
-                overshootRight={false}
-                containerStyle={{ backgroundColor: "transparent" }}
-              >
-                <TouchableOpacity
-                  style={styles.listItem}
-                  onPress={() => toggleItem(item.id)}
-                  activeOpacity={0.7}
-                >
-                  <View
-                    style={[styles.checkbox, item.completed && styles.checkedBox]}
-                  >
-                    {item.completed && <Text style={styles.checkmark}>✓</Text>}
+            Object.keys(ordersBySupplier).map((supplierName) => {
+              const supplierOrders = ordersBySupplier[supplierName];
+              if (!supplierOrders || supplierOrders.length === 0) return null;
+              
+              return (
+                <View key={supplierName} style={styles.supplierSection}>
+                  {/* Supplier Header */}
+                  <View style={styles.supplierHeader}>
+                    <View style={styles.supplierHeaderLeft}>
+                      <Ionicons 
+                        name={supplierName === "No Supplier" ? "bag-outline" : "business-outline"} 
+                        size={20} 
+                        color={Colors.primary} 
+                        style={styles.supplierIcon}
+                      />
+                      <Text style={styles.supplierName}>{supplierName}</Text>
+                    </View>
+                    <Text style={styles.supplierCount}>
+                      {supplierOrders.length} {supplierOrders.length === 1 ? 'item' : 'items'}
+                    </Text>
                   </View>
-                  <Text style={[styles.itemText, item.completed && styles.completedText]}>{item.name}</Text>
-                </TouchableOpacity>
-              </Swipeable>
-            ))
+
+                  {/* Supplier Orders */}
+                  {supplierOrders.map((item) => (
+                    <Swipeable
+                      key={item.id}
+                      renderRightActions={() => renderRightActions(item.id)}
+                      overshootRight={false}
+                      containerStyle={{ backgroundColor: "transparent" }}
+                    >
+                      <TouchableOpacity
+                        style={styles.listItem}
+                        onPress={() => toggleItem(item.id)}
+                        activeOpacity={0.7}
+                      >
+                        <View
+                          style={[styles.checkbox, item.completed && styles.checkedBox]}
+                        >
+                          {item.completed && <Text style={styles.checkmark}>✓</Text>}
+                        </View>
+                        <Text style={[styles.itemText, item.completed && styles.completedText]}>
+                          {item.name}
+                        </Text>
+                      </TouchableOpacity>
+                    </Swipeable>
+                  ))}
+                </View>
+              );
+            })
+          )}
+          
+          {/* Empty state */}
+          {!loading && Object.keys(ordersBySupplier).length === 0 && (
+            <View style={styles.emptyState}>
+              <Ionicons name="bag-outline" size={48} color={Colors.gray300} />
+              <Text style={styles.emptyStateText}>No orders yet</Text>
+              <Text style={styles.emptyStateSubtext}>Add your first order item!</Text>
+            </View>
           )}
         </View>
       </ScrollView>
@@ -386,7 +523,15 @@ export function OrderListsScreen() {
       </TouchableOpacity>
 
       {/* Add Item Modal */}
-      {showAddModal && <AddOrderItemModal onClose={() => setShowAddModal(false)} onAdd={addNewItem} />}
+      {showAddModal && (
+        <AddOrderItemModal 
+          visible={showAddModal}
+          onClose={() => setShowAddModal(false)} 
+          onAdd={addNewItem}
+          date={currentDate}
+          suppliers={suppliers}
+        />
+      )}
     </SafeAreaView>
   )
 }
@@ -530,5 +675,56 @@ const styles = StyleSheet.create({
     fontSize: Typography.sm,
     fontWeight: Typography.medium,
     textAlign: 'center',
+  },
+  supplierSection: {
+    marginBottom: Spacing.xl,
+  },
+  supplierHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: Colors.gray50,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    borderRadius: 12,
+    marginBottom: Spacing.sm,
+    borderLeftWidth: 4,
+    borderLeftColor: Colors.primary,
+  },
+  supplierHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  supplierIcon: {
+    marginRight: Spacing.sm,
+  },
+  supplierName: {
+    fontSize: Typography.base,
+    fontFamily: Typography.fontBold,
+    color: Colors.textPrimary,
+    flex: 1,
+  },
+  supplierCount: {
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+    fontFamily: Typography.fontMedium,
+  },
+  emptyState: {
+    alignItems: 'center',
+    marginTop: 60,
+    paddingHorizontal: Spacing.xl,
+  },
+  emptyStateText: {
+    fontSize: Typography.lg,
+    fontFamily: Typography.fontMedium,
+    color: Colors.textSecondary,
+    marginTop: Spacing.md,
+  },
+  emptyStateSubtext: {
+    fontSize: Typography.sm,
+    color: Colors.gray400,
+    fontFamily: Typography.fontRegular,
+    marginTop: Spacing.xs,
   },
 })

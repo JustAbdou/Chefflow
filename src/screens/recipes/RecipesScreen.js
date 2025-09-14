@@ -11,6 +11,13 @@ import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantDoc, getRestaurantSubCollection, getRestaurantNestedCollection } from "../../utils/firestoreHelpers";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
+import { 
+  cacheRecipesOffline, 
+  getCachedRecipes, 
+  isRecipesCacheValid, 
+  updateRecipesCacheTimestamp 
+} from '../../utils/offlineSync';
+import { getNetworkStatus } from '../../utils/networkMonitor';
 
 function RecipesScreen() {
   const { restaurantId } = useRestaurant();
@@ -18,6 +25,7 @@ function RecipesScreen() {
   const [selectedCategory, setSelectedCategory] = useState("All Recipes");
   const [recipesByCategory, setRecipesByCategory] = useState({});
   const [loading, setLoading] = useState(true);
+  const [loadingFromCache, setLoadingFromCache] = useState(false);
 
   // Hide Android navigation bar
   const navigationBar = useNavigationBar();
@@ -26,13 +34,77 @@ function RecipesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const navigation = useNavigation();
 
-  // Fetch categories and all recipes from category documents
-  const fetchCategoriesAndRecipes = async () => {
+  // Load from cache first, then fetch fresh data if needed
+  const loadRecipesWithCaching = async (forceRefresh = false) => {
     if (!restaurantId) {
       console.log('No restaurantId available, skipping fetch');
       return;
     }
-    setLoading(true);
+
+    // Check if we should use cache
+    const cacheValid = await isRecipesCacheValid();
+    const isOnline = getNetworkStatus();
+    
+    // Load from cache first for instant display
+    if (!forceRefresh && (cacheValid || !isOnline)) {
+      console.log('📚 Loading recipes from cache...');
+      setLoadingFromCache(true);
+      
+      const { recipesByCategory: cachedRecipes, categories: cachedCategories } = await getCachedRecipes();
+      
+      if (Object.keys(cachedRecipes).length > 0) {
+        setCategories(cachedCategories);
+        setRecipesByCategory(cachedRecipes);
+        setLoadingFromCache(false);
+        
+        if (!selectedCategory && cachedCategories.length > 0) {
+          setSelectedCategory("All Recipes");
+        }
+        
+        console.log(`📚 Loaded ${cachedRecipes["All Recipes"]?.length || 0} recipes from cache`);
+        
+        // If cache is valid, we're done
+        if (cacheValid && !forceRefresh) {
+          setLoading(false);
+          setRefreshing(false);
+          return;
+        }
+      }
+    }
+
+    // Fetch fresh data from server
+    if (isOnline || forceRefresh) {
+      if (!loadingFromCache) setLoading(true);
+      
+      try {
+        console.log('🌐 Fetching fresh recipes from server...');
+        await fetchCategoriesAndRecipes();
+        
+        // Cache the fresh data
+        await cacheRecipesOffline(recipesByCategory, categories);
+        await updateRecipesCacheTimestamp();
+        
+      } catch (error) {
+        console.error('❌ Error fetching fresh recipes:', error);
+        // If we have cached data and fetch fails, keep using cache
+        if (Object.keys(recipesByCategory).length === 0) {
+          const { recipesByCategory: cachedRecipes, categories: cachedCategories } = await getCachedRecipes();
+          if (Object.keys(cachedRecipes).length > 0) {
+            setCategories(cachedCategories);
+            setRecipesByCategory(cachedRecipes);
+            console.log('📚 Fallback to cached recipes after fetch error');
+          }
+        }
+      }
+    }
+    
+    setLoading(false);
+    setLoadingFromCache(false);
+    setRefreshing(false);
+  };
+
+  // Fetch categories and all recipes from category documents
+  const fetchCategoriesAndRecipes = async () => {
     try {
       console.log('Fetching recipes for restaurantId:', restaurantId);
       
@@ -86,27 +158,32 @@ function RecipesScreen() {
         }
       }
 
+      const newRecipesByCategory = { "All Recipes": allRecipes, ...recipesObj };
+      
       setCategories(fetchedCategories);
-      setRecipesByCategory({ "All Recipes": allRecipes, ...recipesObj });
+      setRecipesByCategory(newRecipesByCategory);
+      
+      // Cache the data immediately after fetching
+      await cacheRecipesOffline(newRecipesByCategory, fetchedCategories);
+      await updateRecipesCacheTimestamp();
+      
       console.log('Total recipes fetched:', allRecipes.length);
       console.log('Categories:', fetchedCategories.map(cat => cat.name));
       if (!selectedCategory && fetchedCategories.length > 0) setSelectedCategory("All Recipes");
     } catch (error) {
       console.error("Error fetching categories/recipes:", error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+      throw error;
     }
   };
 
   useEffect(() => {
-    fetchCategoriesAndRecipes();
+    loadRecipesWithCaching();
   }, [restaurantId]);
 
   // Swipe down to refresh handler
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchCategoriesAndRecipes();
+    await loadRecipesWithCaching(true); // Force refresh from server
   };
 
   // Recipes to display (filtered by search)
@@ -151,7 +228,14 @@ function RecipesScreen() {
 
         <View style={styles.header}>
           <Text style={styles.title}>Recipe Library</Text>
-          <Text style={styles.subtitle}>{recipesByCategory["All Recipes"] ? `${recipesByCategory["All Recipes"].length} Recipes` : "Loading..."}</Text>
+          <View style={styles.subtitleContainer}>
+            <Text style={styles.subtitle}>
+              {recipesByCategory["All Recipes"] ? `${recipesByCategory["All Recipes"].length} Recipes` : "Loading..."}
+            </Text>
+            {loadingFromCache && (
+              <Text style={styles.cacheIndicator}>📚 Loading from cache...</Text>
+            )}
+          </View>
         </View>
         {/* Search Bar */}
         <View style={styles.searchContainer}>
@@ -218,8 +302,11 @@ function RecipesScreen() {
         </View>
         {/* Recipes List */}
         <View style={styles.recipesContainer}>
-          {loading ? (
-            <ActivityIndicator size="large" style={{ marginTop: 40 }} />
+          {loading && !loadingFromCache ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={Colors.primary} />
+              <Text style={styles.loadingText}>Loading recipes...</Text>
+            </View>
           ) : (
             recipes.map(recipe => (
               <TouchableOpacity
@@ -281,12 +368,33 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: Spacing.xs,
   },
+  subtitleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+  },
   subtitle: {
     fontFamily: Typography.fontRegular,
     opacity: 0.7,
-    paddingVertical: Spacing.sm,
     fontSize: Typography.sm,
     color: Colors.textSecondary,
+  },
+  cacheIndicator: {
+    fontSize: Typography.xs,
+    color: Colors.primary,
+    fontFamily: Typography.fontMedium,
+    fontStyle: 'italic',
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    marginTop: 40,
+  },
+  loadingText: {
+    marginTop: Spacing.md,
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+    fontFamily: Typography.fontRegular,
   },
   searchContainer: {
     paddingHorizontal: Spacing.lg,
@@ -313,6 +421,14 @@ const styles = StyleSheet.create({
   clearButton: {
     marginLeft: Spacing.sm,
     padding: 2,
+  },
+  cacheStatus: {
+    fontSize: Typography.xs,
+    color: Colors.primary,
+    fontFamily: Typography.fontMedium,
+    textAlign: 'center',
+    marginTop: Spacing.xs,
+    opacity: 0.7,
   },
   searchPlaceholder: {
     color: Colors.gray400,

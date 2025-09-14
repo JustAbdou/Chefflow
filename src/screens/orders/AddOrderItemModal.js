@@ -1,19 +1,22 @@
 "use client"
 
 import { useState } from "react"
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Modal, KeyboardAvoidingView, Platform } from "react-native"
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Modal, KeyboardAvoidingView, Platform, ScrollView } from "react-native"
+import { Ionicons } from "@expo/vector-icons"
 import { Colors } from "../../constants/Colors"
 import { Typography } from "../../constants/Typography"
 import { Spacing } from "../../constants/Spacing"
 import Button from "../../components/ui/Button" // <-- Fix import (remove curly braces)
 
-export default function AddOrderItemModal({ visible, onClose, onAdd, date }) {
+export default function AddOrderItemModal({ visible, onClose, onAdd, date, suppliers = [] }) {
   const [itemName, setItemName] = useState("")
+  const [selectedSupplier, setSelectedSupplier] = useState("")
 
   const handleAdd = () => {
     if (itemName.trim()) {
-      onAdd(itemName.trim())
+      onAdd(itemName.trim(), selectedSupplier || "No Supplier")
       setItemName("")
+      setSelectedSupplier("")
       onClose()
     }
   }
@@ -50,6 +53,54 @@ export default function AddOrderItemModal({ visible, onClose, onAdd, date }) {
                 placeholderTextColor={Colors.gray200}
                 autoFocus
               />
+              
+              {/* Supplier Selection */}
+              <Text style={[styles.label, { marginTop: Spacing.lg }]}>Supplier</Text>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false} 
+                style={styles.supplierScroll}
+                contentContainerStyle={styles.supplierContainer}
+              >
+                <TouchableOpacity
+                  style={[
+                    styles.supplierChip,
+                    selectedSupplier === "" && styles.activeSupplierChip,
+                  ]}
+                  onPress={() => setSelectedSupplier("")}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.supplierText,
+                      selectedSupplier === "" && styles.activeSupplierText,
+                    ]}
+                  >
+                    No Supplier
+                  </Text>
+                </TouchableOpacity>
+                
+                {suppliers.map((supplier) => (
+                  <TouchableOpacity
+                    key={supplier.id}
+                    style={[
+                      styles.supplierChip,
+                      selectedSupplier === supplier.name && styles.activeSupplierChip,
+                    ]}
+                    onPress={() => setSelectedSupplier(supplier.name)}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.supplierText,
+                        selectedSupplier === supplier.name && styles.activeSupplierText,
+                      ]}
+                    >
+                      {supplier.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
 
             {/* Add Button */}
@@ -133,5 +184,32 @@ const styles = StyleSheet.create({
   },
   buttonContainer: {
     marginTop: "auto",
+  },
+  supplierScroll: {
+    marginTop: Spacing.sm,
+  },
+  supplierContainer: {
+    paddingRight: Spacing.lg,
+  },
+  supplierChip: {
+    backgroundColor: Colors.gray100,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: 20,
+    marginRight: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  activeSupplierChip: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  supplierText: {
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+    fontWeight: Typography.medium,
+  },
+  activeSupplierText: {
+    color: Colors.background,
   },
 })
