@@ -9,6 +9,8 @@ import {
   FlatList,
   Linking,
   Alert,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing, Typography } from '../../constants';
@@ -34,6 +36,8 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
   const [recentDownloads, setRecentDownloads] = useState([]);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState('');
   const today = getFormattedTodayDate();
 
   useEffect(() => {
@@ -136,6 +140,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
           {item.createdAt?.toDate
             ? item.createdAt.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
             : ''}
+          {item.isLocalStorage && ' • Local only'}
         </Text>
       </View>
       <TouchableOpacity
@@ -147,8 +152,22 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
           }
           
           try {
-            if (item.link.startsWith('http')) {
-              // For cloud URLs, we can either open in browser or download
+            if (item.isLocalStorage && item.link.startsWith('file')) {
+              // Local storage files - direct sharing
+              try {
+                // Check if file still exists
+                const fileInfo = await FileSystem.getInfoAsync(item.link);
+                if (fileInfo.exists) {
+                  await Sharing.shareAsync(item.link, { mimeType: 'application/pdf' });
+                } else {
+                  Alert.alert('File Not Found', 'This file is no longer available on the device.');
+                }
+              } catch (error) {
+                console.error('Local file access error:', error);
+                Alert.alert('Error', 'Could not access the local file.');
+              }
+            } else if (item.link.startsWith('http')) {
+              // Cloud storage files
               Alert.alert(
                 'Download Options',
                 'How would you like to access this file?',
@@ -193,9 +212,10 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         style={{ padding: 8 }}
       >
         <Ionicons 
-          name={item.link && item.link.startsWith('http') ? "cloud-download-outline" : "download-outline"} 
+          name={item.isLocalStorage ? "phone-portrait-outline" : 
+                item.link && item.link.startsWith('http') ? "cloud-download-outline" : "download-outline"} 
           size={20} 
-          color={Colors.gray300} 
+          color={item.isLocalStorage ? "#f59e0b" : Colors.gray300} 
         />
       </TouchableOpacity>
     </TouchableOpacity>
@@ -216,8 +236,9 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
     }
 
     try {
-      // Show loading state
-      Alert.alert('Generating PDF', 'Please wait while we prepare your temperature records...');
+      // Show progress modal
+      setIsExporting(true);
+      setExportProgress('Preparing temperature data...');
 
       // Generate unique filename
       const fileName = generatePdfFileName('temperature', startDate, endDate);
@@ -298,6 +319,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
       `;
 
       // Generate PDF locally first
+      setExportProgress('Generating PDF document...');
       const { uri } = await Print.printToFileAsync({ 
         html, 
         base64: false, 
@@ -306,37 +328,24 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
 
       console.log('📄 PDF generated locally:', uri);
 
-      // Use temporary storage solution with better error handling
+      // Attempt to upload to Firebase Storage, with local fallback
       let downloadURL;
+      let isLocalStorage = false;
       try {
+        setExportProgress('Uploading to cloud storage...');
         console.log('☁️ Attempting Firebase Storage upload...');
         downloadURL = await uploadPdfToStorage(uri, fileName, restaurantId, 'temperature');
         console.log('✅ PDF uploaded to Firebase Storage successfully:', downloadURL);
       } catch (storageError) {
-        console.log('⚠️ Firebase Storage upload failed:', storageError.message);
-        
-        // Check if it's a network error
-        if (storageError.message.includes('Network request failed') || 
-            storageError.message.includes('network') || 
-            storageError.code === 'network-request-failed') {
-          console.log('🌐 Network error detected, using local storage fallback');
-          try {
-            downloadURL = await uploadPdfToStorageTemporary(uri, fileName, restaurantId, 'temperature');
-            console.log('💾 PDF saved to local storage successfully:', downloadURL);
-          } catch (localError) {
-            console.error('❌ Local storage also failed:', localError);
-            throw new Error('Both cloud and local storage failed. Please check your connection and try again.');
-          }
-        } else {
-          // For other types of errors, still try local storage
-          console.log('📁 Trying local storage as fallback...');
-          try {
-            downloadURL = await uploadPdfToStorageTemporary(uri, fileName, restaurantId, 'temperature');
-            console.log('💾 PDF saved to local storage as fallback:', downloadURL);
-          } catch (localError) {
-            console.error('❌ All storage methods failed:', localError);
-            throw storageError; // Throw original error if both fail
-          }
+        console.log('⚠️ Firebase Storage upload failed, using local storage fallback:', storageError.message);
+        try {
+          setExportProgress('Saving to local storage...');
+          downloadURL = await uploadPdfToStorageTemporary(uri, fileName, restaurantId, 'temperature');
+          console.log('💾 PDF saved to local storage successfully:', downloadURL);
+          isLocalStorage = true;
+        } catch (localError) {
+          console.error('❌ Local storage also failed:', localError);
+          throw new Error('Both cloud and local storage failed. Please check your device storage and try again.');
         }
       }
 
@@ -346,11 +355,13 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
 
       // Save download info to Firestore with better error handling
       try {
+        setExportProgress('Saving record to database...');
         await addDoc(
           getRestaurantSubCollection(restaurantId, "downloads", "temperature", "recent_downloads"),
           {
             name: fileName,
             link: downloadURL,
+            isLocalStorage: isLocalStorage,
             createdAt: serverTimestamp(),
           }
         );
@@ -358,11 +369,15 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
       } catch (firestoreError) {
         console.error('❌ Failed to save download record:', firestoreError);
         // Don't throw here - the PDF was created successfully, just the record wasn't saved
-        Alert.alert(
-          'Warning', 
-          'PDF created successfully but failed to save to recent downloads. You can still access the file.',
-          [{ text: 'OK' }]
-        );
+        setIsExporting(false);
+        setTimeout(() => {
+          Alert.alert(
+            'Warning', 
+            'PDF created successfully but failed to save to recent downloads. You can still access the file.',
+            [{ text: 'OK' }]
+          );
+        }, 300);
+        return;
       }
 
       // Clean up the original temporary file (keep the permanent copy)
@@ -375,27 +390,34 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
 
       // Refresh the downloads list
       try {
+        setExportProgress('Finalizing...');
         await fetchRecentDownloads();
       } catch (refreshError) {
         console.warn('⚠️ Failed to refresh downloads list:', refreshError);
       }
 
-      Alert.alert(
-        'Success!', 
-        'Temperature records have been generated and saved successfully.',
-        [
-          {
-            text: 'View Downloads',
-            onPress: () => {
-              // The list will automatically refresh if it succeeded
+      // Close progress modal and show success
+      setIsExporting(false);
+      setTimeout(() => {
+        Alert.alert(
+          'PDF Generated!', 
+          isLocalStorage 
+            ? 'Temperature records have been generated and saved locally on this device. Note: The file will only be accessible from this device until cloud storage is available.'
+            : 'Temperature records have been generated and uploaded to cloud storage. You can access them from the Recent Downloads section.',
+          [
+            {
+              text: 'View Downloads',
+              onPress: () => {
+                // The list will automatically refresh if it succeeded
+              }
+            },
+            {
+              text: 'OK',
+              style: 'default'
             }
-          },
-          {
-            text: 'OK',
-            style: 'default'
-          }
-        ]
-      );
+          ]
+        );
+      }, 300);
 
     } catch (error) {
       console.error('❌ Error exporting PDF:', error);
@@ -410,11 +432,14 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         errorMessage = error.message;
       }
       
-      Alert.alert(
-        'Export Failed', 
-        errorMessage,
-        [{ text: 'OK' }]
-      );
+      setIsExporting(false);
+      setTimeout(() => {
+        Alert.alert(
+          'Export Failed', 
+          errorMessage,
+          [{ text: 'OK' }]
+        );
+      }, 300);
     }
   };
 
@@ -524,6 +549,21 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
           contentContainerStyle={{ paddingHorizontal: Spacing.lg }}
         />
       </ScrollView>
+
+      {/* Progress Modal */}
+      <Modal
+        visible={isExporting}
+        transparent={true}
+        animationType="fade"
+      >
+        <View style={styles.progressModalOverlay}>
+          <View style={styles.progressModalContent}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={styles.progressTitle}>Exporting PDF</Text>
+            <Text style={styles.progressText}>{exportProgress}</Text>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -706,6 +746,34 @@ const styles = StyleSheet.create({
     fontSize: Typography.xs,
     color: Colors.primary,
     marginTop: 2,
+  },
+  progressModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  progressModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: Spacing.xl,
+    alignItems: 'center',
+    minWidth: 250,
+    maxWidth: 300,
+  },
+  progressTitle: {
+    fontSize: Typography.lg,
+    fontFamily: Typography.fontBold,
+    color: Colors.textPrimary,
+    marginTop: Spacing.md,
+    textAlign: 'center',
+  },
+  progressText: {
+    fontSize: Typography.base,
+    fontFamily: Typography.fontRegular,
+    color: Colors.textSecondary,
+    marginTop: Spacing.sm,
+    textAlign: 'center',
   },
 });
 

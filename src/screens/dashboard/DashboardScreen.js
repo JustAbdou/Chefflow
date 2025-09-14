@@ -253,6 +253,17 @@ const DashboardScreen = ({ navigation }) => {
     },
   ];
 
+  const shiftManagement = [
+    {
+      title: 'Shift Handover',
+      subtitle: 'Submit shift handover reports',
+      icon: 'document-text-outline',
+      iconColor: '#FFFFFF',
+      iconType: 'ionicon',
+      screen: 'Handover',
+    },
+  ];
+
   // Render icon based on type
   const renderIcon = (icon, color, type, size = 24) => {
     if (type === 'ionicon') {
@@ -360,6 +371,35 @@ const DashboardScreen = ({ navigation }) => {
                   </View>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Shift Submission - Highlighted Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Shift Submission</Text>
+          <View style={styles.menuContainer}>
+            {shiftManagement.map((item, index) => (
+              <TouchableOpacity
+                key={index}
+                style={styles.highlightedMenuItem}
+                onPress={() => {
+                  if (item.screen) {
+                    navigation.navigate(item.screen);
+                  }
+                }}
+              >
+                <View style={styles.menuItemLeft}>
+                  <View style={styles.highlightedMenuItemIcon}>
+                    {renderIcon(item.icon, item.iconColor, item.iconType)}
+                  </View>
+                  <View>
+                    <Text style={styles.highlightedMenuItemTitle}>{item.title}</Text>
+                    <Text style={styles.highlightedMenuItemSubtitle}>{item.subtitle}</Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
               </TouchableOpacity>
             ))}
           </View>
@@ -503,6 +543,42 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontRegular,
     color: Colors.textSecondary,
     opacity: 0.7,
+  },
+  highlightedMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.primary,
+    borderRadius: 16,
+    padding: Spacing.md,
+    marginHorizontal: '2%',
+    marginBottom: Spacing.sm,
+    elevation: 4,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    paddingVertical: Spacing.lg,
+  },
+  highlightedMenuItemIcon: {
+    width: 40,
+    height: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
+  highlightedMenuItemTitle: {
+    fontSize: Typography.base,
+    fontFamily: Typography.fontBold,
+    color: '#FFFFFF',
+  },
+  highlightedMenuItemSubtitle: {
+    fontSize: Typography.sm,
+    fontFamily: Typography.fontRegular,
+    color: '#FFFFFF',
+    opacity: 0.9,
   },
 });
 

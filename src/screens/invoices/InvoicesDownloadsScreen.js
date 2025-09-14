@@ -9,6 +9,8 @@ import {
   FlatList,
   Linking,
   Alert,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing, Typography } from '../../constants';
@@ -32,6 +34,8 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
   const [recentDownloads, setRecentDownloads] = useState([]);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState('');
   const today = getFormattedTodayDate();
 
   useEffect(() => {
@@ -192,8 +196,9 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
     }
 
     try {
-      // Show loading state
-      Alert.alert('Generating PDF', 'Please wait while we prepare your invoice records...');
+      // Show progress modal
+      setIsExporting(true);
+      setExportProgress('Preparing invoice data...');
 
       // Generate unique filename
       const fileName = generatePdfFileName('invoice', startDate, endDate);
@@ -403,6 +408,7 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
       `;
 
       // Generate PDF locally first
+      setExportProgress('Generating PDF document...');
       const { uri } = await Print.printToFileAsync({ 
         html, 
         base64: false, 
@@ -411,22 +417,25 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
 
       console.log('📄 PDF generated locally:', uri);
 
-      // Use temporary storage solution until Firebase Storage blob issues are resolved
+      // Attempt to upload to Firebase Storage, with local fallback
       let downloadURL;
       let isLocalStorage = false;
       try {
-        // Try the original method first
+        setExportProgress('Uploading to cloud storage...');
+        console.log('☁️ Attempting Firebase Storage upload...');
         downloadURL = await uploadPdfToStorage(uri, fileName, restaurantId, 'invoices');
-        console.log('☁️ PDF uploaded to Firebase Storage successfully:', downloadURL);
+        console.log('✅ PDF uploaded to Firebase Storage successfully:', downloadURL);
       } catch (storageError) {
-        console.log('⚠️ Firebase Storage upload failed, using temporary local storage:', storageError.message);
-        // Use temporary local storage as fallback
+        console.log('⚠️ Firebase Storage upload failed, using local storage fallback:', storageError.message);
+        setExportProgress('Saving to local storage...');
+        // Use local storage as fallback
         downloadURL = await uploadPdfToStorageTemporary(uri, fileName, restaurantId, 'invoices');
         console.log('💾 PDF saved to local storage:', downloadURL);
         isLocalStorage = true;
       }
 
       // Save download info to Firestore with the download URL
+      setExportProgress('Saving record to database...');
       await addDoc(
         getRestaurantSubCollection(restaurantId, "downloads", "invoices", "recent_downloads"),
         {
@@ -448,34 +457,42 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
       }
 
       // Refresh the downloads list
+      setExportProgress('Finalizing...');
       await fetchRecentDownloads();
 
-      Alert.alert(
-        'PDF Generated!', 
-        isLocalStorage 
-          ? 'Invoice records have been generated and saved locally on this device. Note: The file will only be accessible from this device until cloud storage is available.'
-          : 'Invoice records have been generated and uploaded to cloud storage. You can access them from the Recent Downloads section.',
-        [
-          {
-            text: 'View Downloads',
-            onPress: () => {
-              // The list will automatically refresh
+      // Close progress modal and show success
+      setIsExporting(false);
+      setTimeout(() => {
+        Alert.alert(
+          'PDF Generated!', 
+          isLocalStorage 
+            ? 'Invoice records have been generated and saved locally on this device. Note: The file will only be accessible from this device until cloud storage is available.'
+            : 'Invoice records have been generated and uploaded to cloud storage. You can access them from the Recent Downloads section.',
+          [
+            {
+              text: 'View Downloads',
+              onPress: () => {
+                // The list will automatically refresh
+              }
+            },
+            {
+              text: 'OK',
+              style: 'default'
             }
-          },
-          {
-            text: 'OK',
-            style: 'default'
-          }
-        ]
-      );
+          ]
+        );
+      }, 300);
 
     } catch (error) {
       console.error('❌ Error exporting PDF:', error);
-      Alert.alert(
-        'Export Failed', 
-        'Failed to export PDF: ' + error.message,
-        [{ text: 'OK' }]
-      );
+      setIsExporting(false);
+      setTimeout(() => {
+        Alert.alert(
+          'Export Failed', 
+          'Failed to export PDF: ' + error.message,
+          [{ text: 'OK' }]
+        );
+      }, 300);
     }
   };
 
@@ -584,6 +601,21 @@ const InvoicesDownloadsScreen = ({ navigation }) => {
           contentContainerStyle={{ paddingHorizontal: Spacing.lg }}
         />
       </ScrollView>
+
+      {/* Progress Modal */}
+      <Modal
+        visible={isExporting}
+        transparent={true}
+        animationType="fade"
+      >
+        <View style={styles.progressModalOverlay}>
+          <View style={styles.progressModalContent}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={styles.progressTitle}>Exporting PDF</Text>
+            <Text style={styles.progressText}>{exportProgress}</Text>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -777,6 +809,34 @@ const styles = StyleSheet.create({
     fontSize: Typography.xs,
     color: Colors.primary,
     marginTop: 2,
+  },
+  progressModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  progressModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: Spacing.xl,
+    alignItems: 'center',
+    minWidth: 250,
+    maxWidth: 300,
+  },
+  progressTitle: {
+    fontSize: Typography.lg,
+    fontFamily: Typography.fontBold,
+    color: Colors.textPrimary,
+    marginTop: Spacing.md,
+    textAlign: 'center',
+  },
+  progressText: {
+    fontSize: Typography.base,
+    fontFamily: Typography.fontRegular,
+    color: Colors.textSecondary,
+    marginTop: Spacing.sm,
+    textAlign: 'center',
   },
 });
 

@@ -9,7 +9,9 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Alert
+  Alert,
+  Modal,
+  ActivityIndicator
 } from 'react-native';
 import { Ionicons } from "@expo/vector-icons";
 import NetInfo from '@react-native-community/netinfo';
@@ -36,6 +38,8 @@ function HandoverScreen() {
   const [problemsDuringShift, setProblemsDuringShift] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [pdfProgress, setPdfProgress] = useState('');
 
   // Hide Android navigation bar
   const navigationBar = useNavigationBar();
@@ -141,16 +145,24 @@ function HandoverScreen() {
 
         // Generate PDF for this handover
         try {
+          setIsGeneratingPdf(true);
+          setPdfProgress('Generating handover PDF...');
           console.log('📄 Generating PDF for handover...');
-          const pdfUrl = await generateHandoverPDF(handoverData, docRef.id);
+          const pdfResult = await generateHandoverPDF(handoverData, docRef.id);
           
-          if (pdfUrl) {
-            // Update the handover document with the PDF URL
-            await updateDoc(docRef, { pdf: pdfUrl });
-            console.log('✅ PDF generated and URL saved:', pdfUrl);
+          if (pdfResult && pdfResult.downloadURL) {
+            setPdfProgress('Saving PDF information...');
+            // Update the handover document with the PDF URL and storage type
+            await updateDoc(docRef, { 
+              pdf: pdfResult.downloadURL,
+              isLocalStorage: pdfResult.isLocalStorage 
+            });
+            console.log('✅ PDF generated and URL saved:', pdfResult.downloadURL);
           }
+          setIsGeneratingPdf(false);
         } catch (pdfError) {
           console.error('⚠️ PDF generation failed, but handover was saved:', pdfError);
+          setIsGeneratingPdf(false);
           // Don't fail the entire operation if PDF generation fails
         }
         
@@ -257,6 +269,7 @@ function HandoverScreen() {
       `;
 
       // Generate PDF locally
+      setPdfProgress('Creating PDF document...');
       const { uri } = await Print.printToFileAsync({ 
         html, 
         base64: false, 
@@ -265,15 +278,20 @@ function HandoverScreen() {
 
       console.log('📄 PDF generated locally:', uri);
 
-      // Upload to Firebase Storage
+      // Attempt to upload to Firebase Storage, with local fallback
       let downloadURL;
+      let isLocalStorage = false;
       try {
+        setPdfProgress('Uploading to cloud storage...');
+        console.log('☁️ Attempting Firebase Storage upload...');
         downloadURL = await uploadPdfToStorage(uri, fileName, restaurantId, 'handovers');
-        console.log('☁️ PDF uploaded to Firebase Storage successfully:', downloadURL);
+        console.log('✅ PDF uploaded to Firebase Storage successfully:', downloadURL);
       } catch (storageError) {
-        console.log('⚠️ Firebase Storage upload failed, using temporary local storage:', storageError.message);
+        console.log('⚠️ Firebase Storage upload failed, using local storage fallback:', storageError.message);
+        setPdfProgress('Saving to local storage...');
         downloadURL = await uploadPdfToStorageTemporary(uri, fileName, restaurantId, 'handovers');
         console.log('💾 PDF saved to local storage:', downloadURL);
+        isLocalStorage = true;
       }
 
       // Clean up the original temporary file
@@ -284,7 +302,7 @@ function HandoverScreen() {
         console.warn('⚠️ Could not clean up original temporary file:', cleanupError);
       }
 
-      return downloadURL;
+      return { downloadURL, isLocalStorage };
 
     } catch (error) {
       console.error('❌ Error generating handover PDF:', error);
@@ -404,6 +422,21 @@ function HandoverScreen() {
         </TouchableOpacity>
       </View>
       </KeyboardAvoidingView>
+
+      {/* PDF Generation Progress Modal */}
+      <Modal
+        visible={isGeneratingPdf}
+        transparent={true}
+        animationType="fade"
+      >
+        <View style={styles.progressModalOverlay}>
+          <View style={styles.progressModalContent}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={styles.progressTitle}>Generating Handover PDF</Text>
+            <Text style={styles.progressText}>{pdfProgress}</Text>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -565,6 +598,34 @@ const styles = StyleSheet.create({
   completeButtonDisabled: {
     backgroundColor: Colors.gray400,
     opacity: 0.6,
+  },
+  progressModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  progressModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: Spacing.xl,
+    alignItems: 'center',
+    minWidth: 250,
+    maxWidth: 300,
+  },
+  progressTitle: {
+    fontSize: Typography.lg,
+    fontFamily: Typography.fontBold,
+    color: Colors.textPrimary,
+    marginTop: Spacing.md,
+    textAlign: 'center',
+  },
+  progressText: {
+    fontSize: Typography.base,
+    fontFamily: Typography.fontRegular,
+    color: Colors.textSecondary,
+    marginTop: Spacing.sm,
+    textAlign: 'center',
   },
 });
 

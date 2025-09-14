@@ -441,8 +441,8 @@ export default function PrepListsScreen() {
     if (!restaurantId || yesterdayItems.length === 0) return;
     
     Alert.alert(
-      "Clear Yesterday's Items",
-      `Are you sure you want to delete all ${yesterdayItems.length} items from yesterday's list? This action cannot be undone.`,
+      "Clear Today's Items",
+      `Are you sure you want to delete all ${yesterdayItems.length} items from today's list? This action cannot be undone.`,
       [
         {
           text: "Cancel",
@@ -565,7 +565,7 @@ export default function PrepListsScreen() {
               {todayItems.length > 0 && (
                 <>
                   <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Today's List</Text>
+                    <Text style={styles.sectionTitle}>Tomorrow's List</Text>
                     <TouchableOpacity
                       style={styles.clearAllButton}
                       onPress={clearAllItems}
@@ -582,7 +582,7 @@ export default function PrepListsScreen() {
               {yesterdayItems.length > 0 && (
                 <>
                   <View style={styles.sectionHeader}>
-                    <Text style={[styles.sectionTitle, styles.yesterdaySectionTitle]}>Yesterday's List</Text>
+                    <Text style={[styles.sectionTitle, styles.yesterdaySectionTitle]}>Today's List</Text>
                     <TouchableOpacity
                       style={styles.clearAllButton}
                       onPress={clearYesterdayItems}
@@ -690,7 +690,7 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   yesterdaySectionTitle: {
-    color: Colors.warning, // Orange color for yesterday's list
+    color: Colors.warning, // Orange color for today's list
   },
   emptyState: {
     textAlign: "center",

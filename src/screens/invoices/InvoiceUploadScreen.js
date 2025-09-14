@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,16 +10,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Modal,
-  FlatList,
-  Animated,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, Typography } from '../../constants';
 import Button from '../../components/ui/Button';
 import { getFormattedTodayDate } from '../../utils/dateUtils';
-import { addDoc, serverTimestamp, getDocs, getDoc } from "firebase/firestore";
+import { addDoc, serverTimestamp } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
@@ -37,73 +34,8 @@ const InvoiceUploadScreen = ({ navigation }) => {
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   const [editField, setEditField] = useState(null);
-  const [supplierModalVisible, setSupplierModalVisible] = useState(false);
 
-  const [supplierList, setSupplierList] = useState([]);
 
-  const animatedListHeight = useRef(new Animated.Value(0)).current;
-  const animatedOpacity = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (supplierModalVisible) {
-      Animated.parallel([
-        Animated.timing(animatedListHeight, {
-          toValue: 160, // adjust to fit your list
-          duration: 200,
-          useNativeDriver: false,
-        }),
-        Animated.timing(animatedOpacity, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: false,
-        }),
-      ]).start();
-    } else {
-      Animated.parallel([
-        Animated.timing(animatedListHeight, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: false,
-        }),
-        Animated.timing(animatedOpacity, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: false,
-        }),
-      ]).start();
-    }
-  }, [supplierModalVisible]);
-
-  useEffect(() => {
-    const fetchSuppliers = async () => {
-      if (!restaurantId) return;
-      
-      try {
-        console.log('🔍 Fetching suppliers for restaurant:', restaurantId);
-        
-        const suppliersDocRef = getRestaurantDoc(restaurantId, 'suppliers', 'suppliers');
-        const suppliersDoc = await getDoc(suppliersDocRef);
-        
-        if (suppliersDoc.exists()) {
-          const data = suppliersDoc.data();
-          const suppliersArray = data.names || [];
-          console.log('✅ Fetched suppliers:', suppliersArray);
-          setSupplierList(suppliersArray);
-          // Set first supplier as default if supplier is empty and there are suppliers
-          if (!supplier && suppliersArray.length > 0) {
-            setSupplier(suppliersArray[0]);
-          }
-        } else {
-          console.log('⚠️ Suppliers document not found, no suppliers available');
-          setSupplierList([]);
-        }
-      } catch (error) {
-        console.error('❌ Error fetching suppliers:', error);
-        setSupplierList([]);
-      }
-    };
-    fetchSuppliers();
-  }, [restaurantId]);
 
   const pickImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
@@ -255,31 +187,16 @@ const InvoiceUploadScreen = ({ navigation }) => {
             {/* Supplier */}
             <View style={styles.inputRow}>
               <Text style={styles.inputLabel}>Supplier</Text>
-              <TouchableOpacity
-                style={[styles.inputWithIcon, { paddingVertical: 0 }]}
-                onPress={() => setSupplierModalVisible(!supplierModalVisible)}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.input, { color: supplier ? Colors.textPrimary : Colors.gray400 }]}>
-                  {supplier || 'Select supplier'}
-                </Text>
-                <Ionicons name={supplierModalVisible ? "chevron-up" : "chevron-down"} size={18} color={Colors.gray400} />
-              </TouchableOpacity>
-              <Animated.View style={[styles.inlineList, { height: animatedListHeight, opacity: animatedOpacity }]}>
-                {supplierModalVisible &&
-                  supplierList.map(item => (
-                    <TouchableOpacity
-                      key={item}
-                      style={styles.supplierItem}
-                      onPress={() => {
-                        setSupplier(item);
-                        setSupplierModalVisible(false);
-                      }}
-                    >
-                      <Text style={styles.supplierText}>{item}</Text>
-                    </TouchableOpacity>
-                  ))}
-              </Animated.View>
+              <View style={styles.inputWithIcon}>
+                <TextInput
+                  style={styles.input}
+                  value={supplier}
+                  onChangeText={setSupplier}
+                  placeholder="Enter supplier name"
+                  placeholderTextColor={Colors.gray400}
+                  selectTextOnFocus
+                />
+              </View>
             </View>
           </View>
 
@@ -436,41 +353,7 @@ const styles = StyleSheet.create({
     color: Colors.gray500,
     ...Typography.body,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    width: '80%',
-    backgroundColor: Colors.backgroundPrimary,
-    borderRadius: 16,
-    padding: Spacing.lg,
-    elevation: 4,
-  },
-  modalTitle: {
-    ...Typography.h3,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.md,
-  },
-  supplierItem: {
-    paddingVertical: 12,
-    paddingHorizontal: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gray200,
-  },
-  supplierText: {
-    ...Typography.body,
-    color: Colors.textPrimary,
-  },
-  inlineList: {
-    backgroundColor: Colors.gray100,
-    borderRadius: 12,
-    overflow: 'hidden',
-    marginTop: Spacing.sm,
-    elevation: 2,
-  },
+
 });
 
 export default InvoiceUploadScreen;

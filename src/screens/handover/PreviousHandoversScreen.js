@@ -188,43 +188,61 @@ function PreviousHandoversScreen() {
       if (handover.pdf && handover.pdf.trim() !== '') {
         // If PDF link exists, provide download options
         console.log('Opening PDF:', handover.pdf);
-        Alert.alert(
-          'Download PDF',
-          `Download handover from ${formatDate(handover.createdAt)}?`,
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { 
-              text: 'Open in Browser', 
-              onPress: () => {
-                if (handover.pdf.startsWith('http')) {
-                  Linking.openURL(handover.pdf);
-                } else {
-                  Alert.alert('Invalid Link', 'This PDF link is not accessible.');
-                }
-              }
-            },
-            { 
-              text: 'Download to Device', 
-              onPress: async () => {
-                try {
-                  if (handover.pdf.startsWith('http')) {
-                    const fileUri = FileSystem.documentDirectory + `handover_${handover.id}.pdf`;
-                    const downloadResumable = FileSystem.createDownloadResumable(handover.pdf, fileUri);
-                    const result = await downloadResumable.downloadAsync();
-                    if (result) {
-                      await Sharing.shareAsync(result.uri, { mimeType: 'application/pdf' });
-                    }
-                  } else {
-                    Alert.alert('Invalid Link', 'This PDF link is not supported for download.');
-                  }
-                } catch (downloadError) {
-                  console.error('Download error:', downloadError);
-                  Alert.alert('Download Failed', 'Could not download the PDF.');
-                }
-              }
+        
+        if (handover.isLocalStorage && handover.pdf.startsWith('file')) {
+          // Local storage files - direct sharing
+          try {
+            // Check if file still exists
+            const fileInfo = await FileSystem.getInfoAsync(handover.pdf);
+            if (fileInfo.exists) {
+              await Sharing.shareAsync(handover.pdf, { mimeType: 'application/pdf' });
+            } else {
+              Alert.alert('File Not Found', 'This handover PDF is no longer available on the device.');
             }
-          ]
-        );
+          } catch (error) {
+            console.error('Local file access error:', error);
+            Alert.alert('Error', 'Could not access the local PDF file.');
+          }
+        } else {
+          // Cloud storage files or legacy files
+          Alert.alert(
+            'Download PDF',
+            `Download handover from ${formatDate(handover.createdAt)}?`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { 
+                text: 'Open in Browser', 
+                onPress: () => {
+                  if (handover.pdf.startsWith('http')) {
+                    Linking.openURL(handover.pdf);
+                  } else {
+                    Alert.alert('Invalid Link', 'This PDF link is not accessible.');
+                  }
+                }
+              },
+              { 
+                text: 'Download to Device', 
+                onPress: async () => {
+                  try {
+                    if (handover.pdf.startsWith('http')) {
+                      const fileUri = FileSystem.documentDirectory + `handover_${handover.id}.pdf`;
+                      const downloadResumable = FileSystem.createDownloadResumable(handover.pdf, fileUri);
+                      const result = await downloadResumable.downloadAsync();
+                      if (result) {
+                        await Sharing.shareAsync(result.uri, { mimeType: 'application/pdf' });
+                      }
+                    } else {
+                      Alert.alert('Invalid Link', 'This PDF link is not supported for download.');
+                    }
+                  } catch (downloadError) {
+                    console.error('Download error:', downloadError);
+                    Alert.alert('Download Failed', 'Could not download the PDF.');
+                  }
+                }
+              }
+            ]
+          );
+        }
       } else {
         // No PDF available
         Alert.alert(
