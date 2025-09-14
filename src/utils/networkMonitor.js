@@ -3,6 +3,7 @@ import { syncOfflineQueue } from './offlineSync';
 
 let isOnline = true;
 let networkListeners = [];
+let onlineCallbacks = [];
 let currentRestaurantId = null;
 
 // Initialize network monitoring
@@ -25,10 +26,19 @@ export const initializeNetworkMonitor = (restaurantId) => {
       }
     });
     
-    // If we just came back online, sync the offline queue
+    // If we just came back online, sync the offline queue and trigger callbacks
     if (!wasOnline && isOnline && currentRestaurantId) {
       console.log('🔄 Back online! Syncing offline operations...');
-      syncOfflineQueue(currentRestaurantId);
+      syncOfflineQueue(currentRestaurantId).then((result) => {
+        // Trigger all registered online callbacks
+        onlineCallbacks.forEach(callback => {
+          try {
+            callback(result);
+          } catch (error) {
+            console.error('❌ Error in online callback:', error);
+          }
+        });
+      });
     }
   });
   
@@ -61,6 +71,21 @@ export const removeNetworkListener = (listener) => {
 // Get current network status
 export const getNetworkStatus = () => {
   return isOnline;
+};
+
+// Add callback for when coming back online
+export const addOnlineCallback = (callback) => {
+  if (typeof callback !== 'function') {
+    console.error('❌ Online callback must be a function');
+    return;
+  }
+  
+  onlineCallbacks.push(callback);
+  
+  // Return a function to remove the callback
+  return () => {
+    onlineCallbacks = onlineCallbacks.filter(c => c !== callback);
+  };
 };
 
 // Check network status once

@@ -15,7 +15,7 @@ import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
 import { auth, db } from "../../../firebase";
 import { initializeOfflineSync, offlineCapableCreate, offlineCapableUpdate, offlineCapableDelete, cachePrepItemsOffline, getCachedPrepItems } from '../../utils/offlineSync';
-import { addNetworkListener, getNetworkStatus } from '../../utils/networkMonitor';
+import { addNetworkListener, getNetworkStatus, addOnlineCallback } from '../../utils/networkMonitor';
 
 export default function PrepListsScreen() {
   const { restaurantId } = useRestaurant();
@@ -47,10 +47,19 @@ export default function PrepListsScreen() {
     // Add network listener
     const removeNetworkListener = addNetworkListener((isOnline) => {
       setIsNetworkOnline(isOnline);
-      console.log(`🌐 Network status updated: ${isOnline ? 'Online' : 'Offline'}`);
+      console.log(`🌐 Prep List - Network status updated: ${isOnline ? 'Online' : 'Offline'}`);
     });
 
-    return removeNetworkListener;
+    // Add callback for when coming back online
+    const removeOnlineCallback = addOnlineCallback(async (syncResult) => {
+      console.log('🔄 Prep List - Back online, refreshing data...');
+      await fetchPrepItems(true); // Force refresh from server
+    });
+
+    return () => {
+      removeNetworkListener();
+      removeOnlineCallback();
+    };
   }, [restaurantId]);
 
   // Initialize offline sync

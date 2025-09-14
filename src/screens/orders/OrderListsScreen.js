@@ -16,6 +16,16 @@ import { getDocs, addDoc, serverTimestamp, query, orderBy, deleteDoc, doc, getDo
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
 import { auth, db } from "../../../firebase";
+import { 
+  initializeOfflineSync, 
+  offlineCapableCreate, 
+  offlineCapableUpdate, 
+  offlineCapableDelete, 
+  cacheOrderItemsOffline, 
+  getCachedOrderItems,
+  refreshDataFromServer
+} from '../../utils/offlineSync';
+import { addNetworkListener, getNetworkStatus, addOnlineCallback } from '../../utils/networkMonitor';
 
 export function OrderListsScreen() {
   const { restaurantId } = useRestaurant();
@@ -24,6 +34,7 @@ export function OrderListsScreen() {
   const [orderItems, setOrderItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [isNetworkOnline, setIsNetworkOnline] = useState(true);
 
   // Hide Android navigation bar
   const navigationBar = useNavigationBar();
@@ -34,21 +45,84 @@ export function OrderListsScreen() {
     setCurrentDate(getFormattedTodayDate());
   }, [])
 
+  // Initialize network monitoring
+  useEffect(() => {
+    if (!restaurantId) return;
+
+    // Set initial network status
+    setIsNetworkOnline(getNetworkStatus());
+
+    // Add network listener
+    const removeNetworkListener = addNetworkListener((isOnline) => {
+      setIsNetworkOnline(isOnline);
+      console.log(`🌐 Order List - Network status updated: ${isOnline ? 'Online' : 'Offline'}`);
+    });
+
+    // Add callback for when coming back online
+    const removeOnlineCallback = addOnlineCallback(async (syncResult) => {
+      console.log('🔄 Order List - Back online, refreshing data...');
+      await fetchOrderItems(true); // Force refresh from server
+    });
+
+    return () => {
+      removeNetworkListener();
+      removeOnlineCallback();
+    };
+  }, [restaurantId]);
+
+  // Initialize offline sync
+  useEffect(() => {
+    if (!restaurantId) return;
+
+    const initSync = async () => {
+      await initializeOfflineSync(restaurantId);
+    };
+
+    initSync();
+  }, [restaurantId]);
+
   // Reusable function to fetch order items
-  const fetchOrderItems = async () => {
+  const fetchOrderItems = async (forceRefresh = false) => {
     if (!restaurantId) return;
     
     try {
-      const q = query(getRestaurantCollection(restaurantId, "orderlist"), orderBy("createdAt", "desc"));
-      const snapshot = await getDocs(q);
-      const items = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        completed: doc.data().done || false, // completed UI state matches Firestore 'done' field
-      }));
-      setOrderItems(items);
+      if (isNetworkOnline || forceRefresh) {
+        // Try to fetch from Firestore
+        const q = query(getRestaurantCollection(restaurantId, "orderlist"), orderBy("createdAt", "desc"));
+        const snapshot = await getDocs(q);
+        const items = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          completed: doc.data().done || false, // completed UI state matches Firestore 'done' field
+        }));
+        setOrderItems(items);
+        
+        // Cache items for offline use
+        await cacheOrderItemsOffline(items);
+        console.log(`📱 Cached ${items.length} order items for offline use`);
+      } else {
+        // Use cached data when offline
+        console.log('📱 Offline mode: Using cached order items');
+        const cachedItems = await getCachedOrderItems();
+        const itemsWithCompleted = cachedItems.map(item => ({
+          ...item,
+          completed: item.done || false,
+        }));
+        setOrderItems(itemsWithCompleted);
+        
+        if (itemsWithCompleted.length > 0) {
+          console.log(`📱 Loaded ${itemsWithCompleted.length} order items from cache (offline)`);
+        }
+      }
     } catch (error) {
       console.error("Error fetching order items:", error);
+      // Try to load from cache as fallback
+      const cachedItems = await getCachedOrderItems();
+      const itemsWithCompleted = cachedItems.map(item => ({
+        ...item,
+        completed: item.done || false,
+      }));
+      setOrderItems(itemsWithCompleted);
     }
   };
 
@@ -60,12 +134,17 @@ export function OrderListsScreen() {
       setRefreshing(false);
     };
     loadOrderItems();
-  }, [restaurantId]);
+  }, [restaurantId, isNetworkOnline]);
 
   // Pull to refresh handler
   const onRefresh = async () => {
+    if (!isNetworkOnline) {
+      console.log('📱 Offline: Cannot refresh, using cached data');
+      return;
+    }
+    
     setRefreshing(true);
-    await fetchOrderItems();
+    await fetchOrderItems(true); // Force refresh from server
     setRefreshing(false);
   };
 
@@ -82,11 +161,9 @@ export function OrderListsScreen() {
       items.map((item) => (item.id === id ? { ...item, completed: newCompletedStatus } : item))
     );
     
-    // Update Firestore - when checked (completed: true), set done: true
+    // Update using offline-capable function
     try {
-      await updateDoc(getRestaurantDoc(restaurantId, "orderlist", id), {
-        done: newCompletedStatus,
-      });
+      await offlineCapableUpdate(restaurantId, "orderlist", id, { done: newCompletedStatus }, isNetworkOnline);
     } catch (error) {
       console.error("Error updating order item:", error);
       // Revert local state on error
@@ -112,9 +189,9 @@ export function OrderListsScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              // Delete all items from Firestore
+              // Delete all items using offline-capable delete
               const deletePromises = orderItems.map(item =>
-                deleteDoc(getRestaurantDoc(restaurantId, "orderlist", item.id))
+                offlineCapableDelete(restaurantId, "orderlist", item.id, isNetworkOnline)
               );
               
               await Promise.all(deletePromises);
@@ -171,16 +248,22 @@ export function OrderListsScreen() {
         }
       }
 
-      const docRef = await addDoc(getRestaurantCollection(restaurantId, "orderlist"), {
+      const itemData = {
         name: itemName,
-        createdAt: serverTimestamp(),
+        createdAt: isNetworkOnline ? serverTimestamp() : new Date(),
         createdBy: userInfo,
         done: false, // Initialize as not done
-      });
-      setOrderItems((items) => [
-        { id: docRef.id, name: itemName, completed: false, createdBy: userInfo, done: false },
-        ...items,
-      ]);
+      };
+
+      const result = await offlineCapableCreate(restaurantId, "orderlist", itemData, isNetworkOnline);
+      
+      const newItem = { 
+        ...result, 
+        completed: false,
+        createdAt: new Date() // Always use current date for immediate display
+      };
+      
+      setOrderItems((items) => [newItem, ...items]);
       setShowAddModal(false);
     } catch (error) {
       console.error("Error adding order item:", error);
@@ -191,7 +274,7 @@ export function OrderListsScreen() {
     if (!restaurantId) return;
     
     try {
-      await deleteDoc(getRestaurantDoc(restaurantId, "orderlist", id));
+      await offlineCapableDelete(restaurantId, "orderlist", id, isNetworkOnline);
       setOrderItems((items) => items.filter((item) => item.id !== id));
     } catch (error) {
       console.error("Error deleting order item:", error);
@@ -245,6 +328,13 @@ export function OrderListsScreen() {
             </View>
           </View>
         </View>
+
+        {/* Offline Indicator */}
+        {!isNetworkOnline && (
+          <View style={styles.offlineIndicator}>
+            <Text style={styles.offlineText}>📱 Offline Mode - Changes will sync when connected</Text>
+          </View>
+        )}
 
         {/* Section Header */}
         <View style={styles.sectionHeader}>
@@ -426,5 +516,19 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 12,
     elevation: 8,
+  },
+  offlineIndicator: {
+    backgroundColor: Colors.warning,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+    borderRadius: 8,
+  },
+  offlineText: {
+    color: Colors.background,
+    fontSize: Typography.sm,
+    fontWeight: Typography.medium,
+    textAlign: 'center',
   },
 })

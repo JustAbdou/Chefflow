@@ -4,6 +4,7 @@ import { getRestaurantCollection, getRestaurantDoc } from './firestoreHelpers';
 
 // Keys for storing offline data
 const OFFLINE_PREP_ITEMS_KEY = 'offline_prep_items';
+const OFFLINE_ORDER_ITEMS_KEY = 'offline_order_items';
 const OFFLINE_FRIDGE_LOGS_KEY = 'offline_fridge_logs';
 const OFFLINE_QUEUE_KEY = 'offline_queue';
 
@@ -37,6 +38,27 @@ export const getCachedPrepItems = async () => {
     return cached ? JSON.parse(cached) : [];
   } catch (error) {
     console.error('❌ Error getting cached prep items:', error);
+    return [];
+  }
+};
+
+// Store order items offline
+export const cacheOrderItemsOffline = async (items) => {
+  try {
+    await AsyncStorage.setItem(OFFLINE_ORDER_ITEMS_KEY, JSON.stringify(items));
+    console.log(`💾 Cached ${items.length} order items offline`);
+  } catch (error) {
+    console.error('❌ Error caching order items offline:', error);
+  }
+};
+
+// Get cached order items
+export const getCachedOrderItems = async () => {
+  try {
+    const cached = await AsyncStorage.getItem(OFFLINE_ORDER_ITEMS_KEY);
+    return cached ? JSON.parse(cached) : [];
+  } catch (error) {
+    console.error('❌ Error getting cached order items:', error);
     return [];
   }
 };
@@ -117,7 +139,7 @@ const clearOfflineQueue = async () => {
 // Clear all offline data
 export const clearOfflineData = async () => {
   try {
-    await AsyncStorage.multiRemove([OFFLINE_PREP_ITEMS_KEY, OFFLINE_FRIDGE_LOGS_KEY, OFFLINE_QUEUE_KEY]);
+    await AsyncStorage.multiRemove([OFFLINE_PREP_ITEMS_KEY, OFFLINE_ORDER_ITEMS_KEY, OFFLINE_FRIDGE_LOGS_KEY, OFFLINE_QUEUE_KEY]);
     console.log('🧹 Cleared all offline data');
   } catch (error) {
     console.error('❌ Error clearing offline data:', error);
@@ -199,26 +221,30 @@ export const offlineCapableDelete = async (restaurantId, collection, id, isOnlin
 export const syncOfflineQueue = async (restaurantId) => {
   try {
     const queue = await getOfflineQueue();
-    if (queue.length === 0) return;
+    if (queue.length === 0) return { success: true, synced: 0 };
 
     console.log(`🔄 Syncing ${queue.length} offline operations...`);
     
+    let syncedCount = 0;
     for (const operation of queue) {
       try {
         switch (operation.type) {
           case 'create':
             await addDoc(getRestaurantCollection(restaurantId, operation.collection), operation.data);
+            syncedCount++;
             break;
           case 'update':
             if (!operation.id.startsWith('offline_')) {
               const docRef = getRestaurantDoc(restaurantId, operation.collection, operation.id);
               await updateDoc(docRef, operation.data);
+              syncedCount++;
             }
             break;
           case 'delete':
             if (!operation.id.startsWith('offline_')) {
               const docRef = getRestaurantDoc(restaurantId, operation.collection, operation.id);
               await deleteDoc(docRef);
+              syncedCount++;
             }
             break;
         }
@@ -229,8 +255,34 @@ export const syncOfflineQueue = async (restaurantId) => {
 
     // Clear the queue after successful sync
     await clearOfflineQueue();
-    console.log('✅ Offline queue synced successfully');
+    console.log(`✅ Offline queue synced successfully (${syncedCount}/${queue.length} operations)`);
+    return { success: true, synced: syncedCount, total: queue.length };
   } catch (error) {
     console.error('❌ Error syncing offline queue:', error);
+    return { success: false, error };
+  }
+};
+
+// Fetch fresh data from server and update cache
+export const refreshDataFromServer = async (restaurantId, collection) => {
+  try {
+    const q = query(getRestaurantCollection(restaurantId, collection), orderBy("createdAt", "desc"));
+    const snapshot = await getDocs(q);
+    const items = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    // Update the appropriate cache
+    if (collection === 'preplist') {
+      await cachePrepItemsOffline(items);
+    } else if (collection === 'orderlist') {
+      await cacheOrderItemsOffline(items);
+    }
+
+    return items;
+  } catch (error) {
+    console.error(`❌ Error refreshing ${collection} data from server:`, error);
+    throw error;
   }
 };

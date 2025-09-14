@@ -15,6 +15,7 @@ import { RestaurantProvider } from './src/contexts/RestaurantContext';
 import { setupFirestoreErrorHandling } from './src/utils/firestoreConnectionManager';
 import { clearFirestoreCache, resetFirestoreConnection } from './firebase';
 import navigationBarUtils from './src/utils/navigationBar';
+import { initializeNetworkMonitor } from './src/utils/networkMonitor';
 import InvoicesScreen from './src/screens/invoices/InvoicesScreen';
 import InvoiceDetailScreen from './src/screens/invoices/InvoiceDetailScreen';
 import RecipeDetailScreen from './src/screens/recipes/RecipeDetailScreen';
@@ -83,6 +84,9 @@ export default function App() {
         
         // Initialize Android navigation bar (hide bottom buttons)
         await navigationBarUtils.initializeNavigationBar();
+        
+        // Initialize network monitoring (will be configured per restaurant in screens)
+        console.log('🌐 Network monitor ready for initialization');
         
         setServicesInitialized(true);
         console.log('✅ ChefFlow app initialization complete');
