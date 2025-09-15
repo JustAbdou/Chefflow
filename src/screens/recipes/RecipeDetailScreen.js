@@ -154,7 +154,7 @@ function RecipeDetailScreen({ route, navigation }) {
         {/* Notes */}
         {recipe.notes && (
           <>
-            <Text style={styles.sectionTitle}>Notes</Text>
+            <Text style={styles.sectionTitle}>Allergens</Text>
             <Text style={styles.notes}>{recipe.notes}</Text>
           </>
         )}
