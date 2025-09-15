@@ -219,7 +219,7 @@ const DashboardScreen = ({ navigation }) => {
       iconColor: Colors.primary,
     },
     { 
-      title: 'Closing', 
+      title: 'Closing Checklist', 
       value: taskCount.toString(), 
       subtitle: taskCount === 1 ? 'Task total' : 'Tasks total',
       icon: 'shield-checkmark-outline',
@@ -244,9 +244,9 @@ const DashboardScreen = ({ navigation }) => {
       screen: 'DeliveryTempLogs', // This should match the Stack.Screen name in App.js
     },
     {
-      title: 'Cooling & Reheating',
+      title: 'Cooking & Reheating',
       subtitle: 'Temperature safety logs',
-      icon: 'snow-outline',
+      icon: 'flame-outline',
       iconColor: Colors.primary,
       iconType: 'ionicon',
       screen: 'CoolingAndReheating',
@@ -313,7 +313,7 @@ const DashboardScreen = ({ navigation }) => {
                   navigation.navigate('OrderLists');
                 } else if (stat.title === 'Invoices') {
                   navigation.navigate('Invoices');
-                } else if (stat.title === 'Closing') {
+                } else if (stat.title === 'Closing Checklist') {
                   navigation.navigate('CleaningChecklist');
                 }
               }}
@@ -483,6 +483,7 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontMedium,
     color: Colors.textPrimary,
     flex: 1,
+    flexWrap: 'wrap',
   },
   statValue: {
     fontSize: 28,
