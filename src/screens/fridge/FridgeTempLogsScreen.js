@@ -120,7 +120,8 @@ export default function FridgeTempLogsScreen({ navigation }) {
             temperaturePM: data.temperaturePM || '',
             createdAt: data.createdAt,
             done: data.done || false,
-            isNew: false
+            isNew: false,
+            fridgeType: data.fridgeType || 'fridge'
           });
         } else {
           // Safely handle date conversion
@@ -531,7 +532,11 @@ export default function FridgeTempLogsScreen({ navigation }) {
                       activeOpacity={0.7}
                     >
                       <View style={styles.logIcon}>
-                        <Ionicons name="thermometer" size={24} color="#2563eb" />
+                        {log.fridgeType === 'fridge' ? (
+                          <Ionicons name="thermometer" size={24} color="#2563eb" />
+                        ) : (
+                          <Ionicons name="snow" size={24} color="#2563eb" />
+                        )}
                       </View>
                       <View style={styles.logInfo}>
                         <Text style={styles.logName}>{log.fridgeName || log.id}</Text>
