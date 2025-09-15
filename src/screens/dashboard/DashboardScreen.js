@@ -177,7 +177,9 @@ const DashboardScreen = ({ navigation }) => {
         snapshot.docs.forEach((doc, index) => {
           console.log(`📋 Dashboard Task ${index + 1}:`, doc.data());
         });
-        setTaskCount(snapshot.size);
+        // set the pending tasks that marks not done
+        const pendingTasks = snapshot.docs.filter(doc => !doc.data().done);
+        setTaskCount(pendingTasks.length);
       },
       (error) => {
         console.warn('Closing checklist listener error:', error);
@@ -246,7 +248,7 @@ const DashboardScreen = ({ navigation }) => {
     {
       title: 'Cooking & Reheating',
       subtitle: 'Temperature safety logs',
-      icon: 'flame-outline',
+      icon: 'flame',
       iconColor: Colors.primary,
       iconType: 'ionicon',
       screen: 'CoolingAndReheating',

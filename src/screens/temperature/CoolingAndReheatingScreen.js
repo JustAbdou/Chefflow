@@ -11,12 +11,15 @@ import {
   TextInput,
   Modal,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { getDocs, addDoc, serverTimestamp, query, where, Timestamp, orderBy } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection } from "../../utils/firestoreHelpers";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
+import Button from "../../components/ui/Button";
 
 import { Colors } from "../../constants/Colors";
 import { Typography } from "../../constants/Typography";
@@ -36,7 +39,7 @@ export default function CoolingAndReheatingScreen({ navigation }) {
   // Form state
   const [foodItem, setFoodItem] = useState("");
   const [temperature, setTemperature] = useState("");
-  const [selectedType, setSelectedType] = useState("cooling");
+  const [selectedType, setSelectedType] = useState("cooking");
 
   // Hide Android navigation bar
   const navigationBar = useNavigationBar();
@@ -47,7 +50,7 @@ export default function CoolingAndReheatingScreen({ navigation }) {
     if (!restaurantId) return;
 
     try {
-      console.log('🔍 Fetching cooling & reheating logs for restaurant:', restaurantId);
+      console.log('🔍 Fetching cooking & reheating logs for restaurant:', restaurantId);
 
       // Create date range for the selected date (start and end of day)
       const startOfDay = new Date(selectedDate);
@@ -83,10 +86,10 @@ export default function CoolingAndReheatingScreen({ navigation }) {
         return bTime - aTime;
       });
 
-      console.log('📋 Fetched cooling & reheating logs:', allLogs.length);
+      console.log('📋 Fetched cooking & reheating logs:', allLogs.length);
       setLogs(allLogs);
     } catch (error) {
-      console.error('❌ Error fetching cooling & reheating logs:', error);
+      console.error('❌ Error fetching cooking & reheating logs:', error);
       Alert.alert('Error', 'Failed to load temperature logs');
     } finally {
       setLoading(false);
@@ -123,18 +126,18 @@ export default function CoolingAndReheatingScreen({ navigation }) {
         createdAt: serverTimestamp(),
       });
 
-      console.log('✅ Cooling & reheating log saved successfully');
+      console.log('✅ Cooking & reheating log saved successfully');
       
       // Reset form
       setFoodItem("");
       setTemperature("");
-      setSelectedType("cooling");
+      setSelectedType("cooking");
       setShowAddModal(false);
       
       // Refresh logs
       fetchLogs();
     } catch (error) {
-      console.error('❌ Error saving cooling & reheating log:', error);
+      console.error('❌ Error saving cooking & reheating log:', error);
       Alert.alert('Error', 'Failed to save temperature log');
     }
   };
@@ -201,7 +204,7 @@ export default function CoolingAndReheatingScreen({ navigation }) {
           <Text style={styles.backArrow}>‹</Text>
         </TouchableOpacity>
         <View style={styles.headerContent}>
-          <Text style={styles.title}>Cooling & Reheating</Text>
+          <Text style={styles.title}>Cooking & Reheating</Text>
           <Text style={styles.subtitle}>Temperature Safety Logs</Text>
         </View>
       </View>
@@ -252,14 +255,14 @@ export default function CoolingAndReheatingScreen({ navigation }) {
                     <Text style={styles.logTime}>{formatTime(log.createdAt)}</Text>
                   </View>
                   <View style={styles.logRight}>
-                    <View style={[styles.typeBadge, log.type === 'cooling' ? styles.coolingBadge : styles.reheatingBadge]}>
+                    <View style={[styles.typeBadge, log.type === 'cooking' ? styles.cookingBadge : styles.reheatingBadge]}>
                       <Ionicons 
-                        name={log.type === 'cooling' ? 'snow' : 'flame'} 
+                        name={log.type === 'cooking' ? 'restaurant' : 'flame'} 
                         size={12} 
-                        color={log.type === 'cooling' ? '#0ea5e9' : '#f97316'} 
+                        color={log.type === 'cooking' ? '#22c55e' : '#f97316'} 
                       />
-                      <Text style={[styles.typeText, log.type === 'cooling' ? styles.coolingText : styles.reheatingText]}>
-                        {log.type === 'cooling' ? 'Cooling' : 'Reheating'}
+                      <Text style={[styles.typeText, log.type === 'cooking' ? styles.cookingText : styles.reheatingText]}>
+                        {log.type === 'cooking' ? 'Cooking' : 'Reheating'}
                       </Text>
                     </View>
                     <Text style={styles.temperatureValue}>{log.temperature}°C</Text>
@@ -274,76 +277,101 @@ export default function CoolingAndReheatingScreen({ navigation }) {
       {/* Add Log Modal */}
       <Modal
         visible={showAddModal}
+        transparent
         animationType="slide"
-        transparent={true}
         onRequestClose={() => setShowAddModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add New Log</Text>
-              <TouchableOpacity onPress={() => setShowAddModal(false)}>
-                <Ionicons name="close" size={24} color={Colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Food Item Input */}
-            <View style={styles.inputSection}>
-              <Text style={styles.inputLabel}>Food Item</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Enter food item name"
-                value={foodItem}
-                onChangeText={setFoodItem}
-                placeholderTextColor={Colors.textLight}
-              />
-            </View>
-
-            {/* Type Selection */}
-            <View style={styles.inputSection}>
-              <Text style={styles.inputLabel}>Type</Text>
-              <View style={styles.typeSelector}>
-                <TouchableOpacity
-                  style={[styles.typeButton, selectedType === 'cooling' && styles.typeButtonSelected]}
-                  onPress={() => setSelectedType('cooling')}
-                >
-                  <Ionicons name="snow" size={20} color={selectedType === 'cooling' ? '#fff' : '#0ea5e9'} />
-                  <Text style={[styles.typeButtonText, selectedType === 'cooling' && styles.typeButtonTextSelected]}>
-                    Cooling
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.typeButton, selectedType === 'reheating' && styles.typeButtonSelected]}
-                  onPress={() => setSelectedType('reheating')}
-                >
-                  <Ionicons name="flame" size={20} color={selectedType === 'reheating' ? '#fff' : '#f97316'} />
-                  <Text style={[styles.typeButtonText, selectedType === 'reheating' && styles.typeButtonTextSelected]}>
-                    Reheating
-                  </Text>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1 }}
+        >
+          <View style={styles.overlay}>
+            <TouchableOpacity style={styles.backdrop} onPress={() => setShowAddModal(false)} activeOpacity={1} />
+            <View style={styles.modal}>
+              {/* Header */}
+              <View style={styles.header}>
+                <View style={styles.titleContainer}>
+                  <Text style={styles.title}>Add Temperature Log</Text>
+                  <Text style={styles.date}>{formatSelectedDate(selectedDate)}</Text>
+                </View>
+                <TouchableOpacity style={styles.closeButton} onPress={() => setShowAddModal(false)} activeOpacity={0.7}>
+                  <Text style={styles.closeText}>×</Text>
                 </TouchableOpacity>
               </View>
-            </View>
 
-            {/* Temperature Input */}
-            <View style={styles.inputSection}>
-              <Text style={styles.inputLabel}>Temperature (°C)</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Enter temperature"
-                value={temperature}
-                onChangeText={setTemperature}
-                keyboardType="numeric"
-                placeholderTextColor={Colors.textLight}
-              />
-            </View>
+              {/* Form */}
+              <View style={styles.form}>
+                <Text style={styles.label}>Food Item</Text>
+                <TextInput
+                  style={styles.input}
+                  value={foodItem}
+                  onChangeText={setFoodItem}
+                  placeholder="Enter food item name"
+                  placeholderTextColor={Colors.gray200}
+                  autoFocus
+                />
+                
+                {/* Type Selection */}
+                <Text style={[styles.label, { marginTop: Spacing.lg }]}>Type</Text>
+                <View style={styles.typeSelector}>
+                  <TouchableOpacity
+                    style={[
+                      styles.typeChip,
+                      selectedType === 'cooking' && styles.activeTypeChip,
+                    ]}
+                    onPress={() => setSelectedType('cooking')}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="restaurant" size={16} color={selectedType === 'cooking' ? '#fff' : '#22c55e'} />
+                    <Text
+                      style={[
+                        styles.typeText,
+                        selectedType === 'cooking' && styles.activeTypeText,
+                      ]}
+                    >
+                      Cooking
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.typeChip,
+                      selectedType === 'reheating' && styles.activeTypeChip,
+                    ]}
+                    onPress={() => setSelectedType('reheating')}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="flame" size={16} color={selectedType === 'reheating' ? '#fff' : '#f97316'} />
+                    <Text
+                      style={[
+                        styles.typeText,
+                        selectedType === 'reheating' && styles.activeTypeText,
+                      ]}
+                    >
+                      Reheating
+                    </Text>
+                  </TouchableOpacity>
+                </View>
 
-            {/* Save Button */}
-            <TouchableOpacity style={styles.saveButton} onPress={handleSaveLog}>
-              <Ionicons name="add-circle" size={20} color="#fff" />
-              <Text style={styles.saveButtonText}>Save Log</Text>
-            </TouchableOpacity>
+                <Text style={[styles.label, { marginTop: Spacing.lg }]}>Temperature (°C)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={temperature}
+                  onChangeText={setTemperature}
+                  placeholder="Enter temperature"
+                  placeholderTextColor={Colors.gray200}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              {/* Save Button */}
+              <View style={styles.buttonContainer}>
+                <Button onPress={handleSaveLog} disabled={!foodItem.trim() || !temperature.trim()} fullWidth size="lg">
+                  Save Log
+                </Button>
+              </View>
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Date Picker Modal */}
@@ -509,8 +537,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 4,
   },
-  coolingBadge: {
-    backgroundColor: "#eff6ff",
+  cookingBadge: {
+    backgroundColor: "#f0fdf4",
   },
   reheatingBadge: {
     backgroundColor: "#fff7ed",
@@ -520,8 +548,8 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontMedium,
     marginLeft: 4,
   },
-  coolingText: {
-    color: "#0ea5e9",
+  cookingText: {
+    color: "#22c55e",
   },
   reheatingText: {
     color: "#f97316",
@@ -549,94 +577,102 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 20,
   },
-  modalOverlay: {
+  overlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "flex-end",
   },
-  modalContent: {
-    backgroundColor: "#fff",
+  backdrop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
+  modal: {
+    backgroundColor: Colors.background,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.lg,
     paddingBottom: Spacing.xl,
-    minHeight: 500,
+    minHeight: 300,
   },
-  modalHeader: {
+  header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     marginBottom: Spacing.xl,
   },
-  modalTitle: {
-    fontSize: 20,
-    fontFamily: Typography.fontBold,
-    color: Colors.textPrimary,
+  titleContainer: {
+    flex: 1,
   },
-  inputSection: {
-    marginBottom: Spacing.lg,
-  },
-  inputLabel: {
-    fontSize: 16,
-    fontFamily: Typography.fontMedium,
+  title: {
+    fontSize: Typography.xl,
+    fontWeight: "bold",
     color: Colors.textPrimary,
+    marginBottom: Spacing.xs,
+  },
+  date: {
+    fontSize: Typography.base,
+    color: Colors.textSecondary,
+  },
+  closeButton: {
+    padding: Spacing.xs,
+  },
+  closeText: {
+    fontSize: 24,
+    color: Colors.textSecondary,
+    fontWeight: "300",
+  },
+  form: {
+    marginBottom: Spacing.xl,
+  },
+  label: {
+    fontSize: Typography.base,
+    color: Colors.textSecondary,
     marginBottom: Spacing.sm,
   },
-  textInput: {
-    backgroundColor: "#f8fafc",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
-    fontSize: 16,
-    fontFamily: Typography.fontRegular,
+  input: {
+    fontSize: Typography.lg,
+    fontWeight: "600",
     color: Colors.textPrimary,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
+  },
+  buttonContainer: {
+    marginTop: "auto",
   },
   typeSelector: {
     flexDirection: "row",
-    gap: Spacing.md,
+    marginTop: Spacing.sm,
+    gap: Spacing.sm,
   },
-  typeButton: {
+  typeChip: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#f8fafc",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    paddingVertical: Spacing.md,
+    backgroundColor: Colors.gray100,
     paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
   },
-  typeButtonSelected: {
+  activeTypeChip: {
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
   },
-  typeButtonText: {
-    fontSize: 16,
-    fontFamily: Typography.fontMedium,
-    color: Colors.textPrimary,
+  typeText: {
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+    fontWeight: Typography.medium,
     marginLeft: Spacing.xs,
   },
-  typeButtonTextSelected: {
-    color: "#fff",
-  },
-  saveButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: Colors.primary,
-    borderRadius: 12,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    marginTop: Spacing.lg,
-  },
-  saveButtonText: {
-    fontSize: 16,
-    fontFamily: Typography.fontSemiBold,
-    color: "#fff",
-    marginLeft: Spacing.xs,
+  activeTypeText: {
+    color: Colors.background,
   },
 });
