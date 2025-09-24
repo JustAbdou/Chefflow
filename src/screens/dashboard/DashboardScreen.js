@@ -18,6 +18,7 @@ import { onSnapshot, query, orderBy, limit, where, doc, getDoc, collectionGroup 
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection } from "../../utils/firestoreHelpers";
 import { auth, db } from "../../../firebase";
+import { groupPrepItemsByDay } from '../../utils/dateUtils';
 
 const DashboardScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
@@ -64,36 +65,30 @@ const DashboardScreen = ({ navigation }) => {
 
     fetchUserName();
     
-    // Real-time listener for prep list with error handling (count items that are not done or don't have done property)
+    // Real-time listener for prep list with error handling (count items that are not done AND within 48-hour window)
     const unsubPrep = onSnapshot(
       getRestaurantCollection(restaurantId, "preplist"),
       (snapshot) => {
-        // Debug: Log all items to see their structure
-        console.log(`📊 Dashboard: Analyzing ${snapshot.size} prep items:`);
+        // Get all prep items from Firestore
+        const allPrepItems = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
         
-        const pendingItems = [];
-        const completedItems = [];
+        // Group items by day using the same logic as PrepListsScreen
+        const { todayItems, yesterdayItems } = groupPrepItemsByDay(allPrepItems);
         
-        snapshot.docs.forEach((doc, index) => {
-          const data = doc.data();
-          console.log(`📋 Item ${index + 1}:`, { 
-            id: doc.id, 
-            name: data.name, 
-            done: data.done, 
-            typeof_done: typeof data.done 
-          });
-          
-          // Count only items that are explicitly not done (false, undefined, or null)
-          if (data.done === true) {
-            completedItems.push({ id: doc.id, name: data.name });
-          } else {
-            pendingItems.push({ id: doc.id, name: data.name });
-          }
-        });
+        // Combine today and yesterday items (48-hour window)
+        const recentItems = [...todayItems, ...yesterdayItems];
         
-        console.log(`📊 Dashboard: ${pendingItems.length} pending, ${completedItems.length} completed`);
-        console.log('📝 Pending items:', pendingItems.map(item => item.name));
-        console.log('✅ Completed items:', completedItems.map(item => item.name));
+        // Count only items that are explicitly not done within the 48-hour window
+        const pendingItems = recentItems.filter(item => item.done !== true);
+        const completedItems = recentItems.filter(item => item.done === true);
+        
+        console.log(`📊 Dashboard: Analyzed ${snapshot.size} total prep items`);
+        console.log(`📊 Dashboard: ${recentItems.length} items in 48-hour window`);
+        console.log(`📊 Dashboard: ${pendingItems.length} pending, ${completedItems.length} completed (in window)`);
+        console.log('📝 Recent pending items:', pendingItems.map(item => item.name));
         
         setPrepCount(pendingItems.length);
       },

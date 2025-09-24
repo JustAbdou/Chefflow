@@ -45,55 +45,48 @@ function RecipesScreen() {
     const cacheValid = await isRecipesCacheValid();
     const isOnline = getNetworkStatus();
     
-    // Load from cache first for instant display
-    if (!forceRefresh && (cacheValid || !isOnline)) {
-      console.log('📚 Loading recipes from cache...');
-      setLoadingFromCache(true);
+    // Always try to load from cache first for instant display
+    console.log('📚 Loading recipes from cache...');
+    setLoadingFromCache(true);
+    
+    const { recipesByCategory: cachedRecipes, categories: cachedCategories } = await getCachedRecipes();
+    
+    if (Object.keys(cachedRecipes).length > 0) {
+      setCategories(cachedCategories);
+      setRecipesByCategory(cachedRecipes);
+      setLoadingFromCache(false);
       
-      const { recipesByCategory: cachedRecipes, categories: cachedCategories } = await getCachedRecipes();
-      
-      if (Object.keys(cachedRecipes).length > 0) {
-        setCategories(cachedCategories);
-        setRecipesByCategory(cachedRecipes);
-        setLoadingFromCache(false);
-        
-        if (!selectedCategory && cachedCategories.length > 0) {
-          setSelectedCategory("All Recipes");
-        }
-        
-        console.log(`📚 Loaded ${cachedRecipes["All Recipes"]?.length || 0} recipes from cache`);
-        
-        // If cache is valid, we're done
-        if (cacheValid && !forceRefresh) {
-          setLoading(false);
-          setRefreshing(false);
-          return;
-        }
+      if (!selectedCategory && cachedCategories.length > 0) {
+        setSelectedCategory("All Recipes");
       }
+      
+      console.log(`📚 Loaded ${cachedRecipes["All Recipes"]?.length || 0} recipes from cache`);
+      
+      // If cache is valid and not forcing refresh, we're done
+      if (cacheValid && !forceRefresh) {
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+    } else {
+      setLoadingFromCache(false);
     }
 
-    // Fetch fresh data from server
-    if (isOnline || forceRefresh) {
+    // Fetch fresh data from server if needed
+    if ((isOnline && (!cacheValid || forceRefresh)) || Object.keys(cachedRecipes).length === 0) {
       if (!loadingFromCache) setLoading(true);
       
       try {
         console.log('🌐 Fetching fresh recipes from server...');
         await fetchCategoriesAndRecipes();
         
-        // Cache the fresh data
-        await cacheRecipesOffline(recipesByCategory, categories);
-        await updateRecipesCacheTimestamp();
-        
       } catch (error) {
         console.error('❌ Error fetching fresh recipes:', error);
         // If we have cached data and fetch fails, keep using cache
-        if (Object.keys(recipesByCategory).length === 0) {
-          const { recipesByCategory: cachedRecipes, categories: cachedCategories } = await getCachedRecipes();
-          if (Object.keys(cachedRecipes).length > 0) {
-            setCategories(cachedCategories);
-            setRecipesByCategory(cachedRecipes);
-            console.log('📚 Fallback to cached recipes after fetch error');
-          }
+        if (Object.keys(recipesByCategory).length === 0 && Object.keys(cachedRecipes).length > 0) {
+          setCategories(cachedCategories);
+          setRecipesByCategory(cachedRecipes);
+          console.log('📚 Fallback to cached recipes after fetch error');
         }
       }
     }

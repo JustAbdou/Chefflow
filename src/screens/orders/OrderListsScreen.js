@@ -31,6 +31,7 @@ export function OrderListsScreen() {
   const { restaurantId } = useRestaurant();
   const navigation = useNavigation()
   const [showAddModal, setShowAddModal] = useState(false)
+  const [selectedSupplier, setSelectedSupplier] = useState(null)
   const [orderItems, setOrderItems] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [ordersBySupplier, setOrdersBySupplier] = useState({});
@@ -161,16 +162,18 @@ export function OrderListsScreen() {
         ordersBySup[supplier.name] = [];
       });
 
-      // Add "No Supplier" category for items without supplier
-      ordersBySup["No Supplier"] = [];
-
       // Group items by supplier
       items.forEach(item => {
-        const supplierName = item.supplier || "No Supplier";
-        if (ordersBySup[supplierName]) {
+        let supplierName = item.supplier;
+        
+        // If item has no supplier, assign to first available supplier
+        if (!supplierName && suppliersList.length > 0) {
+          supplierName = suppliersList[0].name;
+        }
+        
+        // Only add to existing supplier groups
+        if (supplierName && ordersBySup[supplierName]) {
           ordersBySup[supplierName].push(item);
-        } else {
-          ordersBySup["No Supplier"].push(item);
         }
       });
 
@@ -222,7 +225,7 @@ export function OrderListsScreen() {
     if (!item) return;
     
     const newCompletedStatus = !item.completed;
-    const supplierName = item.supplier || "No Supplier";
+    const supplierName = item.supplier || (suppliers.length > 0 ? suppliers[0].name : "Unknown");
     
     setOrderItems((items) =>
       items.map((item) => (item.id === id ? { ...item, completed: newCompletedStatus } : item))
@@ -294,8 +297,13 @@ export function OrderListsScreen() {
     return orderItems.filter(item => item.completed).length;
   }
 
-  const addNewItem = async (itemName, supplier = "No Supplier") => {
+  const addNewItem = async (itemName, supplier) => {
     if (!restaurantId) return;
+    
+    // If no supplier provided, use the first available supplier
+    if (!supplier && suppliers.length > 0) {
+      supplier = suppliers[0].name;
+    }
     
     try {
       const currentUser = auth.currentUser;
@@ -332,7 +340,7 @@ export function OrderListsScreen() {
 
       const itemData = {
         name: itemName,
-        supplier: supplier === "No Supplier" ? null : supplier, // Store null for no supplier
+        supplier: supplier, // Always store the supplier name
         createdAt: isNetworkOnline ? serverTimestamp() : new Date(),
         createdBy: userInfo,
         done: false, // Initialize as not done
@@ -360,12 +368,17 @@ export function OrderListsScreen() {
     }
   }
 
+  const addItemToSupplier = (supplierName) => {
+    setSelectedSupplier(supplierName);
+    setShowAddModal(true);
+  }
+
   const deleteItem = async (id) => {
     if (!restaurantId) return;
     
     // Find the item to get its supplier
     const item = orderItems.find(item => item.id === id);
-    const supplierName = item ? (item.supplier || "No Supplier") : "No Supplier";
+    const supplierName = item ? (item.supplier || (suppliers.length > 0 ? suppliers[0].name : "Unknown")) : (suppliers.length > 0 ? suppliers[0].name : "Unknown");
     
     try {
       await offlineCapableDelete(restaurantId, "orderlist", id, isNetworkOnline);
@@ -454,56 +467,73 @@ export function OrderListsScreen() {
         <View style={styles.listContainer}>
           {loading ? (
             <Text style={{ textAlign: "center", marginTop: 40 }}>Loading...</Text>
+          ) : suppliers.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="business-outline" size={48} color={Colors.gray200} />
+              <Text style={styles.emptyStateText}>No Suppliers Found</Text>
+              <Text style={styles.emptyStateSubtext}>Add suppliers through delivery logs first</Text>
+            </View>
           ) : (
-            Object.keys(ordersBySupplier).map((supplierName) => {
-              const supplierOrders = ordersBySupplier[supplierName];
-              if (!supplierOrders || supplierOrders.length === 0) return null;
-              
-              return (
-                <View key={supplierName} style={styles.supplierSection}>
-                  {/* Supplier Header */}
-                  <View style={styles.supplierHeader}>
-                    <View style={styles.supplierHeaderLeft}>
-                      <Ionicons 
-                        name={supplierName === "No Supplier" ? "bag-outline" : "business-outline"} 
-                        size={20} 
-                        color={Colors.primary} 
-                        style={styles.supplierIcon}
-                      />
-                      <Text style={styles.supplierName}>{supplierName}</Text>
-                    </View>
-                    <Text style={styles.supplierCount}>
-                      {supplierOrders.length} {supplierOrders.length === 1 ? 'item' : 'items'}
-                    </Text>
-                  </View>
-
-                  {/* Supplier Orders */}
-                  {supplierOrders.map((item) => (
-                    <Swipeable
-                      key={item.id}
-                      renderRightActions={() => renderRightActions(item.id)}
-                      overshootRight={false}
-                      containerStyle={{ backgroundColor: "transparent" }}
-                    >
-                      <TouchableOpacity
-                        style={styles.listItem}
-                        onPress={() => toggleItem(item.id)}
-                        activeOpacity={0.7}
-                      >
-                        <View
-                          style={[styles.checkbox, item.completed && styles.checkedBox]}
-                        >
-                          {item.completed && <Text style={styles.checkmark}>✓</Text>}
-                        </View>
-                        <Text style={[styles.itemText, item.completed && styles.completedText]}>
-                          {item.name}
+            <>
+              {/* Show only real suppliers from database */}
+              {suppliers.map((supplier) => {
+                const supplierOrders = ordersBySupplier[supplier.name] || [];
+                
+                return (
+                  <View key={supplier.name} style={styles.supplierSection}>
+                    {/* Supplier Header */}
+                    <View style={styles.supplierHeader}>
+                      <View style={styles.supplierHeaderLeft}>
+                        <Ionicons 
+                          name="business-outline" 
+                          size={20} 
+                          color={Colors.primary} 
+                          style={styles.supplierIcon}
+                        />
+                        <Text style={styles.supplierName}>{supplier.name}</Text>
+                      </View>
+                      <View style={styles.supplierHeaderRight}>
+                        <Text style={styles.supplierCount}>
+                          {supplierOrders.length} {supplierOrders.length === 1 ? 'item' : 'items'}
                         </Text>
-                      </TouchableOpacity>
-                    </Swipeable>
-                  ))}
-                </View>
-              );
-            })
+                        <TouchableOpacity 
+                          style={styles.addButton}
+                          onPress={() => addItemToSupplier(supplier.name)}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="add-circle-outline" size={24} color={Colors.primary} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    {/* Supplier Orders */}
+                    {supplierOrders.map((item) => (
+                      <Swipeable
+                        key={item.id}
+                        renderRightActions={() => renderRightActions(item.id)}
+                        overshootRight={false}
+                        containerStyle={{ backgroundColor: "transparent" }}
+                      >
+                        <TouchableOpacity
+                          style={styles.listItem}
+                          onPress={() => toggleItem(item.id)}
+                          activeOpacity={0.7}
+                        >
+                          <View
+                            style={[styles.checkbox, item.completed && styles.checkedBox]}
+                          >
+                            {item.completed && <Text style={styles.checkmark}>✓</Text>}
+                          </View>
+                          <Text style={[styles.itemText, item.completed && styles.completedText]}>
+                            {item.name}
+                          </Text>
+                        </TouchableOpacity>
+                      </Swipeable>
+                    ))}
+                  </View>
+                );
+              })}
+            </>
           )}
           
           {/* Empty state */}
@@ -517,19 +547,20 @@ export function OrderListsScreen() {
         </View>
       </ScrollView>
 
-      {/* Floating Action Button */}
-      <TouchableOpacity style={styles.fab} onPress={() => setShowAddModal(true)} activeOpacity={0.85}>
-        <Ionicons name="add" size={38} color="#fff" />
-      </TouchableOpacity>
+
 
       {/* Add Item Modal */}
       {showAddModal && (
         <AddOrderItemModal 
           visible={showAddModal}
-          onClose={() => setShowAddModal(false)} 
+          onClose={() => {
+            setShowAddModal(false);
+            setSelectedSupplier(null);
+          }} 
           onAdd={addNewItem}
           date={currentDate}
           suppliers={suppliers}
+          defaultSupplier={selectedSupplier}
         />
       )}
     </SafeAreaView>
@@ -643,25 +674,7 @@ const styles = StyleSheet.create({
     textDecorationLine: "line-through",
     color: Colors.textSecondary,
   },
-  fab: {
-    position: "absolute",
-    right: 40,
-    bottom: 70,
-    width: 72,
-    height: 72,
-    borderRadius: 50,
-    backgroundColor: Colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
+
   offlineIndicator: {
     backgroundColor: Colors.warning,
     paddingHorizontal: Spacing.lg,
@@ -696,6 +709,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flex: 1,
   },
+  supplierHeaderRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
   supplierIcon: {
     marginRight: Spacing.sm,
   },
@@ -709,6 +727,11 @@ const styles = StyleSheet.create({
     fontSize: Typography.sm,
     color: Colors.textSecondary,
     fontFamily: Typography.fontMedium,
+  },
+  addButton: {
+    padding: Spacing.xs,
+    borderRadius: 8,
+    backgroundColor: Colors.gray100,
   },
   emptyState: {
     alignItems: 'center',

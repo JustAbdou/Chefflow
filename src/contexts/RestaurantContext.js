@@ -4,6 +4,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, enableNetwork } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { normalizeRestaurantName, RESTAURANT_NAMES, getRestaurantDisplayName } from '../utils/restaurantUtils';
+import { preloadRecipesForRestaurant } from '../utils/offlineSync';
 
 const RestaurantContext = createContext();
 
@@ -49,6 +50,20 @@ export const RestaurantProvider = ({ children }) => {
             if (restaurantDoc.exists()) {
               setRestaurantId(fetchedRestaurantId);
               console.log(`User logged into restaurant: ${fetchedRestaurantId}`);
+              
+              // Start background recipe preloading
+              console.log('📚 Starting background recipe preload...');
+              preloadRecipesForRestaurant(fetchedRestaurantId)
+                .then((result) => {
+                  if (result?.success) {
+                    console.log(`📚 Recipe preload completed: ${result.totalRecipes} recipes in ${result.categories} categories`);
+                  } else {
+                    console.log('📚 Recipe preload skipped or failed:', result?.error || 'Unknown reason');
+                  }
+                })
+                .catch((error) => {
+                  console.error('📚 Recipe preload error:', error);
+                });
             } else {
               console.error('Restaurant ID does not exist.');
               setRestaurantId(null);

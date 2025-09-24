@@ -146,6 +146,106 @@ export const updateRecipesCacheTimestamp = async () => {
   }
 };
 
+// Check if recipes are already cached for a restaurant
+export const hasRecipesCache = async () => {
+  try {
+    const { recipesByCategory } = await getCachedRecipes();
+    return Object.keys(recipesByCategory).length > 0;
+  } catch (error) {
+    console.error('❌ Error checking recipes cache:', error);
+    return false;
+  }
+};
+
+// Pre-load and cache all recipes for a restaurant (background task)
+export const preloadRecipesForRestaurant = async (restaurantId) => {
+  if (!restaurantId) {
+    console.log('📚 No restaurant ID provided for recipe preloading');
+    return;
+  }
+
+  try {
+    console.log('📚 Starting background recipe preload for restaurant:', restaurantId);
+
+    // Check if we already have fresh cache
+    const cacheValid = await isRecipesCacheValid();
+    if (cacheValid) {
+      console.log('📚 Recipe cache is already fresh, skipping preload');
+      return;
+    }
+
+    // Import required Firestore functions
+    const { doc, getDoc, getDocs } = await import("firebase/firestore");
+    const { getRestaurantDoc, getRestaurantSubCollection } = await import("./firestoreHelpers");
+
+    // Fetch category names from restaurants/{restaurantId}/recipes/categories
+    const categoryNamesDoc = await getDoc(getRestaurantDoc(restaurantId, "recipes", "categories"));
+    let categoryNames = [];
+    
+    if (categoryNamesDoc.exists()) {
+      const data = categoryNamesDoc.data();
+      categoryNames = data?.names || [];
+      console.log('📚 Preload: Found category names:', categoryNames);
+    } else {
+      console.log('📚 Preload: No categories found, using defaults');
+      categoryNames = ['Desserts', 'Main', 'Starters'];
+    }
+    
+    const fetchedCategories = [];
+    const recipesObj = {};
+    let allRecipes = [];
+
+    // For each category name from the array
+    for (const categoryName of categoryNames) {
+      console.log('📚 Preload: Processing category:', categoryName);
+      fetchedCategories.push({ id: categoryName, name: categoryName });
+
+      try {
+        // Fetch recipe documents directly from the category path
+        const categoryRecipesSnapshot = await getDocs(getRestaurantSubCollection(restaurantId, "recipes", "categories", categoryName));
+        console.log(`📚 Preload: Found ${categoryRecipesSnapshot.size} recipes in ${categoryName}`);
+        
+        const categoryRecipes = [];
+        categoryRecipesSnapshot.forEach(recipeDoc => {
+          const recipeData = recipeDoc.data();
+          const recipe = { 
+            id: recipeDoc.id, 
+            ...recipeData, 
+            category: categoryName
+          };
+          categoryRecipes.push(recipe);
+          allRecipes.push(recipe);
+        });
+        
+        recipesObj[categoryName] = categoryRecipes;
+      } catch (categoryError) {
+        console.error(`📚 Preload error for category ${categoryName}:`, categoryError);
+        recipesObj[categoryName] = [];
+      }
+    }
+
+    const newRecipesByCategory = { "All Recipes": allRecipes, ...recipesObj };
+    
+    // Cache the preloaded data
+    await cacheRecipesOffline(newRecipesByCategory, fetchedCategories);
+    await updateRecipesCacheTimestamp();
+    
+    console.log(`📚 Successfully preloaded and cached ${allRecipes.length} recipes in ${fetchedCategories.length} categories`);
+    return {
+      success: true,
+      totalRecipes: allRecipes.length,
+      categories: fetchedCategories.length
+    };
+    
+  } catch (error) {
+    console.error('📚 Error preloading recipes:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
+
 // Add fridge log offline (for offline mode)
 export const addFridgeLogOffline = async (restaurantId, logData) => {
   try {

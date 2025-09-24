@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Modal, KeyboardAvoidingView, Platform, ScrollView } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { Colors } from "../../constants/Colors"
@@ -8,15 +8,21 @@ import { Typography } from "../../constants/Typography"
 import { Spacing } from "../../constants/Spacing"
 import Button from "../../components/ui/Button" // <-- Fix import (remove curly braces)
 
-export default function AddOrderItemModal({ visible, onClose, onAdd, date, suppliers = [] }) {
+export default function AddOrderItemModal({ visible, onClose, onAdd, date, suppliers = [], defaultSupplier = null }) {
   const [itemName, setItemName] = useState("")
-  const [selectedSupplier, setSelectedSupplier] = useState("")
+  const [selectedSupplier, setSelectedSupplier] = useState(defaultSupplier || (suppliers.length > 0 ? suppliers[0].name : ""))
+
+  // Update selected supplier when defaultSupplier prop changes
+  useEffect(() => {
+    setSelectedSupplier(defaultSupplier || (suppliers.length > 0 ? suppliers[0].name : ""));
+  }, [defaultSupplier, suppliers]);
 
   const handleAdd = () => {
     if (itemName.trim()) {
-      onAdd(itemName.trim(), selectedSupplier || "No Supplier")
+      const supplierToUse = selectedSupplier || (suppliers.length > 0 ? suppliers[0].name : "");
+      onAdd(itemName.trim(), supplierToUse)
       setItemName("")
-      setSelectedSupplier("")
+      setSelectedSupplier(suppliers.length > 0 ? suppliers[0].name : "")
       onClose()
     }
   }
@@ -33,7 +39,9 @@ export default function AddOrderItemModal({ visible, onClose, onAdd, date, suppl
             {/* Header */}
             <View style={styles.header}>
               <View style={styles.titleContainer}>
-                <Text style={styles.title}>Add Order Item</Text>
+                <Text style={styles.title}>
+                  {defaultSupplier ? `Add Item to ${defaultSupplier}` : 'Add Order Item'}
+                </Text>
                 {/* Date shown under the title */}
                 {date && <Text style={styles.date}>{date}</Text>}
               </View>
@@ -54,53 +62,39 @@ export default function AddOrderItemModal({ visible, onClose, onAdd, date, suppl
                 autoFocus
               />
               
-              {/* Supplier Selection */}
-              <Text style={[styles.label, { marginTop: Spacing.lg }]}>Supplier</Text>
-              <ScrollView 
-                horizontal 
-                showsHorizontalScrollIndicator={false} 
-                style={styles.supplierScroll}
-                contentContainerStyle={styles.supplierContainer}
-              >
-                <TouchableOpacity
-                  style={[
-                    styles.supplierChip,
-                    selectedSupplier === "" && styles.activeSupplierChip,
-                  ]}
-                  onPress={() => setSelectedSupplier("")}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.supplierText,
-                      selectedSupplier === "" && styles.activeSupplierText,
-                    ]}
+              {/* Supplier Selection - Only show if no default supplier is provided */}
+              {!defaultSupplier && (
+                <>
+                  <Text style={[styles.label, { marginTop: Spacing.lg }]}>Supplier</Text>
+                  <ScrollView 
+                    horizontal 
+                    showsHorizontalScrollIndicator={false} 
+                    style={styles.supplierScroll}
+                    contentContainerStyle={styles.supplierContainer}
                   >
-                    No Supplier
-                  </Text>
-                </TouchableOpacity>
-                
-                {suppliers.map((supplier) => (
-                  <TouchableOpacity
-                    key={supplier.id}
-                    style={[
-                      styles.supplierChip,
-                      selectedSupplier === supplier.name && styles.activeSupplierChip,
-                    ]}
-                    onPress={() => setSelectedSupplier(supplier.name)}
-                    activeOpacity={0.7}
-                  >
-                    <Text
-                      style={[
-                        styles.supplierText,
-                        selectedSupplier === supplier.name && styles.activeSupplierText,
-                      ]}
-                    >
-                      {supplier.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+                    {suppliers.map((supplier) => (
+                      <TouchableOpacity
+                        key={supplier.id}
+                        style={[
+                          styles.supplierChip,
+                          selectedSupplier === supplier.name && styles.activeSupplierChip,
+                        ]}
+                        onPress={() => setSelectedSupplier(supplier.name)}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.supplierText,
+                            selectedSupplier === supplier.name && styles.activeSupplierText,
+                          ]}
+                        >
+                          {supplier.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </>
+              )}
             </View>
 
             {/* Add Button */}
