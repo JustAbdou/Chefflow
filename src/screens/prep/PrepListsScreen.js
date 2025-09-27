@@ -79,6 +79,16 @@ export default function PrepListsScreen() {
       
       setLoading(true);
       try {
+        // Always try to load cached data first for faster initial display
+        if (!forceRefresh) {
+          const cachedItems = await getCachedPrepItems();
+          if (cachedItems.length > 0) {
+            setPrepItems(cachedItems);
+            console.log(`📱 Loaded ${cachedItems.length} prep items from cache (initial load)`);
+            setLoading(false); // Show cached data immediately
+          }
+        }
+        
         if (isNetworkOnline || forceRefresh) {
           // Try to fetch from Firestore
           const q = query(getRestaurantCollection(restaurantId, "preplist"), orderBy("createdAt", "desc"));
@@ -159,13 +169,14 @@ export default function PrepListsScreen() {
           await cachePrepItemsOffline(items);
           console.log(`📱 Cached ${items.length} prep items for offline use`);
         } else {
-          // Use cached data when offline
+          // Use cached data when offline (if not already loaded)
           console.log('📱 Offline mode: Using cached prep items');
-          const cachedItems = await getCachedPrepItems();
-          setPrepItems(cachedItems);
-          // If offline and no cache was loaded, show empty state
-          if (cachedItems.length > 0) {
-            console.log(`📱 Loaded ${cachedItems.length} prep items from cache (offline)`);
+          if (!forceRefresh) {
+            const cachedItems = await getCachedPrepItems();
+            if (cachedItems.length > 0) {
+              setPrepItems(cachedItems);
+              console.log(`📱 Loaded ${cachedItems.length} prep items from cache (offline mode)`);
+            }
           }
         }
       } catch (error) {
@@ -184,7 +195,11 @@ export default function PrepListsScreen() {
   // Pull to refresh handler
   const onRefresh = async () => {
     if (!isNetworkOnline) {
-      console.log('📱 Offline: Cannot refresh, using cached data');
+      console.log('📱 Offline: Refreshing with cached data');
+      setRefreshing(true);
+      const cachedItems = await getCachedPrepItems();
+      setPrepItems(cachedItems);
+      setRefreshing(false);
       return;
     }
     
@@ -277,6 +292,13 @@ export default function PrepListsScreen() {
   const toggleItem = async (id, currentDone) => {
     if (!restaurantId) return;
     
+    // Check if item is temporary and prevent action
+    const item = prepItems.find(item => item.id === id);
+    if (item && item.isTemporary) {
+      console.log('Cannot toggle temporary item, still processing...');
+      return;
+    }
+    
     setPrepItems((items) =>
       items.map((item) =>
         item.id === id ? { ...item, done: !currentDone } : item
@@ -333,19 +355,45 @@ export default function PrepListsScreen() {
         createdBy: userInfo,
       };
 
-      const result = await offlineCapableCreate(restaurantId, "preplist", itemData, isNetworkOnline);
-      
-      // Ensure the new item has a proper createdAt timestamp for sorting
-      const newItem = { 
-        ...result, 
-        completed: false, 
+      // Create the new item for immediate display (before async operation)
+      const tempId = `temp_${Date.now()}_${Math.random()}`;
+      const immediateItem = {
+        id: tempId,
+        name: itemName,
+        done: false,
+        completed: false,
         flagged: false,
-        createdAt: new Date() // Always use current date for immediate display
+        createdAt: new Date(),
+        createdBy: userInfo,
+        isTemporary: true // Mark as temporary for immediate display
       };
       
-      // Add the new item directly to the top of the list for immediate visibility
-      setPrepItems((items) => [newItem, ...items]);
+      // Add to UI immediately for instant feedback
+      setPrepItems((prevItems) => {
+        console.log(`📱 Adding "${itemName}" to UI immediately (${isNetworkOnline ? 'online' : 'offline'})`);
+        return [immediateItem, ...prevItems];
+      });
       setShowAddModal(false);
+      
+      try {
+        // Now perform the actual create operation
+        const result = await offlineCapableCreate(restaurantId, "preplist", itemData, isNetworkOnline);
+        
+        // Replace the temporary item with the real one
+        setPrepItems((prevItems) => 
+          prevItems.map(item => 
+            item.id === tempId 
+              ? { ...result, completed: false, flagged: false, createdAt: new Date() }
+              : item
+          )
+        );
+        
+        console.log(`✅ Item "${itemName}" added successfully (${isNetworkOnline ? 'online' : 'offline'})`);
+      } catch (error) {
+        console.error("Error adding prep item:", error);
+        // Remove the temporary item if the operation failed
+        setPrepItems((prevItems) => prevItems.filter(item => item.id !== tempId));
+      }
     } catch (error) {
       console.error("Error adding prep item:", error);
     }
@@ -353,6 +401,13 @@ export default function PrepListsScreen() {
 
   // Toggle urgent flag in state and Firestore - now opens modal for selection
   const openFlagModal = (id) => {
+    // Check if item is temporary and prevent action
+    const item = prepItems.find(item => item.id === id);
+    if (item && item.isTemporary) {
+      console.log('Cannot flag temporary item, still processing...');
+      return;
+    }
+    
     setSelectedItemId(id);
     setShowFlagModal(true);
   };
@@ -488,7 +543,10 @@ export default function PrepListsScreen() {
   const renderPrepItem = (item) => (
     <TouchableOpacity 
       key={item.id} 
-      style={styles.listItem}
+      style={[
+        styles.listItem,
+        item.isTemporary && styles.temporaryItem // Add subtle styling for temporary items
+      ]}
       onPress={() => toggleItem(item.id, item.done)}
       activeOpacity={0.7}
     >
@@ -497,24 +555,33 @@ export default function PrepListsScreen() {
       >
         {item.done && <Text style={styles.checkmark}>✓</Text>}
       </View>
-      <Text style={[styles.itemText, item.done && styles.completedText]}>
+      <Text style={[
+        styles.itemText, 
+        item.done && styles.completedText,
+        item.isTemporary && styles.temporaryText // Subtle styling for temporary items
+      ]}>
         {item.name}
       </Text>
       <View style={styles.flagContainer}>
-        <TouchableOpacity onPress={() => openFlagModal(item.id)} activeOpacity={0.7}>
-          <Text
-            style={[
-              styles.flagIcon,
-              { 
-                color: item.urgent === 'x85' ? "#F7B801" : 
-                       item.urgent === 'x86' ? "#FF3B30" : 
-                       Colors.gray200 
-              }
-            ]}
-          >
-            ⚑
-          </Text>
-        </TouchableOpacity>
+        {item.isTemporary ? (
+          // Show loading indicator for temporary items
+          <Text style={styles.loadingIndicator}>⋯</Text>
+        ) : (
+          <TouchableOpacity onPress={() => openFlagModal(item.id)} activeOpacity={0.7}>
+            <Text
+              style={[
+                styles.flagIcon,
+                { 
+                  color: item.urgent === 'x85' ? "#F7B801" : 
+                         item.urgent === 'x86' ? "#FF3B30" : 
+                         Colors.gray200 
+                }
+              ]}
+            >
+              ⚑
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -800,5 +867,15 @@ const styles = StyleSheet.create({
     fontSize: Typography.sm,
     fontWeight: Typography.medium,
     textAlign: 'center',
+  },
+  temporaryItem: {
+    opacity: 0.8, // Slightly faded to indicate processing
+  },
+  temporaryText: {
+    fontStyle: 'italic', // Italic text for temporary items
+  },
+  loadingIndicator: {
+    fontSize: Typography.lg,
+    color: Colors.primary,
   },
 });
