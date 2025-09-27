@@ -146,7 +146,8 @@ export default function FridgeTempLogsScreen({ navigation }) {
                 temperaturePM: data.temperaturePM || '',
                 createdAt: data.createdAt,
                 done: data.done || false,
-                isNew: false
+                isNew: false,
+                fridgeType: data.fridgeType || 'fridge'
               });
             }
           } catch (error) {
@@ -160,7 +161,8 @@ export default function FridgeTempLogsScreen({ navigation }) {
               temperaturePM: data.temperaturePM || '',
               createdAt: data.createdAt,
               done: data.done || false,
-              isNew: false
+              isNew: false,
+              fridgeType: data.fridgeType || 'fridge'
             });
           }
         }
@@ -348,12 +350,39 @@ export default function FridgeTempLogsScreen({ navigation }) {
     });
   };
 
-  // Handle temperature input change
+  // Handle temperature input change with automatic negative sign for freezers
   const handleTempInputChange = (logId, period, value) => {
     const key = `${logId}_${period}`;
+
+    // Find the fridge type for this log
+    const fridgeLog = logs.find(log => log.id === logId);
+    const fridgeType = fridgeLog?.fridgeType || 'fridge';
+
+    // Debug logging
+    console.log(`🌡️ Temperature input for ${logId} (${period}): value="${value}", fridgeType="${fridgeType}"`);
+
+    // Process the input value
+    let processedValue = value;
+
+    if (fridgeType === 'freezer') {
+      // For freezers, ensure the value is always negative
+      // Remove any existing negative signs first
+      processedValue = value.replace(/^-+/, '');
+
+      // Only add negative sign if there's actual numeric content
+      if (processedValue && processedValue.trim() !== '' && !isNaN(parseFloat(processedValue))) {
+        processedValue = '-' + processedValue;
+        console.log(`❄️ Freezer temp processed: "${value}" → "${processedValue}"`);
+      } else if (processedValue && processedValue.trim() !== '') {
+        // If user is still typing (like just "." or partial number), add the negative sign
+        processedValue = '-' + processedValue;
+        console.log(`❄️ Freezer temp (partial): "${value}" → "${processedValue}"`);
+      }
+    }
+
     setTempInputs(prev => ({
       ...prev,
-      [key]: value
+      [key]: processedValue
     }));
   };
 
@@ -399,10 +428,15 @@ export default function FridgeTempLogsScreen({ navigation }) {
         return;
       }
 
-      // Prepare data for saving
+      // Check if this log already has saved data that we need to preserve
+      const existingAM = fridgeDoc.temperatureAM || '';
+      const existingPM = fridgeDoc.temperaturePM || '';
+
+      // Prepare data for saving - preserve existing values if not updating
       const saveData = {
         fridgeName: fridgeDoc.fridgeName,
         fridgeId: fridgeDoc.fridgeId,
+        fridgeType: fridgeDoc.fridgeType || 'fridge',
         done: true,
         createdAt: Timestamp.fromDate(selectedDate), // Use selected date
         loggedBy: {
@@ -411,34 +445,88 @@ export default function FridgeTempLogsScreen({ navigation }) {
         }
       };
 
-      // Only add temperatures that have values
-      if (amTempValue && amTempValue.trim() !== '') {
-        saveData.temperatureAM = amTempValue.trim();
-      }
-      if (pmTempValue && pmTempValue.trim() !== '') {
-        saveData.temperaturePM = pmTempValue.trim();
-      }
+      // Preserve existing values and only update what's being changed
+      saveData.temperatureAM = (amTempValue && amTempValue.trim() !== '') ? amTempValue.trim() : existingAM;
+      saveData.temperaturePM = (pmTempValue && pmTempValue.trim() !== '') ? pmTempValue.trim() : existingPM;
+
+      console.log(`📝 Preserving existing temps - AM: "${existingAM}" → "${saveData.temperatureAM}", PM: "${existingPM}" → "${saveData.temperaturePM}"`);
 
       // Use offline-capable function
       if (isOffline) {
         console.log('📱 Offline mode: adding fridge log to pending queue');
         await addFridgeLogOffline(restaurantId, saveData);
-        
+
         // Update local state immediately for instant feedback
-        const updatedLogs = logs.map(log => 
-          log.id === logId 
-            ? { ...log, temperatureAM: saveData.temperatureAM || '', temperaturePM: saveData.temperaturePM || '', done: true, isOffline: true }
+        const updatedLogs = logs.map(log =>
+          log.id === logId
+            ? { ...log, temperatureAM: saveData.temperatureAM, temperaturePM: saveData.temperaturePM, done: true, isOffline: true }
             : log
         );
         setLogs(updatedLogs);
         await cacheFridgeLogsOffline(updatedLogs);
       } else {
-        // Online: save directly to Firestore
+        // Online: Check if a log already exists for this fridge and date
         const fridgeLogsCollection = getRestaurantCollection(restaurantId, 'fridgelogs');
-        saveData.recordedAt = serverTimestamp(); // When the record was actually created
-        await addDoc(fridgeLogsCollection, saveData);
-        console.log('✅ New fridge log created successfully');
-        
+
+        // Simple approach: get all logs and filter in JavaScript to avoid Firestore query limitations
+        const allLogsSnapshot = await getDocs(fridgeLogsCollection);
+
+        // Look for existing log for this fridge on this date
+        const startOfDay = new Date(selectedDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(selectedDate);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        let existingLogDoc = null;
+        let existingData = null;
+
+        // Find matching log by filtering in JavaScript
+        for (const docSnap of allLogsSnapshot.docs) {
+          const data = docSnap.data();
+          const logDate = data.createdAt;
+
+          // Check if this is the same fridge
+          if (data.fridgeName === fridgeDoc.fridgeName && logDate) {
+            try {
+              let logDateTime;
+              if (typeof logDate.toDate === 'function') {
+                logDateTime = logDate.toDate();
+              } else if (logDate instanceof Date) {
+                logDateTime = logDate;
+              } else {
+                logDateTime = new Date(logDate);
+              }
+
+              // Check if it's the same date
+              if (!isNaN(logDateTime.getTime()) && logDateTime >= startOfDay && logDateTime <= endOfDay) {
+                existingLogDoc = docSnap;
+                existingData = data;
+                break;
+              }
+            } catch (error) {
+              console.warn('Error parsing date for existing log:', docSnap.id, error);
+            }
+          }
+        }
+
+        if (existingLogDoc && existingData) {
+          // Update existing log
+          const updateData = {
+            ...saveData,
+            temperatureAM: (amTempValue && amTempValue.trim() !== '') ? amTempValue.trim() : (existingData.temperatureAM || ''),
+            temperaturePM: (pmTempValue && pmTempValue.trim() !== '') ? pmTempValue.trim() : (existingData.temperaturePM || ''),
+            recordedAt: serverTimestamp()
+          };
+
+          await updateDoc(doc(fridgeLogsCollection, existingLogDoc.id), updateData);
+          console.log('✅ Updated existing fridge log successfully');
+        } else {
+          // Create new log
+          saveData.recordedAt = serverTimestamp();
+          await addDoc(fridgeLogsCollection, saveData);
+          console.log('✅ New fridge log created successfully');
+        }
+
         // Refresh logs
         await fetchLogs();
       }
@@ -567,31 +655,37 @@ export default function FridgeTempLogsScreen({ navigation }) {
                       <View style={styles.temperatureInfo}>
                         {/* AM Temperature Input */}
                         <View style={styles.tempInputRow}>
-                          <Text style={styles.temperatureLabel}>AM Temperature:</Text>
+                          <Text style={styles.temperatureLabel}>
+                            AM Temperature{log.fridgeType === 'freezer' ? ' (Freezer)' : ''}:
+                          </Text>
                           <View style={styles.tempInputContainer}>
                             <TextInput
                               style={styles.tempInput}
                               value={tempInputs[`${log.id}_AM`] || ''}
                               onChangeText={(value) => handleTempInputChange(log.id, 'AM', value)}
-                              placeholder="--"
+                              placeholder={log.fridgeType === 'freezer' ? '-18' : '4'}
+                              placeholderTextColor="#9CA3AF"
                               keyboardType="numeric"
-                              maxLength={5}
+                              maxLength={6}
                             />
                             <Text style={styles.tempUnit}>℃</Text>
                           </View>
                         </View>
-                        
+
                         {/* PM Temperature Input */}
                         <View style={styles.tempInputRow}>
-                          <Text style={styles.temperatureLabel}>PM Temperature:</Text>
+                          <Text style={styles.temperatureLabel}>
+                            PM Temperature{log.fridgeType === 'freezer' ? ' (Freezer)' : ''}:
+                          </Text>
                           <View style={styles.tempInputContainer}>
                             <TextInput
                               style={styles.tempInput}
                               value={tempInputs[`${log.id}_PM`] || ''}
                               onChangeText={(value) => handleTempInputChange(log.id, 'PM', value)}
-                              placeholder="--"
+                              placeholder={log.fridgeType === 'freezer' ? '-18' : '4'}
+                              placeholderTextColor="#9CA3AF"
                               keyboardType="numeric"
-                              maxLength={5}
+                              maxLength={6}
                             />
                             <Text style={styles.tempUnit}>℃</Text>
                           </View>

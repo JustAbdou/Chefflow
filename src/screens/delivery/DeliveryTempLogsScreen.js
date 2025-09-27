@@ -238,12 +238,35 @@ export default function DeliveryTempLogsScreen({ navigation }) {
     });
   };
 
-  // Handle temperature input change
+  // Handle temperature input change with automatic negative sign for frozen
   const handleTempInputChange = (logId, type, value) => {
     const key = `${logId}_${type}`;
+
+    // Debug logging
+    console.log(`🌡️ Delivery temperature input for ${logId} (${type}): value="${value}"`);
+
+    // Process the input value
+    let processedValue = value;
+
+    if (type === 'frozen') {
+      // For frozen deliveries, ensure the value is always negative
+      // Remove any existing negative signs first
+      processedValue = value.replace(/^-+/, '');
+
+      // Only add negative sign if there's actual numeric content
+      if (processedValue && processedValue.trim() !== '' && !isNaN(parseFloat(processedValue))) {
+        processedValue = '-' + processedValue;
+        console.log(`❄️ Frozen delivery temp processed: "${value}" → "${processedValue}"`);
+      } else if (processedValue && processedValue.trim() !== '') {
+        // If user is still typing (like just "." or partial number), add the negative sign
+        processedValue = '-' + processedValue;
+        console.log(`❄️ Frozen delivery temp (partial): "${value}" → "${processedValue}"`);
+      }
+    }
+
     setTempInputs(prev => ({
       ...prev,
-      [key]: value
+      [key]: processedValue
     }));
   };
 
@@ -289,7 +312,11 @@ export default function DeliveryTempLogsScreen({ navigation }) {
         return;
       }
 
-      // Prepare data for saving
+      // Check if this log already has saved data that we need to preserve
+      const existingChilled = deliveryDoc.chilled || '';
+      const existingFrozen = deliveryDoc.frozen || '';
+
+      // Prepare data for saving - preserve existing values if not updating
       const saveData = {
         supplierName: deliveryDoc.supplierName,
         supplierId: deliveryDoc.supplierId,
@@ -301,19 +328,73 @@ export default function DeliveryTempLogsScreen({ navigation }) {
         }
       };
 
-      // Only add temperatures that have values
-      if (chilledTempValue && chilledTempValue.trim() !== '') {
-        saveData.chilled = chilledTempValue.trim();
-      }
-      if (frozenTempValue && frozenTempValue.trim() !== '') {
-        saveData.frozen = frozenTempValue.trim();
+      // Preserve existing values and only update what's being changed
+      saveData.chilled = (chilledTempValue && chilledTempValue.trim() !== '') ? chilledTempValue.trim() : existingChilled;
+      saveData.frozen = (frozenTempValue && frozenTempValue.trim() !== '') ? frozenTempValue.trim() : existingFrozen;
+
+      console.log(`📝 Preserving existing delivery temps - Chilled: "${existingChilled}" → "${saveData.chilled}", Frozen: "${existingFrozen}" → "${saveData.frozen}"`);
+
+      // Check if a log already exists for this supplier and date
+      const deliveryLogsCollection = getRestaurantCollection(restaurantId, 'deliverylogs');
+
+      // Simple approach: get all logs and filter in JavaScript
+      const allLogsSnapshot = await getDocs(deliveryLogsCollection);
+
+      // Look for existing log for this supplier on this date
+      const startOfDay = new Date(selectedDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(selectedDate);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      let existingLogDoc = null;
+      let existingData = null;
+
+      // Find matching log by filtering in JavaScript
+      for (const docSnap of allLogsSnapshot.docs) {
+        const data = docSnap.data();
+        const logDate = data.createdAt;
+
+        // Check if this is the same supplier
+        if (data.supplierName === deliveryDoc.supplierName && logDate) {
+          try {
+            let logDateTime;
+            if (typeof logDate.toDate === 'function') {
+              logDateTime = logDate.toDate();
+            } else if (logDate instanceof Date) {
+              logDateTime = logDate;
+            } else {
+              logDateTime = new Date(logDate);
+            }
+
+            // Check if it's the same date
+            if (!isNaN(logDateTime.getTime()) && logDateTime >= startOfDay && logDateTime <= endOfDay) {
+              existingLogDoc = docSnap;
+              existingData = data;
+              break;
+            }
+          } catch (error) {
+            console.warn('Error parsing date for existing delivery log:', docSnap.id, error);
+          }
+        }
       }
 
-      // Always create a new document for delivery temperature logging
-      const deliveryLogsCollection = getRestaurantCollection(restaurantId, 'deliverylogs');
-      saveData.recordedAt = serverTimestamp(); // When the record was actually created
-      await addDoc(deliveryLogsCollection, saveData);
-      console.log('✅ New delivery log created successfully');
+      if (existingLogDoc && existingData) {
+        // Update existing log
+        const updateData = {
+          ...saveData,
+          chilled: (chilledTempValue && chilledTempValue.trim() !== '') ? chilledTempValue.trim() : (existingData.chilled || ''),
+          frozen: (frozenTempValue && frozenTempValue.trim() !== '') ? frozenTempValue.trim() : (existingData.frozen || ''),
+          recordedAt: serverTimestamp()
+        };
+
+        await updateDoc(doc(deliveryLogsCollection, existingLogDoc.id), updateData);
+        console.log('✅ Updated existing delivery log successfully');
+      } else {
+        // Create new log
+        saveData.recordedAt = serverTimestamp();
+        await addDoc(deliveryLogsCollection, saveData);
+        console.log('✅ New delivery log created successfully');
+      }
 
       // Refresh logs
       await fetchLogs();
@@ -436,13 +517,14 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                               value={tempInputs[`${log.id}_chilled`] || ''}
                               onChangeText={(value) => handleTempInputChange(log.id, 'chilled', value)}
                               placeholder="--"
+                              placeholderTextColor="#9CA3AF"
                               keyboardType="numeric"
                               maxLength={5}
                             />
                             <Text style={styles.tempUnit}>℃</Text>
                           </View>
                         </View>
-                        
+
                         {/* Frozen Temperature Input */}
                         <View style={styles.tempInputRow}>
                           <Text style={styles.temperatureLabel}>Frozen Temperature:</Text>
@@ -452,8 +534,9 @@ export default function DeliveryTempLogsScreen({ navigation }) {
                               value={tempInputs[`${log.id}_frozen`] || ''}
                               onChangeText={(value) => handleTempInputChange(log.id, 'frozen', value)}
                               placeholder="--"
+                              placeholderTextColor="#9CA3AF"
                               keyboardType="numeric"
-                              maxLength={5}
+                              maxLength={6}
                             />
                             <Text style={styles.tempUnit}>℃</Text>
                           </View>
