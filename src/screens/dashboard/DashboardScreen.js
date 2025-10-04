@@ -226,27 +226,12 @@ const DashboardScreen = ({ navigation }) => {
 
   const kitchenManagement = [
     {
-      title: 'Fridge Temperature',
-      subtitle: 'Monitor and log fridge temps',
-      icon: 'thermometer-outline',
-      iconColor: Colors.primary,
-      iconType: 'ionicon'
-    },
-    {
-      title: 'Delivery Temperature',
-      subtitle: 'Log and monitor delivery temps',
-      icon: 'thermometer-outline',
+      title: 'Food Safety Monitoring',
+      subtitle: 'Temperature control and safety logs',
+      icon: 'shield-checkmark-outline',
       iconColor: Colors.primary,
       iconType: 'ionicon',
-      screen: 'DeliveryTempLogs', // This should match the Stack.Screen name in App.js
-    },
-    {
-      title: 'Cooking & Reheating',
-      subtitle: 'Temperature safety logs',
-      icon: 'flame',
-      iconColor: Colors.primary,
-      iconType: 'ionicon',
-      screen: 'CoolingAndReheating',
+      screen: 'FoodSafetyMonitoring',
     },
   ];
 
@@ -337,37 +322,23 @@ const DashboardScreen = ({ navigation }) => {
             {kitchenManagement.map((item, index) => (
               <TouchableOpacity
                 key={index}
-                style={styles.menuItem}
+                style={styles.highlightedMenuItem}
                 onPress={() => {
-                  if (item.title === 'Order Lists') {
-                    navigation.navigate('OrderLists');
-                  } else if (item.title === 'Prep Lists') {
-                    navigation.navigate('PrepLists');
-                  } else if (item.title === 'Recipe Library') {
-                    navigation.navigate('Recipes');
-                  } else if (item.title === 'Fridge Temperature') {
-                    navigation.navigate('FridgeTempLogs');
-                  } else if (item.title === 'Closing Checklist') {
-                    navigation.navigate('CleaningChecklist');
-                  } else if (item.title === 'Delivery Temperature') {
-                    navigation.navigate('DeliveryTempLogs');
-                  } else if (item.title === 'Cooling & Reheating') {
-                    navigation.navigate('CoolingAndReheating');
-                  } else if (item.screen) {
+                  if (item.screen) {
                     navigation.navigate(item.screen);
                   }
                 }}
               >
                 <View style={styles.menuItemLeft}>
-                  <View style={styles.menuItemIcon}>
-                    {renderIcon(item.icon, item.iconColor, item.iconType)}
+                  <View style={styles.highlightedMenuItemIcon}>
+                    {renderIcon(item.icon, '#FFFFFF', item.iconType)}
                   </View>
                   <View>
-                    <Text style={styles.menuItemTitle}>{item.title}</Text>
-                    <Text style={styles.menuItemSubtitle}>{item.subtitle}</Text>
+                    <Text style={styles.highlightedMenuItemTitle}>{item.title}</Text>
+                    <Text style={styles.highlightedMenuItemSubtitle}>{item.subtitle}</Text>
                   </View>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
+                <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
               </TouchableOpacity>
             ))}
           </View>

@@ -12,32 +12,53 @@ import { Colors, Spacing, Typography } from '../../constants';
 import { getAndroidTitleMargin } from '../../utils/responsive';
 import useNavigationBar from '../../hooks/useNavigationBar';
 
-const DownloadsScreen = ({ navigation }) => {
+const FoodSafetyMonitoringScreen = ({ navigation }) => {
   // Hide Android navigation bar
   const navigationBar = useNavigationBar();
   navigationBar.useHidden();
 
-  const downloadItems = [
+  const foodSafetyItems = [
     {
-      title: 'Temperature Records',
-      subtitle: 'Download temperature logs and reports',
+      title: 'Fridge Temperature',
+      subtitle: 'Monitor and log fridge temps',
       icon: 'thermometer-outline',
       iconColor: Colors.primary,
-      screen: 'TemperatureDownloads',
+      screen: 'FridgeTempLogs',
     },
     {
-      title: 'Invoices',
-      subtitle: 'Download and manage invoices',
-      icon: 'document-text-outline',
+      title: 'Delivery Temperature',
+      subtitle: 'Log and monitor delivery temps',
+      icon: 'thermometer-outline',
       iconColor: Colors.primary,
-      screen: 'InvoicesDownloads',
+      screen: 'DeliveryTempLogs',
     },
     {
-      title: 'Shift Handovers',
-      subtitle: 'Download handover reports',
-      icon: 'people-outline',
+      title: 'Cooking & Reheating',
+      subtitle: 'Temperature safety logs',
+      icon: 'flame',
       iconColor: Colors.primary,
-      screen: 'PreviousHandovers',
+      screen: 'CoolingAndReheating',
+    },
+    {
+      title: 'Cooling',
+      subtitle: 'Log cooling temperatures',
+      icon: 'snow-outline',
+      iconColor: Colors.primary,
+      screen: 'Cooling',
+    },
+    {
+      title: 'Sous Vide Cooking',
+      subtitle: 'Log sous vide cooking',
+      icon: 'restaurant-outline',
+      iconColor: Colors.primary,
+      screen: 'SousVide',
+    },
+    {
+      title: 'Hot Holding',
+      subtitle: 'Log hot holding temperatures',
+      icon: 'flame-outline',
+      iconColor: Colors.primary,
+      screen: 'HotHolding',
     },
   ];
 
@@ -46,25 +67,30 @@ const DownloadsScreen = ({ navigation }) => {
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Downloads</Text>
-          <Text style={styles.subtitle}>Access your reports and documents</Text>
+          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+            <Text style={styles.backArrow}>‹</Text>
+          </TouchableOpacity>
+          <View style={styles.headerContent}>
+            <Text style={styles.title}>Food Safety Monitoring</Text>
+            <Text style={styles.subtitle}>Temperature control and safety logs</Text>
+          </View>
         </View>
 
-        {/* Downloads List */}
-        <View style={styles.downloadsSection}>
-          {downloadItems.map((item, index) => (
+        {/* Food Safety Items List */}
+        <View style={styles.itemsSection}>
+          {foodSafetyItems.map((item, index) => (
             <TouchableOpacity
               key={index}
-              style={styles.downloadItem}
+              style={styles.item}
               onPress={() => navigation.navigate(item.screen)}
             >
-              <View style={styles.downloadItemLeft}>
-                <View style={styles.downloadItemIcon}>
+              <View style={styles.itemLeft}>
+                <View style={styles.itemIcon}>
                   <Ionicons name={item.icon} size={24} color={item.iconColor} />
                 </View>
-                <View style={styles.downloadItemContent}>
-                  <Text style={styles.downloadItemTitle}>{item.title}</Text>
-                  <Text style={styles.downloadItemSubtitle}>{item.subtitle}</Text>
+                <View style={styles.itemContent}>
+                  <Text style={styles.itemTitle}>{item.title}</Text>
+                  <Text style={styles.itemSubtitle}>{item.subtitle}</Text>
                 </View>
               </View>
               <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
@@ -88,26 +114,40 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.lg + getAndroidTitleMargin(),
     paddingBottom: Spacing.md,
   },
+  backButton: {
+    padding: Spacing.xs,
+    marginRight: Spacing.md,
+  },
+  backArrow: {
+    fontSize: 32,
+    color: Colors.textPrimary,
+    fontWeight: '300',
+  },
+  headerContent: {
+    flex: 1,
+  },
   title: {
-    fontSize: Typography.xxl,
+    fontSize: 24,
     fontFamily: Typography.fontBold,
     color: Colors.textPrimary,
-    marginBottom: Spacing.xs,
+    marginBottom: 2,
   },
   subtitle: {
-    fontSize: Typography.base,
+    fontSize: 16,
     fontFamily: Typography.fontRegular,
     color: Colors.textSecondary,
   },
-  downloadsSection: {
+  itemsSection: {
     paddingHorizontal: Spacing.md,
     marginTop: Spacing.lg,
   },
-  downloadItem: {
+  item: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -118,26 +158,26 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
     elevation: 2,
   },
-  downloadItemLeft: {
+  itemLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
   },
-  downloadItemIcon: {
+  itemIcon: {
     width: 40,
     alignItems: 'center',
     marginRight: Spacing.md,
   },
-  downloadItemContent: {
+  itemContent: {
     flex: 1,
   },
-  downloadItemTitle: {
+  itemTitle: {
     fontSize: Typography.base,
     fontFamily: Typography.fontMedium,
     color: Colors.textPrimary,
     marginBottom: 2,
   },
-  downloadItemSubtitle: {
+  itemSubtitle: {
     fontSize: Typography.sm,
     fontFamily: Typography.fontRegular,
     color: Colors.textSecondary,
@@ -145,4 +185,5 @@ const styles = StyleSheet.create({
   },
 });
 
-export default DownloadsScreen;
+export default FoodSafetyMonitoringScreen;
+

@@ -33,6 +33,9 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
   const [fridgeLogs, setFridgeLogs] = useState([]);
   const [deliveryLogs, setDeliveryLogs] = useState([]);
   const [coolingReheatingLogs, setCoolingReheatingLogs] = useState([]);
+  const [coolingLogs, setCoolingLogs] = useState([]);
+  const [sousVideLogs, setSousVideLogs] = useState([]);
+  const [hotHoldingLogs, setHotHoldingLogs] = useState([]);
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
   const [recentDownloads, setRecentDownloads] = useState([]);
@@ -87,6 +90,48 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         ...doc.data(),
         createdAt: doc.data().createdAt?.toDate?.() || null,
         type: 'coolingreheating'
+      })));
+
+      // Fetch cooling logs (new separate collection)
+      const coolingQuery = query(
+        getRestaurantCollection(restaurantId, "cooling"),
+        where("createdAt", ">=", start),
+        where("createdAt", "<=", end),
+        orderBy("createdAt", "desc")
+      );
+      const coolingSnapshot = await getDocs(coolingQuery);
+      setCoolingLogs(coolingSnapshot.docs.map(doc => ({
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate?.() || null,
+        type: 'cooling'
+      })));
+
+      // Fetch sous vide logs
+      const sousVideQuery = query(
+        getRestaurantCollection(restaurantId, "sousvide"),
+        where("createdAt", ">=", start),
+        where("createdAt", "<=", end),
+        orderBy("createdAt", "desc")
+      );
+      const sousVideSnapshot = await getDocs(sousVideQuery);
+      setSousVideLogs(sousVideSnapshot.docs.map(doc => ({
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate?.() || null,
+        type: 'sousvide'
+      })));
+
+      // Fetch hot holding logs
+      const hotHoldingQuery = query(
+        getRestaurantCollection(restaurantId, "hotholding"),
+        where("createdAt", ">=", start),
+        where("createdAt", "<=", end),
+        orderBy("createdAt", "desc")
+      );
+      const hotHoldingSnapshot = await getDocs(hotHoldingQuery);
+      setHotHoldingLogs(hotHoldingSnapshot.docs.map(doc => ({
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate?.() || null,
+        type: 'hotholding'
       })));
     };
 
@@ -230,7 +275,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
   };
 
   const exportToPDF = async () => {
-    if (!fridgeLogs.length && !deliveryLogs.length && !coolingReheatingLogs.length) {
+    if (!fridgeLogs.length && !deliveryLogs.length && !coolingReheatingLogs.length && !coolingLogs.length && !sousVideLogs.length && !hotHoldingLogs.length) {
       Alert.alert('No Data', 'No temperature records found for the selected date range.');
       return;
     }
@@ -295,7 +340,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
           `).join('')}
         </table>
         
-        <h2>Cooling & Reheating Temperature Logs</h2>
+        <h2>Cooking & Reheating Temperature Logs</h2>
         <table border="1" cellspacing="0" cellpadding="8" style="width: 100%; border-collapse: collapse;">
           <tr style="background-color: #f5f5f5;">
             <th>Food Item</th>
@@ -307,6 +352,76 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
             <tr>
               <td>${log.item || 'Unknown'}</td>
               <td>${log.type || 'Unknown'}</td>
+              <td>${log.temperature || '--'}°C</td>
+              <td>${log.createdAt ? log.createdAt.toLocaleDateString('en-GB', { 
+                day: '2-digit', 
+                month: '2-digit', 
+                year: 'numeric' 
+              }) : '--'}</td>
+            </tr>
+          `).join('')}
+        </table>
+        
+        <h2>Cooling Temperature Logs</h2>
+        <table border="1" cellspacing="0" cellpadding="8" style="width: 100%; border-collapse: collapse;">
+          <tr style="background-color: #f5f5f5;">
+            <th>Food Item</th>
+            <th>Start Temp</th>
+            <th>Cooling Time</th>
+            <th>End Temp</th>
+            <th>Date</th>
+          </tr>
+          ${coolingLogs.map(log => `
+            <tr>
+              <td>${log.item || 'Unknown'}</td>
+              <td>${log.start_temp || '--'}°C</td>
+              <td>${log.cooling_time || '--'}</td>
+              <td>${log.end_temp || '--'}°C</td>
+              <td>${log.createdAt ? log.createdAt.toLocaleDateString('en-GB', { 
+                day: '2-digit', 
+                month: '2-digit', 
+                year: 'numeric' 
+              }) : '--'}</td>
+            </tr>
+          `).join('')}
+        </table>
+        
+        <h2>Sous Vide Cooking Logs</h2>
+        <table border="1" cellspacing="0" cellpadding="8" style="width: 100%; border-collapse: collapse;">
+          <tr style="background-color: #f5f5f5;">
+            <th>Food Item</th>
+            <th>Weight</th>
+            <th>Water Bath Temp</th>
+            <th>Cooking Time</th>
+            <th>Date</th>
+          </tr>
+          ${sousVideLogs.map(log => `
+            <tr>
+              <td>${log.item || 'Unknown'}</td>
+              <td>${log.weight || '--'}</td>
+              <td>${log.water_bath_temperature || '--'}°C</td>
+              <td>${log.cooking_time || '--'}</td>
+              <td>${log.createdAt ? log.createdAt.toLocaleDateString('en-GB', { 
+                day: '2-digit', 
+                month: '2-digit', 
+                year: 'numeric' 
+              }) : '--'}</td>
+            </tr>
+          `).join('')}
+        </table>
+        
+        <h2>Hot Holding Logs</h2>
+        <table border="1" cellspacing="0" cellpadding="8" style="width: 100%; border-collapse: collapse;">
+          <tr style="background-color: #f5f5f5;">
+            <th>Food Item</th>
+            <th>Time</th>
+            <th>Temperature</th>
+            <th>Date</th>
+          </tr>
+          ${hotHoldingLogs.map(log => `
+            <tr>
+              <td>${log.item || 'Unknown'}</td>
+              <td>${log.time || '--'}</td>
               <td>${log.temperature || '--'}°C</td>
               <td>${log.createdAt ? log.createdAt.toLocaleDateString('en-GB', { 
                 day: '2-digit', 
