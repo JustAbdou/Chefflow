@@ -26,6 +26,10 @@ import FridgeTempLogsScreen from './src/screens/fridge/FridgeTempLogsScreen';
 import CleaningChecklistScreen from './src/screens/cleaning/CleaningChecklistScreen';
 import DeliveryTempLogsScreen from "./src/screens/delivery/DeliveryTempLogsScreen";
 import CoolingAndReheatingScreen from './src/screens/temperature/CoolingAndReheatingScreen';
+import CoolingScreen from './src/screens/temperature/CoolingScreen';
+import SousVideScreen from './src/screens/temperature/SousVideScreen';
+import HotHoldingScreen from './src/screens/temperature/HotHoldingScreen';
+import FoodSafetyMonitoringScreen from './src/screens/foodsafety/FoodSafetyMonitoringScreen';
 import HandoverScreen from './src/screens/handover/HandoverScreen';
 import HandoverCompletionScreen from './src/screens/handover/HandoverCompletionScreen';
 import PreviousHandoversScreen from './src/screens/handover/PreviousHandoversScreen';
@@ -136,6 +140,10 @@ export default function App() {
           <Stack.Screen name="CleaningChecklist" component={CleaningChecklistScreen} />
           <Stack.Screen name="DeliveryTempLogs" component={DeliveryTempLogsScreen} />
           <Stack.Screen name="CoolingAndReheating" component={CoolingAndReheatingScreen} />
+          <Stack.Screen name="Cooling" component={CoolingScreen} />
+          <Stack.Screen name="SousVide" component={SousVideScreen} />
+          <Stack.Screen name="HotHolding" component={HotHoldingScreen} />
+          <Stack.Screen name="FoodSafetyMonitoring" component={FoodSafetyMonitoringScreen} />
           <Stack.Screen name="Handover" component={HandoverScreen} />
           <Stack.Screen name="HandoverCompletion" component={HandoverCompletionScreen} />
           <Stack.Screen name="PreviousHandovers" component={PreviousHandoversScreen} />
