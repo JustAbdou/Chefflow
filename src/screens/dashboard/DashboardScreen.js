@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   Image,
   RefreshControl,
+  Linking,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { Colors, Spacing, Typography } from '../../constants';
@@ -317,7 +318,6 @@ const DashboardScreen = ({ navigation }) => {
 
         {/* Kitchen Management */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Kitchen Management</Text>
           <View style={styles.menuContainer}>
             {kitchenManagement.map((item, index) => (
               <TouchableOpacity
@@ -346,7 +346,6 @@ const DashboardScreen = ({ navigation }) => {
 
         {/* Shift Submission - Highlighted Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Shift Submission</Text>
           <View style={styles.menuContainer}>
             {shiftManagement.map((item, index) => (
               <TouchableOpacity
@@ -370,6 +369,27 @@ const DashboardScreen = ({ navigation }) => {
                 <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
               </TouchableOpacity>
             ))}
+          </View>
+        </View>
+
+        {/* Admin Panel Button - placed just below with matching style */}
+        <View style={styles.section}>
+          <View style={styles.menuContainer}>
+            <TouchableOpacity
+              style={styles.highlightedMenuItem}
+              onPress={() => Linking.openURL('https://admin.chefflowapp.net/signin')}
+            >
+              <View style={styles.menuItemLeft}>
+                <View style={styles.highlightedMenuItemIcon}>
+                  {renderIcon('settings-outline', '#FFFFFF', 'ionicon')}
+                </View>
+                <View>
+                  <Text style={styles.highlightedMenuItemTitle}>Admin Panel</Text>
+                  <Text style={styles.highlightedMenuItemSubtitle}>Access web dashboard</Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -468,7 +488,7 @@ const styles = StyleSheet.create({
     marginLeft: 0,
   },
   section: {
-    marginBottom: Spacing.xl,
+    marginBottom: Spacing.md,
   },
   sectionTitle: {
     fontSize: Typography.lg,
@@ -521,7 +541,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: Spacing.md,
     marginHorizontal: '2%',
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing.xs,
     elevation: 4,
     shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 4 },
