@@ -29,6 +29,7 @@ const DashboardScreen = ({ navigation }) => {
   const [recipeCount, setRecipeCount] = useState(0);
   const [invoiceCount, setInvoiceCount] = useState(0);
   const [taskCount, setTaskCount] = useState(0);
+  const [openingTaskCount, setOpeningTaskCount] = useState(0);
   const [latestFridgeTemp, setLatestFridgeTemp] = useState('--°C');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -181,7 +182,25 @@ const DashboardScreen = ({ navigation }) => {
         setTaskCount(0);
       }
     );
-    
+
+    // Real-time listener for opening checklist with error handling
+    const unsubOpeningTasks = onSnapshot(
+      getRestaurantCollection(restaurantId, "openinglist"),
+      (snapshot) => {
+        console.log('📊 Dashboard: Found', snapshot.size, 'opening tasks');
+        snapshot.docs.forEach((doc, index) => {
+          console.log(`📋 Dashboard Opening Task ${index + 1}:`, doc.data());
+        });
+        // set the pending tasks that marks not done
+        const pendingOpeningTasks = snapshot.docs.filter(doc => !doc.data().done);
+        setOpeningTaskCount(pendingOpeningTasks.length);
+      },
+      (error) => {
+        console.warn('Opening checklist listener error:', error);
+        setOpeningTaskCount(0);
+      }
+    );
+
     return () => {
       unsubPrep();
       unsubOrder();
@@ -189,38 +208,39 @@ const DashboardScreen = ({ navigation }) => {
       unsubFridgeTemp();
       unsubInvoices();
       unsubTasks();
+      unsubOpeningTasks();
     };
   }, [restaurantId]);
 
   // Update stats array to use real-time counts
   const stats = [
-    { 
-      title: 'Prep List', 
-      value: prepCount.toString(), 
+    {
+      title: 'Prep List',
+      value: prepCount.toString(),
       subtitle: prepCount === 1 ? 'Item pending' : 'Items pending',
       icon: 'clipboard',
       iconColor: Colors.primary,
     },
-    { 
-      title: 'Order List', 
-      value: orderCount.toString(), 
+    {
+      title: 'Order List',
+      value: orderCount.toString(),
       subtitle: orderCount === 1 ? 'Active order' : 'Active orders',
       icon: 'bag',
       iconColor: '#22c55e',
     },
-    { 
-      title: 'Invoices', 
-      value: invoiceCount.toString(), 
-      subtitle: 'Invoices total',
-      icon: 'document-text-outline',
-      iconColor: Colors.primary,
+    {
+      title: 'Opening Checklist',
+      value: openingTaskCount.toString(),
+      subtitle: openingTaskCount === 1 ? 'Task pending' : 'Tasks pending',
+      icon: 'sunny-outline',
+      iconColor: '#f59e0b',
     },
-    { 
-      title: 'Closing Checklist', 
-      value: taskCount.toString(), 
-      subtitle: taskCount === 1 ? 'Task total' : 'Tasks total',
-      icon: 'shield-checkmark-outline',
-      iconColor: Colors.primary,
+    {
+      title: 'Closing Checklist',
+      value: taskCount.toString(),
+      subtitle: taskCount === 1 ? 'Task pending' : 'Tasks pending',
+      icon: 'moon-outline',
+      iconColor: '#8b5cf6',
     },
   ];
 
@@ -293,8 +313,8 @@ const DashboardScreen = ({ navigation }) => {
                   navigation.navigate('PrepLists');
                 } else if (stat.title === 'Order List') {
                   navigation.navigate('OrderLists');
-                } else if (stat.title === 'Invoices') {
-                  navigation.navigate('Invoices');
+                } else if (stat.title === 'Opening Checklist') {
+                  navigation.navigate('OpeningChecklist');
                 } else if (stat.title === 'Closing Checklist') {
                   navigation.navigate('CleaningChecklist');
                 }
@@ -370,6 +390,28 @@ const DashboardScreen = ({ navigation }) => {
                 <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
               </TouchableOpacity>
             ))}
+          </View>
+        </View>
+
+        {/* Invoices Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Documents</Text>
+          <View style={styles.menuContainer}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => navigation.navigate('Invoices')}
+            >
+              <View style={styles.menuItemLeft}>
+                <View style={styles.menuItemIcon}>
+                  <Ionicons name="document-text-outline" size={24} color={Colors.primary} />
+                </View>
+                <View>
+                  <Text style={styles.menuItemTitle}>Invoices</Text>
+                  <Text style={styles.menuItemSubtitle}>View and manage invoices ({invoiceCount})</Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
+            </TouchableOpacity>
           </View>
         </View>
 

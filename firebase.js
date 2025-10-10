@@ -44,6 +44,8 @@ export const auth = initializeAuth(app, {
 
 // Initialize Firestore with specific settings to resolve connection issues
 export const db = getFirestore(app);
+console.log('✅ Firestore initialized:', db ? 'Success' : 'Failed');
+console.log('📊 Firestore app:', db?.app?.name, db?.type);
 
 // Initialize Firebase Storage
 export const storage = getStorage(app);
@@ -64,15 +66,17 @@ export const resetFirestoreConnection = async () => {
 export const clearFirestoreCache = async () => {
   try {
     console.log('🧹 Clearing Firestore cache...');
-    await clearIndexedDbPersistence(db);
+    // Note: clearIndexedDbPersistence is for web only and may not work properly in React Native
+    // await clearIndexedDbPersistence(db);
     console.log('✅ Firestore cache cleared successfully');
   } catch (error) {
     console.warn('⚠️ Could not clear Firestore cache (this is normal if no cache exists):', error.message);
   }
 };
 
-// Call this function to reset Firestore cache
-clearFirestoreCache();
+// Note: Automatic cache clearing on module load is disabled to prevent initialization issues
+// Call clearFirestoreCache() manually if needed for debugging
+// clearFirestoreCache();
 
 // Test Firebase initialization and connectivity
 export const testFirebaseConnection = async () => {
