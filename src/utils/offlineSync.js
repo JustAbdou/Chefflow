@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { addDoc, updateDoc, deleteDoc, getDocs, query, orderBy } from 'firebase/firestore';
-import { getRestaurantCollection, getRestaurantDoc } from './firestoreHelpers';
+import { addDoc, updateDoc, deleteDoc, getDocs, query, orderBy, doc, getDoc } from 'firebase/firestore';
+import { getRestaurantCollection, getRestaurantDoc, getRestaurantSubCollection } from './firestoreHelpers';
 
 // Keys for storing offline data
 const OFFLINE_PREP_ITEMS_KEY = 'offline_prep_items';
@@ -173,10 +173,6 @@ export const preloadRecipesForRestaurant = async (restaurantId) => {
       console.log('📚 Recipe cache is already fresh, skipping preload');
       return;
     }
-
-    // Import required Firestore functions
-    const { doc, getDoc, getDocs } = await import("firebase/firestore");
-    const { getRestaurantDoc, getRestaurantSubCollection } = await import("./firestoreHelpers");
 
     // Fetch category names from restaurants/{restaurantId}/recipes/categories
     const categoryNamesDoc = await getDoc(getRestaurantDoc(restaurantId, "recipes", "categories"));

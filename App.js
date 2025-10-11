@@ -24,6 +24,7 @@ import InvoicesDownloadsScreen from './src/screens/invoices/InvoicesDownloadsScr
 import AddRecipeScreen from './src/screens/recipes/AddRecipeScreen';
 import FridgeTempLogsScreen from './src/screens/fridge/FridgeTempLogsScreen';
 import CleaningChecklistScreen from './src/screens/cleaning/CleaningChecklistScreen';
+import OpeningChecklistScreen from './src/screens/opening/OpeningChecklistScreen';
 import DeliveryTempLogsScreen from "./src/screens/delivery/DeliveryTempLogsScreen";
 import CoolingAndReheatingScreen from './src/screens/temperature/CoolingAndReheatingScreen';
 import CoolingScreen from './src/screens/temperature/CoolingScreen';
@@ -137,6 +138,7 @@ export default function App() {
           <Stack.Screen name="RecipeDetail" component={RecipeDetailScreen} />
           <Stack.Screen name="AddRecipe" component={AddRecipeScreen} />
           <Stack.Screen name="FridgeTempLogs" component={FridgeTempLogsScreen} />
+          <Stack.Screen name="OpeningChecklist" component={OpeningChecklistScreen} />
           <Stack.Screen name="CleaningChecklist" component={CleaningChecklistScreen} />
           <Stack.Screen name="DeliveryTempLogs" component={DeliveryTempLogsScreen} />
           <Stack.Screen name="CoolingAndReheating" component={CoolingAndReheatingScreen} />

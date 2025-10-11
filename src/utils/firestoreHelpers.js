@@ -11,6 +11,10 @@ export const getRestaurantCollection = (restaurantId, collectionName) => {
   if (!restaurantId) {
     throw new Error('Restaurant ID is required');
   }
+  if (!db) {
+    console.error('❌ Firestore db instance is not initialized!');
+    throw new Error('Firestore db instance is not initialized');
+  }
   return collection(db, 'restaurants', restaurantId, collectionName);
 };
 
