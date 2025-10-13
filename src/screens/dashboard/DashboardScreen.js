@@ -364,6 +364,27 @@ const DashboardScreen = ({ navigation }) => {
           </View>
         </View>
 
+        {/* Admin Panel Button - placed just below with matching style */}
+        <View style={styles.section}>
+          <View style={styles.menuContainer}>
+            <TouchableOpacity
+              style={styles.highlightedMenuItem}
+              onPress={() => Linking.openURL('https://admin.chefflowapp.net/signin')}
+            >
+              <View style={styles.menuItemLeft}>
+                <View style={styles.highlightedMenuItemIcon}>
+                  {renderIcon('settings-outline', '#FFFFFF', 'ionicon')}
+                </View>
+                <View>
+                  <Text style={styles.highlightedMenuItemTitle}>Admin Panel</Text>
+                  <Text style={styles.highlightedMenuItemSubtitle}>Access web dashboard</Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Shift Submission - Highlighted Section */}
         <View style={styles.section}>
           <View style={styles.menuContainer}>
@@ -392,45 +413,23 @@ const DashboardScreen = ({ navigation }) => {
           </View>
         </View>
 
-        {/* Admin Panel Button - placed just below with matching style */}
+        {/* Invoices Section */}
         <View style={styles.section}>
           <View style={styles.menuContainer}>
             <TouchableOpacity
               style={styles.highlightedMenuItem}
-              onPress={() => Linking.openURL('https://admin.chefflowapp.net/signin')}
-            >
-              <View style={styles.menuItemLeft}>
-                <View style={styles.highlightedMenuItemIcon}>
-                  {renderIcon('settings-outline', '#FFFFFF', 'ionicon')}
-                </View>
-                <View>
-                  <Text style={styles.highlightedMenuItemTitle}>Admin Panel</Text>
-                  <Text style={styles.highlightedMenuItemSubtitle}>Access web dashboard</Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Invoices Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Documents</Text>
-          <View style={styles.menuContainer}>
-            <TouchableOpacity
-              style={styles.menuItem}
               onPress={() => navigation.navigate('Invoices')}
             >
               <View style={styles.menuItemLeft}>
-                <View style={styles.menuItemIcon}>
-                  <Ionicons name="document-text-outline" size={24} color={Colors.primary} />
+                <View style={styles.highlightedMenuItemIcon}>
+                  <Ionicons name="document-text-outline" size={24} color="#FFFFFF" />
                 </View>
                 <View>
-                  <Text style={styles.menuItemTitle}>Invoices</Text>
-                  <Text style={styles.menuItemSubtitle}>View and manage invoices ({invoiceCount})</Text>
+                  <Text style={styles.highlightedMenuItemTitle}>Invoices</Text>
+                  <Text style={styles.highlightedMenuItemSubtitle}>View and manage invoices ({invoiceCount})</Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
+              <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
         </View>
