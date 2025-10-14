@@ -624,7 +624,7 @@ export default function PrepListsScreen() {
     Alert.alert(
       "Delete Section",
       itemsInSection.length > 0
-        ? `This section contains ${itemsInSection.length} item(s). Deleting the section will move these items to "No Section". Continue?`
+        ? `This section contains ${itemsInSection.length} item(s). All items will be deleted along with the section. Continue?`
         : "Are you sure you want to delete this section?",
       [
         {
@@ -636,18 +636,16 @@ export default function PrepListsScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              // Move items to no section
+              // Delete all items in the section
               if (itemsInSection.length > 0) {
-                const updatePromises = itemsInSection.map(item =>
-                  offlineCapableUpdate(restaurantId, "preplist", item.id, { sectionId: null }, isNetworkOnline)
+                const deletePromises = itemsInSection.map(item =>
+                  offlineCapableDelete(restaurantId, "preplist", item.id, isNetworkOnline)
                 );
-                await Promise.all(updatePromises);
+                await Promise.all(deletePromises);
                 
-                // Update local state
+                // Update local state - remove items from section
                 setPrepItems(items =>
-                  items.map(item =>
-                    item.sectionId === sectionId ? { ...item, sectionId: null } : item
-                  )
+                  items.filter(item => item.sectionId !== sectionId)
                 );
               }
               
@@ -659,7 +657,7 @@ export default function PrepListsScreen() {
               // Cache the updated sections
               await cachePrepSectionsOffline(updatedSections);
               
-              console.log(`✅ Section deleted successfully`);
+              console.log(`✅ Section and ${itemsInSection.length} items deleted successfully`);
             } catch (error) {
               console.error("Error deleting section:", error);
               Alert.alert("Error", "Failed to delete section. Please try again.");
