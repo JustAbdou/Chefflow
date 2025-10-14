@@ -5,13 +5,13 @@ import { Typography } from "../../constants/Typography";
 import { Spacing } from "../../constants/Spacing";
 import Button from "../../components/ui/Button";
 
-export default function AddPrepItemModal({ visible, onClose, onAdd, date, preSelectedSection = null }) {
-  const [itemName, setItemName] = useState("");
+export default function AddSectionModal({ visible, onClose, onAdd }) {
+  const [sectionName, setSectionName] = useState("");
 
   const handleAdd = () => {
-    if (itemName.trim()) {
-      onAdd(itemName.trim(), preSelectedSection);
-      setItemName("");
+    if (sectionName.trim()) {
+      onAdd(sectionName.trim());
+      setSectionName("");
       onClose();
     }
   };
@@ -28,8 +28,8 @@ export default function AddPrepItemModal({ visible, onClose, onAdd, date, preSel
             {/* Header */}
             <View style={styles.header}>
               <View style={styles.titleContainer}>
-                <Text style={styles.title}>Add Prep Item</Text>
-                {date && <Text style={styles.date}>{date}</Text>}
+                <Text style={styles.title}>Add Section</Text>
+                <Text style={styles.subtitle}>Create a new section for organizing prep items</Text>
               </View>
               <TouchableOpacity style={styles.closeButton} onPress={onClose} activeOpacity={0.7}>
                 <Text style={styles.closeText}>×</Text>
@@ -37,20 +37,20 @@ export default function AddPrepItemModal({ visible, onClose, onAdd, date, preSel
             </View>
             {/* Form */}
             <View style={styles.form}>
-              <Text style={styles.label}>Item Name</Text>
+              <Text style={styles.label}>Section Name</Text>
               <TextInput
                 style={styles.input}
-                value={itemName}
-                onChangeText={setItemName}
-                placeholder="Enter item name"
+                value={sectionName}
+                onChangeText={setSectionName}
+                placeholder="e.g., Proteins, Vegetables, Sauces"
                 placeholderTextColor={Colors.gray200}
                 autoFocus
               />
             </View>
             {/* Add Button */}
             <View style={styles.buttonContainer}>
-              <Button onPress={handleAdd} disabled={!itemName.trim()} fullWidth size="lg">
-                Add Item
+              <Button onPress={handleAdd} disabled={!sectionName.trim()} fullWidth size="lg">
+                Add Section
               </Button>
             </View>
           </View>
@@ -73,8 +73,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.lg,
     paddingBottom: Spacing.xl,
-    minHeight: 300,
-    maxHeight: '80%',
+    minHeight: 320,
   },
   header: {
     flexDirection: "row",
@@ -89,8 +88,8 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     marginBottom: Spacing.xs,
   },
-  date: {
-    fontSize: Typography.base,
+  subtitle: {
+    fontSize: Typography.sm,
     color: Colors.textSecondary,
   },
   closeButton: { padding: Spacing.xs },
@@ -115,3 +114,4 @@ const styles = StyleSheet.create({
   },
   buttonContainer: { marginTop: "auto" },
 });
+

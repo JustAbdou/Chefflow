@@ -1,19 +1,46 @@
-import { useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Modal, KeyboardAvoidingView, Platform } from "react-native";
+import { useState, useEffect } from "react";
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Modal, KeyboardAvoidingView, Platform, Alert } from "react-native";
 import { Colors } from "../../constants/Colors";
 import { Typography } from "../../constants/Typography";
 import { Spacing } from "../../constants/Spacing";
 import Button from "../../components/ui/Button";
 
-export default function AddPrepItemModal({ visible, onClose, onAdd, date, preSelectedSection = null }) {
+export default function EditPrepItemModal({ visible, onClose, onSave, onDelete, item }) {
   const [itemName, setItemName] = useState("");
 
-  const handleAdd = () => {
+  useEffect(() => {
+    if (item) {
+      setItemName(item.name || "");
+    }
+  }, [item]);
+
+  const handleSave = () => {
     if (itemName.trim()) {
-      onAdd(itemName.trim(), preSelectedSection);
+      onSave(item.id, itemName.trim());
       setItemName("");
       onClose();
     }
+  };
+
+  const handleDelete = () => {
+    Alert.alert(
+      "Delete Item",
+      "Are you sure you want to delete this prep item?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            onDelete(item.id);
+            onClose();
+          }
+        }
+      ]
+    );
   };
 
   return (
@@ -28,8 +55,7 @@ export default function AddPrepItemModal({ visible, onClose, onAdd, date, preSel
             {/* Header */}
             <View style={styles.header}>
               <View style={styles.titleContainer}>
-                <Text style={styles.title}>Add Prep Item</Text>
-                {date && <Text style={styles.date}>{date}</Text>}
+                <Text style={styles.title}>Edit Prep Item</Text>
               </View>
               <TouchableOpacity style={styles.closeButton} onPress={onClose} activeOpacity={0.7}>
                 <Text style={styles.closeText}>×</Text>
@@ -47,10 +73,13 @@ export default function AddPrepItemModal({ visible, onClose, onAdd, date, preSel
                 autoFocus
               />
             </View>
-            {/* Add Button */}
+            {/* Action Buttons */}
             <View style={styles.buttonContainer}>
-              <Button onPress={handleAdd} disabled={!itemName.trim()} fullWidth size="lg">
-                Add Item
+              <TouchableOpacity style={styles.deleteButton} onPress={handleDelete} activeOpacity={0.7}>
+                <Text style={styles.deleteButtonText}>Delete Item</Text>
+              </TouchableOpacity>
+              <Button onPress={handleSave} disabled={!itemName.trim()} fullWidth size="lg">
+                Save Changes
               </Button>
             </View>
           </View>
@@ -73,8 +102,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.lg,
     paddingBottom: Spacing.xl,
-    minHeight: 300,
-    maxHeight: '80%',
+    minHeight: 350,
   },
   header: {
     flexDirection: "row",
@@ -88,10 +116,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: Colors.textPrimary,
     marginBottom: Spacing.xs,
-  },
-  date: {
-    fontSize: Typography.base,
-    color: Colors.textSecondary,
   },
   closeButton: { padding: Spacing.xs },
   closeText: {
@@ -113,5 +137,21 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.borderLight,
   },
-  buttonContainer: { marginTop: "auto" },
+  buttonContainer: { 
+    marginTop: "auto",
+    gap: Spacing.md,
+  },
+  deleteButton: {
+    paddingVertical: Spacing.md,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#FF3B30",
+    borderRadius: 12,
+  },
+  deleteButtonText: {
+    fontSize: Typography.base,
+    fontWeight: "600",
+    color: "#FF3B30",
+  },
 });
+
