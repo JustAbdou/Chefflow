@@ -227,21 +227,21 @@ const DashboardScreen = ({ navigation }) => {
       value: orderCount.toString(),
       subtitle: orderCount === 1 ? 'Active order' : 'Active orders',
       icon: 'bag',
-      iconColor: Colors.primary,
+      iconColor: '#22c55e',
     },
     {
       title: 'Opening Checklist',
       value: openingTaskCount.toString(),
       subtitle: openingTaskCount === 1 ? 'Task pending' : 'Tasks pending',
       icon: 'sunny-outline',
-      iconColor: Colors.primary,
+      iconColor: '#f59e0b',
     },
     {
       title: 'Closing Checklist',
       value: taskCount.toString(),
       subtitle: taskCount === 1 ? 'Task pending' : 'Tasks pending',
       icon: 'moon-outline',
-      iconColor: Colors.primary,
+      iconColor: '#8b5cf6',
     },
   ];
 
