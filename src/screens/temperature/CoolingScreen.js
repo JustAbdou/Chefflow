@@ -290,12 +290,12 @@ export default function CoolingScreen({ navigation }) {
         animationType="slide"
         onRequestClose={() => setShowAddModal(false)}
       >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{ flex: 1 }}
-        >
-          <View style={styles.overlay}>
-            <TouchableOpacity style={styles.backdrop} onPress={() => setShowAddModal(false)} activeOpacity={1} />
+        <View style={styles.overlay}>
+          <TouchableOpacity style={styles.backdrop} onPress={() => setShowAddModal(false)} activeOpacity={1} />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={styles.modalContainer}
+          >
             <View style={styles.modal}>
               {/* Header */}
               <View style={styles.modalHeader}>
@@ -308,62 +308,68 @@ export default function CoolingScreen({ navigation }) {
                 </TouchableOpacity>
               </View>
 
-              {/* Form */}
-              <View style={styles.form}>
-                <Text style={styles.label}>Food Item</Text>
-                <TextInput
-                  style={styles.input}
-                  value={foodItem}
-                  onChangeText={setFoodItem}
-                  placeholder="Enter food item name"
-                  placeholderTextColor={Colors.gray200}
-                  autoFocus
-                />
-                
-                <Text style={[styles.label, { marginTop: Spacing.lg }]}>Start Temperature (°C)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={startTemp}
-                  onChangeText={setStartTemp}
-                  placeholder="Enter start temperature"
-                  placeholderTextColor={Colors.gray200}
-                  keyboardType="numeric"
-                />
-                
-                <Text style={[styles.label, { marginTop: Spacing.lg }]}>Cooling Time</Text>
-                <TextInput
-                  style={styles.input}
-                  value={coolingTime}
-                  onChangeText={setCoolingTime}
-                  placeholder="e.g., 2 hours"
-                  placeholderTextColor={Colors.gray200}
-                />
-                
-                <Text style={[styles.label, { marginTop: Spacing.lg }]}>End Temperature (°C)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={endTemp}
-                  onChangeText={setEndTemp}
-                  placeholder="Enter end temperature"
-                  placeholderTextColor={Colors.gray200}
-                  keyboardType="numeric"
-                />
-              </View>
+              {/* Scrollable Form */}
+              <ScrollView
+                style={styles.formScrollView}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                <View style={styles.form}>
+                  <Text style={styles.label}>Food Item</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={foodItem}
+                    onChangeText={setFoodItem}
+                    placeholder="Enter food item name"
+                    placeholderTextColor={Colors.gray200}
+                    autoFocus
+                  />
+
+                  <Text style={[styles.label, { marginTop: Spacing.lg }]}>Start Temperature (°C)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={startTemp}
+                    onChangeText={setStartTemp}
+                    placeholder="Enter start temperature"
+                    placeholderTextColor={Colors.gray200}
+                    keyboardType="numeric"
+                  />
+
+                  <Text style={[styles.label, { marginTop: Spacing.lg }]}>Cooling Time</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={coolingTime}
+                    onChangeText={setCoolingTime}
+                    placeholder="e.g., 2 hours"
+                    placeholderTextColor={Colors.gray200}
+                  />
+
+                  <Text style={[styles.label, { marginTop: Spacing.lg }]}>End Temperature (°C)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={endTemp}
+                    onChangeText={setEndTemp}
+                    placeholder="Enter end temperature"
+                    placeholderTextColor={Colors.gray200}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </ScrollView>
 
               {/* Save Button */}
               <View style={styles.buttonContainer}>
-                <Button 
-                  onPress={handleSaveLog} 
-                  disabled={!foodItem.trim() || !startTemp.trim() || !coolingTime.trim() || !endTemp.trim()} 
-                  fullWidth 
+                <Button
+                  onPress={handleSaveLog}
+                  disabled={!foodItem.trim() || !startTemp.trim() || !coolingTime.trim() || !endTemp.trim()}
+                  fullWidth
                   size="lg"
                 >
                   Save Log
                 </Button>
               </View>
             </View>
-          </View>
-        </KeyboardAvoidingView>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
 
       {/* Date Picker Modal */}
@@ -581,6 +587,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
   },
+  modalContainer: {
+    maxHeight: '80%',
+  },
   modal: {
     backgroundColor: Colors.background,
     borderTopLeftRadius: 24,
@@ -588,13 +597,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.lg,
     paddingBottom: Spacing.xl,
-    minHeight: 300,
+    maxHeight: '100%',
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: Spacing.xl,
+    marginBottom: Spacing.lg,
   },
   titleContainer: {
     flex: 1,
@@ -617,8 +626,11 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontWeight: "300",
   },
+  formScrollView: {
+    flexGrow: 0,
+  },
   form: {
-    marginBottom: Spacing.xl,
+    paddingBottom: Spacing.md,
   },
   label: {
     fontSize: Typography.base,

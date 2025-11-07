@@ -281,17 +281,17 @@ export default function CoolingAndReheatingScreen({ navigation }) {
         animationType="slide"
         onRequestClose={() => setShowAddModal(false)}
       >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{ flex: 1 }}
-        >
-          <View style={styles.overlay}>
-            <TouchableOpacity style={styles.backdrop} onPress={() => setShowAddModal(false)} activeOpacity={1} />
+        <View style={styles.overlay}>
+          <TouchableOpacity style={styles.backdrop} onPress={() => setShowAddModal(false)} activeOpacity={1} />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={styles.modalContainer}
+          >
             <View style={styles.modal}>
               {/* Header */}
-              <View style={styles.header}>
+              <View style={styles.modalHeader}>
                 <View style={styles.titleContainer}>
-                  <Text style={styles.title}>Add Temperature Log</Text>
+                  <Text style={styles.modalTitle}>Add Temperature Log</Text>
                   <Text style={styles.date}>{formatSelectedDate(selectedDate)}</Text>
                 </View>
                 <TouchableOpacity style={styles.closeButton} onPress={() => setShowAddModal(false)} activeOpacity={0.7}>
@@ -299,69 +299,75 @@ export default function CoolingAndReheatingScreen({ navigation }) {
                 </TouchableOpacity>
               </View>
 
-              {/* Form */}
-              <View style={styles.form}>
-                <Text style={styles.label}>Food Item</Text>
-                <TextInput
-                  style={styles.input}
-                  value={foodItem}
-                  onChangeText={setFoodItem}
-                  placeholder="Enter food item name"
-                  placeholderTextColor={Colors.gray200}
-                  autoFocus
-                />
-                
-                {/* Type Selection */}
-                <Text style={[styles.label, { marginTop: Spacing.lg }]}>Type</Text>
-                <View style={styles.typeSelector}>
-                  <TouchableOpacity
-                    style={[
-                      styles.typeChip,
-                      selectedType === 'cooking' && styles.activeTypeChip,
-                    ]}
-                    onPress={() => setSelectedType('cooking')}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="restaurant" size={16} color={selectedType === 'cooking' ? '#fff' : '#22c55e'} />
-                    <Text
-                      style={[
-                        styles.typeText,
-                        selectedType === 'cooking' && styles.activeTypeText,
-                      ]}
-                    >
-                      Cooking
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.typeChip,
-                      selectedType === 'reheating' && styles.activeTypeChip,
-                    ]}
-                    onPress={() => setSelectedType('reheating')}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="flame" size={16} color={selectedType === 'reheating' ? '#fff' : '#f97316'} />
-                    <Text
-                      style={[
-                        styles.typeText,
-                        selectedType === 'reheating' && styles.activeTypeText,
-                      ]}
-                    >
-                      Reheating
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+              {/* Scrollable Form */}
+              <ScrollView
+                style={styles.formScrollView}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                <View style={styles.form}>
+                  <Text style={styles.label}>Food Item</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={foodItem}
+                    onChangeText={setFoodItem}
+                    placeholder="Enter food item name"
+                    placeholderTextColor={Colors.gray200}
+                    autoFocus
+                  />
 
-                <Text style={[styles.label, { marginTop: Spacing.lg }]}>Temperature (°C)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={temperature}
-                  onChangeText={setTemperature}
-                  placeholder="Enter temperature"
-                  placeholderTextColor={Colors.gray200}
-                  keyboardType="numeric"
-                />
-              </View>
+                  {/* Type Selection */}
+                  <Text style={[styles.label, { marginTop: Spacing.lg }]}>Type</Text>
+                  <View style={styles.typeSelector}>
+                    <TouchableOpacity
+                      style={[
+                        styles.typeChip,
+                        selectedType === 'cooking' && styles.activeTypeChip,
+                      ]}
+                      onPress={() => setSelectedType('cooking')}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="restaurant" size={16} color={selectedType === 'cooking' ? '#fff' : '#22c55e'} />
+                      <Text
+                        style={[
+                          styles.typeText,
+                          selectedType === 'cooking' && styles.activeTypeText,
+                        ]}
+                      >
+                        Cooking
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.typeChip,
+                        selectedType === 'reheating' && styles.activeTypeChip,
+                      ]}
+                      onPress={() => setSelectedType('reheating')}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="flame" size={16} color={selectedType === 'reheating' ? '#fff' : '#f97316'} />
+                      <Text
+                        style={[
+                          styles.typeText,
+                          selectedType === 'reheating' && styles.activeTypeText,
+                        ]}
+                      >
+                        Reheating
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={[styles.label, { marginTop: Spacing.lg }]}>Temperature (°C)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={temperature}
+                    onChangeText={setTemperature}
+                    placeholder="Enter temperature"
+                    placeholderTextColor={Colors.gray200}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </ScrollView>
 
               {/* Save Button */}
               <View style={styles.buttonContainer}>
@@ -370,8 +376,8 @@ export default function CoolingAndReheatingScreen({ navigation }) {
                 </Button>
               </View>
             </View>
-          </View>
-        </KeyboardAvoidingView>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
 
       {/* Date Picker Modal */}
@@ -589,6 +595,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
   },
+  modalContainer: {
+    maxHeight: '80%',
+  },
   modal: {
     backgroundColor: Colors.background,
     borderTopLeftRadius: 24,
@@ -596,7 +605,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.lg,
     paddingBottom: Spacing.xl,
-    minHeight: 300,
+    maxHeight: '100%',
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: Spacing.lg,
   },
   header: {
     flexDirection: "row",
@@ -606,6 +621,12 @@ const styles = StyleSheet.create({
   },
   titleContainer: {
     flex: 1,
+  },
+  modalTitle: {
+    fontSize: Typography.xl,
+    fontWeight: "bold",
+    color: Colors.textPrimary,
+    marginBottom: Spacing.xs,
   },
   title: {
     fontSize: Typography.xl,
@@ -625,8 +646,11 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontWeight: "300",
   },
+  formScrollView: {
+    flexGrow: 0,
+  },
   form: {
-    marginBottom: Spacing.xl,
+    paddingBottom: Spacing.md,
   },
   label: {
     fontSize: Typography.base,
