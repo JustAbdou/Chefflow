@@ -4,6 +4,7 @@ import { getRestaurantCollection, getRestaurantDoc, getRestaurantSubCollection }
 
 // Keys for storing offline data
 const OFFLINE_PREP_ITEMS_KEY = 'offline_prep_items';
+const OFFLINE_PREP_SECTIONS_KEY = 'offline_prep_sections';
 const OFFLINE_ORDER_ITEMS_KEY = 'offline_order_items';
 const OFFLINE_FRIDGE_LOGS_KEY = 'offline_fridge_logs';
 const OFFLINE_RECIPES_KEY = 'offline_recipes';
@@ -40,6 +41,27 @@ export const getCachedPrepItems = async () => {
     return cached ? JSON.parse(cached) : [];
   } catch (error) {
     console.error('❌ Error getting cached prep items:', error);
+    return [];
+  }
+};
+
+// Store prep sections offline
+export const cachePrepSectionsOffline = async (sections) => {
+  try {
+    await AsyncStorage.setItem(OFFLINE_PREP_SECTIONS_KEY, JSON.stringify(sections));
+    console.log(`💾 Cached ${sections.length} prep sections offline`);
+  } catch (error) {
+    console.error('❌ Error caching prep sections offline:', error);
+  }
+};
+
+// Get cached prep sections
+export const getCachedPrepSections = async () => {
+  try {
+    const cached = await AsyncStorage.getItem(OFFLINE_PREP_SECTIONS_KEY);
+    return cached ? JSON.parse(cached) : [];
+  } catch (error) {
+    console.error('❌ Error getting cached prep sections:', error);
     return [];
   }
 };

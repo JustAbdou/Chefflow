@@ -9,19 +9,26 @@ import useNavigationBar from "../../hooks/useNavigationBar";
 import { useNavigation } from "@react-navigation/native";
 import { getFormattedTodayDate, groupPrepItemsByDay } from '../../utils/dateUtils';
 import AddPrepItemModal from "./AddPrepItemModal";
+import AddSectionModal from "./AddSectionModal";
+import EditPrepItemModal from "./EditPrepItemModal";
 import FlagSelectionModal from "./FlagSelectionModal";
 import { getDocs, addDoc, serverTimestamp, query, orderBy, deleteDoc, updateDoc, doc, getDoc } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
 import { auth, db } from "../../../firebase";
-import { initializeOfflineSync, offlineCapableCreate, offlineCapableUpdate, offlineCapableDelete, cachePrepItemsOffline, getCachedPrepItems } from '../../utils/offlineSync';
+import { initializeOfflineSync, offlineCapableCreate, offlineCapableUpdate, offlineCapableDelete, cachePrepItemsOffline, getCachedPrepItems, cachePrepSectionsOffline, getCachedPrepSections } from '../../utils/offlineSync';
 import { addNetworkListener, getNetworkStatus, addOnlineCallback } from '../../utils/networkMonitor';
 
 export default function PrepListsScreen() {
   const { restaurantId } = useRestaurant();
   const navigation = useNavigation();
   const [prepItems, setPrepItems] = useState([]);
+  const [sections, setSections] = useState([]);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showAddSectionModal, setShowAddSectionModal] = useState(false);
+  const [showEditItemModal, setShowEditItemModal] = useState(false);
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [selectedSectionForAdd, setSelectedSectionForAdd] = useState(null);
   const [currentDate, setCurrentDate] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -192,6 +199,44 @@ export default function PrepListsScreen() {
     fetchPrepItems();
   }, [restaurantId, isNetworkOnline]);
 
+  // Fetch sections with offline support
+  useEffect(() => {
+    const fetchSections = async () => {
+      if (!restaurantId) return;
+      
+      try {
+        // Load cached sections first for faster display
+        const cachedSections = await getCachedPrepSections();
+        if (cachedSections.length > 0) {
+          setSections(cachedSections);
+          console.log(`📂 Loaded ${cachedSections.length} prep sections from cache`);
+        }
+        
+        // Then fetch from Firestore if online
+        if (isNetworkOnline) {
+          const q = query(getRestaurantCollection(restaurantId, "prepsections"), orderBy("createdAt", "asc"));
+          const snapshot = await getDocs(q);
+          const sectionList = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setSections(sectionList);
+          
+          // Cache for offline use
+          await cachePrepSectionsOffline(sectionList);
+          console.log(`📂 Loaded ${sectionList.length} prep sections from server`);
+        }
+      } catch (error) {
+        console.error("Error fetching sections:", error);
+        // Fall back to cached data
+        const cachedSections = await getCachedPrepSections();
+        setSections(cachedSections);
+      }
+    };
+    
+    fetchSections();
+  }, [restaurantId, isNetworkOnline]);
+
   // Pull to refresh handler
   const onRefresh = async () => {
     if (!isNetworkOnline) {
@@ -311,7 +356,7 @@ export default function PrepListsScreen() {
     }
   };
 
-  const addNewItem = async (itemName) => {
+  const addNewItem = async (itemName, sectionId = null) => {
     if (!restaurantId) return;
     
     try {
@@ -351,6 +396,7 @@ export default function PrepListsScreen() {
       const itemData = {
         name: itemName,
         done: false,
+        sectionId: sectionId || null,
         createdAt: isNetworkOnline ? serverTimestamp() : new Date(), // Use current date for offline items
         createdBy: userInfo,
       };
@@ -363,6 +409,7 @@ export default function PrepListsScreen() {
         done: false,
         completed: false,
         flagged: false,
+        sectionId: sectionId || null,
         createdAt: new Date(),
         createdBy: userInfo,
         isTemporary: true // Mark as temporary for immediate display
@@ -536,6 +583,123 @@ export default function PrepListsScreen() {
     );
   };
 
+  // Add a new section
+  const addNewSection = async (sectionName) => {
+    if (!restaurantId) return;
+    
+    try {
+      const sectionData = {
+        name: sectionName,
+        createdAt: serverTimestamp(),
+      };
+      
+      const docRef = await addDoc(getRestaurantCollection(restaurantId, "prepsections"), sectionData);
+      const newSection = {
+        id: docRef.id,
+        ...sectionData,
+        createdAt: new Date()
+      };
+      
+      const updatedSections = [...sections, newSection];
+      setSections(updatedSections);
+      
+      // Cache the updated sections
+      await cachePrepSectionsOffline(updatedSections);
+      
+      console.log(`✅ Section "${sectionName}" added successfully`);
+      setShowAddSectionModal(false);
+    } catch (error) {
+      console.error("Error adding section:", error);
+      Alert.alert("Error", "Failed to add section. Please try again.");
+    }
+  };
+
+  // Delete a section
+  const deleteSection = async (sectionId) => {
+    if (!restaurantId) return;
+    
+    // Check if section has items
+    const itemsInSection = prepItems.filter(item => item.sectionId === sectionId);
+    
+    Alert.alert(
+      "Delete Section",
+      itemsInSection.length > 0
+        ? `This section contains ${itemsInSection.length} item(s). All items will be deleted along with the section. Continue?`
+        : "Are you sure you want to delete this section?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              // Delete all items in the section
+              if (itemsInSection.length > 0) {
+                const deletePromises = itemsInSection.map(item =>
+                  offlineCapableDelete(restaurantId, "preplist", item.id, isNetworkOnline)
+                );
+                await Promise.all(deletePromises);
+                
+                // Update local state - remove items from section
+                setPrepItems(items =>
+                  items.filter(item => item.sectionId !== sectionId)
+                );
+              }
+              
+              // Delete the section
+              await deleteDoc(getRestaurantDoc(restaurantId, "prepsections", sectionId));
+              const updatedSections = sections.filter(s => s.id !== sectionId);
+              setSections(updatedSections);
+              
+              // Cache the updated sections
+              await cachePrepSectionsOffline(updatedSections);
+              
+              console.log(`✅ Section and ${itemsInSection.length} items deleted successfully`);
+            } catch (error) {
+              console.error("Error deleting section:", error);
+              Alert.alert("Error", "Failed to delete section. Please try again.");
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // Edit an item
+  const editItem = async (itemId, newName) => {
+    if (!restaurantId) return;
+    
+    try {
+      await offlineCapableUpdate(restaurantId, "preplist", itemId, { name: newName }, isNetworkOnline);
+      setPrepItems(items =>
+        items.map(item =>
+          item.id === itemId ? { ...item, name: newName } : item
+        )
+      );
+      console.log(`✅ Item updated successfully`);
+    } catch (error) {
+      console.error("Error editing item:", error);
+      Alert.alert("Error", "Failed to update item. Please try again.");
+    }
+  };
+
+  // Delete an item
+  const deleteItem = async (itemId) => {
+    if (!restaurantId) return;
+    
+    try {
+      await offlineCapableDelete(restaurantId, "preplist", itemId, isNetworkOnline);
+      setPrepItems(items => items.filter(item => item.id !== itemId));
+      console.log(`✅ Item deleted successfully`);
+    } catch (error) {
+      console.error("Error deleting item:", error);
+      Alert.alert("Error", "Failed to delete item. Please try again.");
+    }
+  };
+
   const onBack = () => {
     navigation.goBack();
   };
@@ -548,6 +712,12 @@ export default function PrepListsScreen() {
         item.isTemporary && styles.temporaryItem // Add subtle styling for temporary items
       ]}
       onPress={() => toggleItem(item.id, item.done)}
+      onLongPress={() => {
+        if (!item.isTemporary) {
+          setSelectedItem(item);
+          setShowEditItemModal(true);
+        }
+      }}
       activeOpacity={0.7}
     >
       <View
@@ -586,8 +756,7 @@ export default function PrepListsScreen() {
     </TouchableOpacity>
   );
 
-  // Group items by day (today/yesterday based on 3 AM cutoff)
-  // Note: prepItems are now kept sorted in state, so no need to sort again
+  // Group items by day AND section
   let todayItems = [];
   let yesterdayItems = [];
   
@@ -601,6 +770,21 @@ export default function PrepListsScreen() {
     todayItems = prepItems;
     yesterdayItems = [];
   }
+
+  // Group items by section within each day - ALWAYS show all sections
+  const groupItemsBySection = (items) => {
+    const noSectionItems = items.filter(item => !item.sectionId);
+    // Always include all sections, even if they have no items
+    const allSectionsWithItems = sections.map(section => ({
+      ...section,
+      items: items.filter(item => item.sectionId === section.id)
+    }));
+    
+    return { noSectionItems, allSectionsWithItems };
+  };
+
+  const todayGrouped = groupItemsBySection(todayItems);
+  const yesterdayGrouped = groupItemsBySection(yesterdayItems);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -631,34 +815,85 @@ export default function PrepListsScreen() {
           </View>
         )}
 
-        {/* Prep Items List */}
+        {/* Section Management Header */}
+        <View style={styles.sectionManagementHeader}>
+          <TouchableOpacity
+            style={styles.addSectionButton}
+            onPress={() => setShowAddSectionModal(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="add-circle-outline" size={20} color={Colors.primary} />
+            <Text style={styles.addSectionText}>Add Section</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Prep Items List - Grouped by Sections */}
         <View style={styles.listContainer}>
           {loading ? (
             <Text style={{ textAlign: "center", marginTop: 40 }}>Loading...</Text>
           ) : (
             <>
-              {/* Today's Items */}
-              {todayItems.length > 0 && (
+              {/* Tomorrow's List */}
+              {(todayItems.length > 0 || sections.length > 0) && (
                 <>
-                  <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Tomorrow's List</Text>
-                    <TouchableOpacity
-                      style={styles.clearAllButton}
-                      onPress={clearAllItems}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.clearAllText}>Clear All</Text>
-                    </TouchableOpacity>
+                  <View style={styles.dayHeader}>
+                    <Text style={styles.dayTitle}>Tomorrow's List</Text>
+                    {todayItems.length > 0 && (
+                      <TouchableOpacity
+                        style={styles.clearAllButton}
+                        onPress={clearAllItems}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.clearAllText}>Clear All</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
-                  {todayItems.map(renderPrepItem)}
+                  
+                  {/* No Section Items - Display without section header */}
+                  {todayGrouped.noSectionItems.length > 0 && (
+                    <View style={styles.noSectionItemsContainer}>
+                      {todayGrouped.noSectionItems.map(renderPrepItem)}
+                    </View>
+                  )}
+                  
+                  {/* All Sections - ALWAYS show, even if empty */}
+                  {todayGrouped.allSectionsWithItems.map(section => (
+                    <View key={section.id} style={styles.sectionCard}>
+                      <View style={styles.sectionCardHeader}>
+                        <Text style={styles.sectionCardTitle}>{section.name}</Text>
+                        <TouchableOpacity
+                          style={styles.deleteSectionButton}
+                          onPress={() => deleteSection(section.id)}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="trash-outline" size={18} color="#FF3B30" />
+                        </TouchableOpacity>
+                      </View>
+                      <View style={styles.sectionCardContent}>
+                        {section.items.map(renderPrepItem)}
+                        {/* Add Item Button within section */}
+                        <TouchableOpacity
+                          style={styles.addItemInSectionButton}
+                          onPress={() => {
+                            setSelectedSectionForAdd(section.id);
+                            setShowAddModal(true);
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="add-circle-outline" size={20} color={Colors.primary} />
+                          <Text style={styles.addItemInSectionText}>Add Item</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
                 </>
               )}
               
-              {/* Yesterday's Items */}
+              {/* Today's List */}
               {yesterdayItems.length > 0 && (
                 <>
-                  <View style={styles.sectionHeader}>
-                    <Text style={[styles.sectionTitle, styles.yesterdaySectionTitle]}>Today's List</Text>
+                  <View style={styles.dayHeader}>
+                    <Text style={[styles.dayTitle, styles.todayTitle]}>Today's List</Text>
                     <TouchableOpacity
                       style={styles.clearAllButton}
                       onPress={clearYesterdayItems}
@@ -667,13 +902,43 @@ export default function PrepListsScreen() {
                       <Text style={styles.clearAllText}>Clear All</Text>
                     </TouchableOpacity>
                   </View>
-                  {yesterdayItems.map(renderPrepItem)}
+                  
+                  {/* No Section Items - Display without section header */}
+                  {yesterdayGrouped.noSectionItems.length > 0 && (
+                    <View style={styles.noSectionItemsContainer}>
+                      {yesterdayGrouped.noSectionItems.map(renderPrepItem)}
+                    </View>
+                  )}
+                  
+                  {/* Items grouped by sections */}
+                  {yesterdayGrouped.allSectionsWithItems.map(section => {
+                    // Only show section in yesterday if it has items
+                    if (section.items.length === 0) return null;
+                    
+                    return (
+                      <View key={section.id} style={styles.sectionCard}>
+                        <View style={styles.sectionCardHeader}>
+                          <Text style={styles.sectionCardTitle}>{section.name}</Text>
+                          <TouchableOpacity
+                            style={styles.deleteSectionButton}
+                            onPress={() => deleteSection(section.id)}
+                            activeOpacity={0.7}
+                          >
+                            <Ionicons name="trash-outline" size={18} color="#FF3B30" />
+                          </TouchableOpacity>
+                        </View>
+                        <View style={styles.sectionCardContent}>
+                          {section.items.map(renderPrepItem)}
+                        </View>
+                      </View>
+                    );
+                  })}
                 </>
               )}
               
               {/* Empty state */}
-              {todayItems.length === 0 && yesterdayItems.length === 0 && (
-                <Text style={styles.emptyState}>No prep items yet. Add your first item!</Text>
+              {todayItems.length === 0 && yesterdayItems.length === 0 && sections.length === 0 && (
+                <Text style={styles.emptyState}>No sections yet. Add your first section to get started!</Text>
               )}
             </>
           )}
@@ -688,9 +953,34 @@ export default function PrepListsScreen() {
       {showAddModal && (
         <AddPrepItemModal
           visible={showAddModal}
-          onClose={() => setShowAddModal(false)}
+          onClose={() => {
+            setShowAddModal(false);
+            setSelectedSectionForAdd(null);
+          }}
           onAdd={addNewItem}
           date={currentDate}
+          preSelectedSection={selectedSectionForAdd}
+        />
+      )}
+
+      {/* Add Section Modal */}
+      <AddSectionModal
+        visible={showAddSectionModal}
+        onClose={() => setShowAddSectionModal(false)}
+        onAdd={addNewSection}
+      />
+
+      {/* Edit Item Modal */}
+      {selectedItem && (
+        <EditPrepItemModal
+          visible={showEditItemModal}
+          onClose={() => {
+            setShowEditItemModal(false);
+            setSelectedItem(null);
+          }}
+          onSave={editItem}
+          onDelete={deleteItem}
+          item={selectedItem}
         />
       )}
 
@@ -702,6 +992,11 @@ export default function PrepListsScreen() {
           setSelectedItemId(null);
         }}
         onSelect={handleFlagSelection}
+        onDelete={() => {
+          if (selectedItemId) {
+            deleteItem(selectedItemId);
+          }
+        }}
         currentFlag={selectedItemId ? prepItems.find(item => item.id === selectedItemId)?.urgent : null}
       />
     </SafeAreaView>
@@ -749,24 +1044,115 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: Spacing.xs,
   },
+  sectionManagementHeader: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
+  },
+  addSectionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    alignSelf: 'flex-start',
+  },
+  addSectionText: {
+    fontSize: Typography.base,
+    fontFamily: Typography.fontMedium,
+    color: Colors.primary,
+    marginLeft: Spacing.xs,
+  },
+  dayHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.md,
+    marginTop: Spacing.xl,
+  },
+  dayTitle: {
+    fontSize: Typography.xxl,
+    fontFamily: Typography.fontBold,
+    color: Colors.textPrimary,
+  },
+  todayTitle: {
+    color: Colors.warning, // Orange color for today's list
+  },
+  sectionGroup: {
+    marginBottom: Spacing.xl,
+  },
+  sectionCard: {
+    backgroundColor: Colors.background,
+    borderRadius: 16,
+    marginBottom: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  sectionCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
+    backgroundColor: Colors.gray50,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+  sectionCardTitle: {
+    fontSize: Typography.lg,
+    fontFamily: Typography.fontBold,
+    color: Colors.textPrimary,
+  },
+  sectionCardContent: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: Spacing.lg,
-    marginTop: Spacing.xl,
+    marginBottom: Spacing.md,
+    marginTop: Spacing.sm,
   },
   sectionTitle: {
-    fontSize: Typography.xl,
+    fontSize: Typography.lg,
     fontFamily: Typography.fontBold,
-    color: Colors.textPrimary,
+    color: Colors.textSecondary,
+  },
+  deleteSectionButton: {
+    padding: Spacing.xs,
+  },
+  addItemInSectionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.sm,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    borderStyle: 'dashed',
+    backgroundColor: 'rgba(66, 133, 244, 0.05)',
+  },
+  addItemInSectionText: {
+    fontSize: Typography.base,
+    fontFamily: Typography.fontMedium,
+    color: Colors.primary,
+    marginLeft: Spacing.xs,
   },
   listContainer: {
     paddingHorizontal: Spacing.lg,
     paddingBottom: 100,
   },
-  yesterdaySectionTitle: {
-    color: Colors.warning, // Orange color for today's list
+  noSectionItemsContainer: {
+    marginBottom: Spacing.lg,
   },
   emptyState: {
     textAlign: "center",
@@ -778,13 +1164,13 @@ const styles = StyleSheet.create({
   listItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: Spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
-    backgroundColor: Colors.gray50,
-    borderRadius: 16,
-    marginBottom: Spacing.md,
+    paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.md,
+    backgroundColor: Colors.gray50,
+    borderRadius: 12,
+    marginBottom: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
   },
   checkbox: {
     width: 20,

@@ -11,7 +11,7 @@ import { Colors } from '../../constants/Colors';
 import { Typography } from '../../constants/Typography';
 import { Spacing } from '../../constants/Spacing';
 
-const FlagSelectionModal = ({ visible, onClose, onSelect, currentFlag }) => {
+const FlagSelectionModal = ({ visible, onClose, onSelect, onDelete, currentFlag }) => {
   const flagOptions = [
     { id: null, label: 'No Flag', color: Colors.gray200 },
     { id: 'x85', label: 'Orange Flag (x85)', color: '#F7B801' },
@@ -20,6 +20,11 @@ const FlagSelectionModal = ({ visible, onClose, onSelect, currentFlag }) => {
 
   const handleSelect = (flagId) => {
     onSelect(flagId);
+    onClose();
+  };
+
+  const handleDelete = () => {
+    onDelete();
     onClose();
   };
 
@@ -62,6 +67,19 @@ const FlagSelectionModal = ({ visible, onClose, onSelect, currentFlag }) => {
                   )}
                 </TouchableOpacity>
               ))}
+
+              {/* Delete Option */}
+              <View style={styles.divider} />
+              <TouchableOpacity
+                style={styles.deleteOption}
+                onPress={handleDelete}
+                activeOpacity={0.7}
+              >
+                <View style={styles.optionLeft}>
+                  <Text style={styles.deleteIcon}>🗑️</Text>
+                  <Text style={styles.deleteLabel}>Delete Item</Text>
+                </View>
+              </TouchableOpacity>
             </View>
           </View>
         </SafeAreaView>
@@ -144,6 +162,32 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: Colors.primary,
     fontWeight: Typography.bold,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: Colors.borderLight,
+    marginVertical: Spacing.md,
+  },
+  deleteOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.md,
+    borderRadius: 12,
+    marginBottom: Spacing.sm,
+    backgroundColor: '#FFF5F5',
+    borderWidth: 1,
+    borderColor: '#FFE5E5',
+  },
+  deleteIcon: {
+    fontSize: 22,
+    marginRight: Spacing.md,
+  },
+  deleteLabel: {
+    fontSize: Typography.lg,
+    fontFamily: Typography.fontMedium,
+    color: '#FF3B30',
   },
 });
 
