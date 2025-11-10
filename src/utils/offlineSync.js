@@ -117,8 +117,6 @@ export const cacheRecipesOffline = async (recipesByCategory, categories) => {
     const totalRecipes = Object.values(recipesByCategory).reduce((total, recipes) => {
       return total + (Array.isArray(recipes) ? recipes.length : 0);
     }, 0);
-    
-    console.log(`💾 Cached ${totalRecipes} recipes in ${categories.length} categories offline`);
   } catch (error) {
     console.error('❌ Error caching recipes offline:', error);
   }
@@ -203,9 +201,7 @@ export const preloadRecipesForRestaurant = async (restaurantId) => {
     if (categoryNamesDoc.exists()) {
       const data = categoryNamesDoc.data();
       categoryNames = data?.names || [];
-      console.log('📚 Preload: Found category names:', categoryNames);
     } else {
-      console.log('📚 Preload: No categories found, using defaults');
       categoryNames = ['Desserts', 'Main', 'Starters'];
     }
     
@@ -215,13 +211,11 @@ export const preloadRecipesForRestaurant = async (restaurantId) => {
 
     // For each category name from the array
     for (const categoryName of categoryNames) {
-      console.log('📚 Preload: Processing category:', categoryName);
       fetchedCategories.push({ id: categoryName, name: categoryName });
 
       try {
         // Fetch recipe documents directly from the category path
         const categoryRecipesSnapshot = await getDocs(getRestaurantSubCollection(restaurantId, "recipes", "categories", categoryName));
-        console.log(`📚 Preload: Found ${categoryRecipesSnapshot.size} recipes in ${categoryName}`);
         
         const categoryRecipes = [];
         categoryRecipesSnapshot.forEach(recipeDoc => {

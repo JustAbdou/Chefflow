@@ -6,17 +6,19 @@ import { Colors } from "../../constants/Colors";
 import { Typography } from "../../constants/Typography";
 import { Spacing } from "../../constants/Spacing";
 import { getAndroidTitleMargin } from "../../utils/responsive";
-import { addDoc, getDoc, serverTimestamp } from "firebase/firestore";
+import { updateDoc, addDoc, deleteDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
-import { getRestaurantDoc, getRestaurantSubCollection } from "../../utils/firestoreHelpers";
+import { getRestaurantDoc, getRestaurantSubCollection, getRestaurantSubDoc } from "../../utils/firestoreHelpers";
 import { uploadImageToStorage } from "../../utils/imageUpload";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 
-export default function AddRecipeScreen({ navigation }) {
+export default function EditRecipeScreen({ route, navigation }) {
   const { restaurantId } = useRestaurant();
+  const { recipeId, category: initialCategory, recipe: initialRecipe } = route.params;
+  
   const [date, setDate] = useState("");
-  const [category, setCategory] = useState("");
+  const [category, setCategory] = useState(initialCategory || "");
   const [categories, setCategories] = useState([]);
   const [recipeName, setRecipeName] = useState("");
   const [ingredients, setIngredients] = useState([]);
@@ -24,7 +26,7 @@ export default function AddRecipeScreen({ navigation }) {
   const [notes, setNotes] = useState("");
   const [ingredientInput, setIngredientInput] = useState("");
   const [instructionInput, setInstructionInput] = useState("");
-  const [image, setImage] = useState(null);
+  const [images, setImages] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -39,22 +41,101 @@ export default function AddRecipeScreen({ navigation }) {
       const categoriesDoc = await getDoc(getRestaurantDoc(restaurantId, "recipes", "categories"));
       const data = categoriesDoc.data();
       setCategories(data?.names || []);
-      if (!category && data?.names?.length) setCategory(data.names[0]);
     };
     fetchCategories();
-  }, [restaurantId]);
 
-  // Image picker
+    // Fetch recipe data from Firestore to ensure we have complete, up-to-date data
+    const fetchRecipeData = async () => {
+      if (!restaurantId || !recipeId || !initialCategory) return;
+      
+      try {
+        const recipeDoc = await getDoc(
+          getRestaurantSubDoc(restaurantId, "recipes", "categories", initialCategory, recipeId)
+        );
+        
+        if (recipeDoc.exists()) {
+          const recipeData = recipeDoc.data();
+          
+          // Handle recipe name - check both "recipe name" and "recipeName" fields
+          const name = recipeData["recipe name"] || recipeData.recipeName || "";
+          setRecipeName(name);
+          
+          setIngredients(recipeData.ingredients || []);
+          setInstructions(recipeData.instructions || []);
+          setNotes(recipeData.notes || "");
+          
+          // Handle images - it can be an array or a single string
+          if (recipeData.image) {
+            if (Array.isArray(recipeData.image)) {
+              setImages(recipeData.image);
+            } else if (typeof recipeData.image === "string") {
+              setImages([recipeData.image]);
+            }
+          } else {
+            setImages([]);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching recipe data:", error);
+        // Fallback to initialRecipe if fetch fails
+        if (initialRecipe) {
+          const name = initialRecipe["recipe name"] || initialRecipe.recipeName || "";
+          setRecipeName(name);
+          setIngredients(initialRecipe.ingredients || []);
+          setInstructions(initialRecipe.instructions || []);
+          setNotes(initialRecipe.notes || "");
+          
+          if (initialRecipe.image) {
+            if (Array.isArray(initialRecipe.image)) {
+              setImages(initialRecipe.image);
+            } else if (typeof initialRecipe.image === "string") {
+              setImages([initialRecipe.image]);
+            }
+          } else {
+            setImages([]);
+          }
+        }
+      }
+    };
+    
+    fetchRecipeData();
+  }, [restaurantId, recipeId, initialCategory, initialRecipe]);
+
+  // Image picker - add new image
   const pickImage = async () => {
+    if (images.length >= 8) {
+      Alert.alert("Maximum Images", "You can only add up to 8 images.");
+      return;
+    }
+    
     let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [4, 3],
       quality: 0.7,
     });
     if (!result.canceled && result.assets?.[0]?.uri) {
-      setImage(result.assets[0].uri);
+      setImages([...images, result.assets[0].uri]);
     }
+  };
+
+  // Delete image
+  const handleDeleteImage = (index) => {
+    Alert.alert(
+      "Delete Image",
+      "Are you sure you want to delete this image?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            const updatedImages = images.filter((_, i) => i !== index);
+            setImages(updatedImages);
+          },
+        },
+      ]
+    );
   };
 
   // Add ingredient
@@ -83,29 +164,47 @@ export default function AddRecipeScreen({ navigation }) {
     setInstructions(instructions.filter((_, i) => i !== idx));
   };
 
-  // Add recipe to Firestore
-  const handleAddRecipe = async () => {
+  // Update ingredient
+  const handleUpdateIngredient = (idx, newValue) => {
+    const updatedIngredients = [...ingredients];
+    updatedIngredients[idx] = newValue;
+    setIngredients(updatedIngredients);
+  };
+
+  // Update instruction
+  const handleUpdateInstruction = (idx, newValue) => {
+    const updatedInstructions = [...instructions];
+    updatedInstructions[idx] = newValue;
+    setInstructions(updatedInstructions);
+  };
+
+  // Update recipe in Firestore
+  const handleUpdateRecipe = async () => {
     if (!restaurantId || !category || !recipeName.trim() || ingredients.length === 0 || instructions.length === 0) {
       Alert.alert("Please fill all required fields.");
       return;
     }
     setLoading(true);
     try {
-      // Upload image to Firebase Storage if provided
-      let imageUrls = ["https://placehold.co/200x200?text=No+Image"];
-      if (image) {
-        // Check if image is already a URL (shouldn't happen when adding, but just in case)
-        if (image.startsWith('http://') || image.startsWith('https://')) {
-          imageUrls = [image];
+      // Upload images that aren't already URLs (local images need to be uploaded)
+      const uploadedImages = [];
+      for (const imageUri of images) {
+        // If already a URL (from Firebase Storage), keep it
+        if (imageUri.startsWith('http://') || imageUri.startsWith('https://')) {
+          console.log('✅ Image already uploaded, keeping URL:', imageUri);
+          uploadedImages.push(imageUri);
         } else {
-          // Upload local image to Firebase Storage
+          // Otherwise, upload to Firebase Storage
           try {
-            const downloadURL = await uploadImageToStorage(image, restaurantId);
-            imageUrls = [downloadURL];
-          } catch (uploadError) {
-            console.error('Error uploading image:', uploadError);
-            Alert.alert("Upload Error", `Failed to upload image: ${uploadError.message}. Recipe will be saved without image.`);
-            // Continue without image or use placeholder
+            console.log('📤 Uploading local image:', imageUri);
+            const downloadURL = await uploadImageToStorage(imageUri, restaurantId, recipeId);
+            console.log('✅ Image uploaded successfully:', downloadURL);
+            uploadedImages.push(downloadURL);
+          } catch (error) {
+            console.error('❌ Error uploading image:', error);
+            Alert.alert("Upload Error", `Failed to upload image: ${error.message}. Please try again.`);
+            setLoading(false);
+            return; // Stop the save process if upload fails
           }
         }
       }
@@ -116,17 +215,47 @@ export default function AddRecipeScreen({ navigation }) {
         ingredients,
         instructions,
         notes,
-        image: imageUrls,
-        createdAt: serverTimestamp(),
+        image: uploadedImages.length > 0 ? uploadedImages : ["https://placehold.co/200x200?text=No+Image"],
+        updatedAt: serverTimestamp(),
       };
-      await addDoc(
-        getRestaurantSubCollection(restaurantId, "recipes", "categories", category),
-        recipeData
-      );
-      Alert.alert("Recipe added!");
-      navigation.goBack();
+
+      // Preserve createdAt timestamp if it exists
+      if (initialRecipe?.createdAt) {
+        recipeData.createdAt = initialRecipe.createdAt;
+      }
+
+      // If category changed, we need to move the document
+      if (category !== initialCategory) {
+        // Create in new category (preserving createdAt if it exists)
+        await addDoc(
+          getRestaurantSubCollection(restaurantId, "recipes", "categories", category),
+          recipeData
+        );
+        // Delete from old category
+        await deleteDoc(
+          getRestaurantSubDoc(restaurantId, "recipes", "categories", initialCategory, recipeId)
+        );
+      } else {
+        // Just update in the same category (don't overwrite createdAt)
+        const updateData = { ...recipeData };
+        delete updateData.createdAt; // Don't update createdAt on existing doc
+        await updateDoc(
+          getRestaurantSubDoc(restaurantId, "recipes", "categories", category, recipeId),
+          updateData
+        );
+      }
+
+      Alert.alert("Recipe updated!");
+      // Navigate back to recipe detail if category didn't change, otherwise go to recipes list
+      if (category === initialCategory) {
+        // Navigate back to recipe detail (will refresh automatically via focus listener)
+        navigation.goBack();
+      } else {
+        // Category changed, navigate back to recipes list (will refresh automatically via focus listener)
+        navigation.navigate("Recipes");
+      }
     } catch (e) {
-      Alert.alert("Error", "Could not add recipe.");
+      Alert.alert("Error", "Could not update recipe.");
       console.error(e);
     } finally {
       setLoading(false);
@@ -147,49 +276,38 @@ export default function AddRecipeScreen({ navigation }) {
             <Ionicons name="arrow-back" size={28} color={Colors.textPrimary} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={styles.title}>Add Recipe</Text>
+            <Text style={styles.title}>Edit Recipe</Text>
             <Text style={styles.date}>{date}</Text>
           </View>
         </View>
 
-        {/* Image Picker */}
-        <TouchableOpacity style={styles.imagePicker} onPress={pickImage} activeOpacity={0.7}>
-          {image ? (
-            <Image source={{ uri: image }} style={styles.image} />
-          ) : (
-            <View style={styles.imagePlaceholder}>
-              <Ionicons name="camera-outline" size={40} color={Colors.gray300} />
-              <Text style={styles.imagePlaceholderText}>Tap to take or upload a photo{"\n"}(Optional)</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        {/* Recipe Details */}
-        <Text style={styles.sectionTitle}>Recipe Details</Text>
-        {/* Category Picker - Only keep the selection chips, remove the upper placeholder */}
-        <View style={styles.inputGroup}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 0 }}>
-            {categories.map(cat => (
+        {/* Images Section */}
+        <Text style={styles.sectionTitle}>Images ({images.length}/8)</Text>
+        <View style={styles.imagesContainer}>
+          {images.map((imageUri, index) => (
+            <View key={index} style={styles.imageWrapper}>
+              <Image source={{ uri: imageUri }} style={styles.imageThumbnail} />
               <TouchableOpacity
-                key={cat}
-                style={[
-                  styles.categoryChip,
-                  category === cat && styles.activeCategoryChip,
-                ]}
-                onPress={() => setCategory(cat)}
+                style={styles.deleteImageButton}
+                onPress={() => handleDeleteImage(index)}
+                activeOpacity={0.7}
               >
-                <Text
-                  style={[
-                    styles.categoryChipText,
-                    category === cat && styles.activeCategoryChipText,
-                  ]}
-                >
-                  {cat}
-                </Text>
+                <Ionicons name="close-circle" size={24} color={Colors.error} />
               </TouchableOpacity>
-            ))}
-          </ScrollView>
+            </View>
+          ))}
+          {images.length < 8 && (
+            <TouchableOpacity
+              style={styles.addImageButton}
+              onPress={pickImage}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="add" size={32} color={Colors.gray400} />
+              <Text style={styles.addImageText}>Add Image</Text>
+            </TouchableOpacity>
+          )}
         </View>
+
         {/* Recipe Name */}
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>Recipe Name</Text>
@@ -208,7 +326,14 @@ export default function AddRecipeScreen({ navigation }) {
           {ingredients.map((ingredient, idx) => (
             <View key={idx} style={styles.ingredientRow}>
               <Text style={styles.ingredientIndex}>{idx + 1}.</Text>
-              <Text style={styles.ingredientText}>{ingredient}</Text>
+              <TextInput
+                style={styles.editableIngredientText}
+                value={ingredient}
+                onChangeText={(text) => handleUpdateIngredient(idx, text)}
+                placeholder="Enter ingredient"
+                placeholderTextColor={Colors.gray300}
+                multiline
+              />
               <TouchableOpacity onPress={() => handleRemoveIngredient(idx)}>
                 <MaterialIcons name="delete" size={20} color={Colors.error} />
               </TouchableOpacity>
@@ -233,10 +358,15 @@ export default function AddRecipeScreen({ navigation }) {
         <View style={styles.ingredientList}>
           {instructions.map((instruction, idx) => (
             <View key={idx} style={styles.instructionRow}>
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <Text style={styles.ingredientIndex}>{idx + 1}.</Text>
-                <Text style={styles.ingredientText}>{instruction.split("\n")[0]}</Text>
-              </View>
+              <Text style={styles.ingredientIndex}>{idx + 1}.</Text>
+              <TextInput
+                style={styles.editableInstructionText}
+                value={instruction}
+                onChangeText={(text) => handleUpdateInstruction(idx, text)}
+                placeholder="Enter instruction"
+                placeholderTextColor={Colors.gray300}
+                multiline
+              />
               <TouchableOpacity onPress={() => handleRemoveInstruction(idx)}>
                 <MaterialIcons name="delete" size={20} color={Colors.error} />
               </TouchableOpacity>
@@ -256,25 +386,25 @@ export default function AddRecipeScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* Notes */}
-        <Text style={styles.sectionTitle}>Notes</Text>
+        {/* Allergen */}
+        <Text style={styles.sectionTitle}>Allergen</Text>
         <TextInput
           style={[styles.input, styles.notesInput]}
           value={notes}
           onChangeText={setNotes}
-          placeholder="Add any additional notes or tips (optional)"
+          placeholder="Add allergen information (optional)"
           placeholderTextColor={Colors.gray300}
           multiline
         />
 
-        {/* Add Recipe Button */}
+        {/* Save Button */}
         <TouchableOpacity
-          style={styles.addRecipeButton}
-          onPress={handleAddRecipe}
+          style={styles.saveButton}
+          onPress={handleUpdateRecipe}
           disabled={loading}
           activeOpacity={0.8}
         >
-          <Text style={styles.addRecipeButtonText}>{loading ? "Adding..." : "Add Recipe"}</Text>
+          <Text style={styles.saveButtonText}>{loading ? "Saving..." : "Save Changes"}</Text>
         </TouchableOpacity>
         {/* Cancel Button */}
         <TouchableOpacity style={styles.cancelButton} onPress={() => navigation.goBack()}>
@@ -319,35 +449,51 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: 2,
   },
-  imagePicker: {
-    borderWidth: 1,
-    borderColor: Colors.gray200,
-    borderRadius: 12,
+  imagesContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     marginHorizontal: 20,
-    marginVertical: 24,
-    height: 200,
+    marginBottom: 24,
+    marginRight: 20,
+  },
+  imageWrapper: {
+    position: "relative",
+    width: "30%",
+    aspectRatio: 1,
+    marginBottom: 12,
+    marginRight: "3.33%",
+  },
+  imageThumbnail: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 12,
+    backgroundColor: Colors.gray100,
+  },
+  deleteImageButton: {
+    position: "absolute",
+    top: -8,
+    right: -8,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    zIndex: 1,
+  },
+  addImageButton: {
+    width: "30%",
+    aspectRatio: 1,
+    borderWidth: 2,
+    borderColor: Colors.gray200,
+    borderStyle: "dashed",
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#fafbfc",
-    overflow: "hidden",
+    marginBottom: 12,
+    marginRight: "3.33%",
   },
-  image: {
-    width: "100%",
-    height: 180,
-    borderRadius: 12,
-  },
-  imagePlaceholder: {
-    alignItems: "center",
-    justifyContent: "center",
-    flex: 1,
-    width: "100%",
-    height: "100%",
-  },
-  imagePlaceholderText: {
-    color: Colors.gray300,
-    fontSize: Typography.base,
-    textAlign: "center",
-    marginTop: 8,
+  addImageText: {
+    color: Colors.gray400,
+    fontSize: Typography.sm,
+    marginTop: 4,
   },
   sectionTitle: {
     fontSize: 18,
@@ -365,21 +511,6 @@ const styles = StyleSheet.create({
     fontSize: Typography.sm,
     color: Colors.textSecondary,
     marginBottom: 4,
-  },
-  dropdown: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: Colors.gray200,
-    borderRadius: 8,
-    padding: 12,
-    backgroundColor: "#fff",
-    marginBottom: 4,
-  },
-  dropdownText: {
-    fontSize: Typography.base,
-    color: Colors.textPrimary,
-    flex: 1,
   },
   categoryChip: {
     backgroundColor: Colors.gray100,
@@ -427,7 +558,7 @@ const styles = StyleSheet.create({
   },
   instructionRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     marginHorizontal: 20,
     marginBottom: 8,
     backgroundColor: "#f7f7f7",
@@ -449,6 +580,27 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     flex: 1,
     paddingRight: 40
+  },
+  editableIngredientText: {
+    fontSize: Typography.base,
+    color: Colors.textPrimary,
+    flex: 1,
+    paddingRight: 8,
+    paddingLeft: 0,
+    paddingVertical: 4,
+    borderWidth: 0,
+    backgroundColor: "transparent",
+  },
+  editableInstructionText: {
+    fontSize: Typography.base,
+    color: Colors.textPrimary,
+    flex: 1,
+    paddingRight: 8,
+    paddingLeft: 0,
+    paddingVertical: 4,
+    borderWidth: 0,
+    backgroundColor: "transparent",
+    textAlignVertical: "top",
   },
   addRow: {
     flexDirection: "row",
@@ -476,7 +628,7 @@ const styles = StyleSheet.create({
     marginBottom: 0,
     textAlignVertical: "top",
   },
-  addRecipeButton: {
+  saveButton: {
     backgroundColor: "#2563eb",
     borderRadius: 8,
     paddingVertical: 18,
@@ -484,7 +636,7 @@ const styles = StyleSheet.create({
     marginTop: 32,
     alignItems: "center",
   },
-  addRecipeButtonText: {
+  saveButtonText: {
     color: "#fff",
     fontSize: Typography.base,
     fontFamily: Typography.fontBold,
@@ -499,3 +651,4 @@ const styles = StyleSheet.create({
     fontSize: Typography.base,
   },
 });
+

@@ -6,7 +6,7 @@ import { Spacing } from "../../constants/Spacing"
 import { getAndroidTitleMargin } from "../../utils/responsive"
 import useNavigationBar from "../../hooks/useNavigationBar"
 import { doc, getDoc, getDocs } from "firebase/firestore";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantDoc, getRestaurantSubCollection, getRestaurantNestedCollection } from "../../utils/firestoreHelpers";
 import { useNavigation } from "@react-navigation/native";
@@ -120,19 +120,16 @@ function RecipesScreen() {
 
       // For each category name from the array
       for (const categoryName of categoryNames) {
-        console.log('Processing category:', categoryName);
         fetchedCategories.push({ id: categoryName, name: categoryName });
 
         try {
           // Fetch recipe documents directly from the category path
           // Path: restaurants/{restaurantId}/recipes/categories/{categoryName}/
           const categoryRecipesSnapshot = await getDocs(getRestaurantSubCollection(restaurantId, "recipes", "categories", categoryName));
-          console.log(`Found ${categoryRecipesSnapshot.size} documents in category: ${categoryName}`);
           
           const categoryRecipes = [];
           categoryRecipesSnapshot.forEach(recipeDoc => {
             const recipeData = recipeDoc.data();
-            console.log(`Recipe document ${recipeDoc.id} data:`, recipeData);
             
             const recipe = { 
               id: recipeDoc.id, 
@@ -144,7 +141,6 @@ function RecipesScreen() {
           });
           
           recipesObj[categoryName] = categoryRecipes;
-          console.log(`Fetched ${categoryRecipes.length} recipes from category: ${categoryName}`);
         } catch (categoryError) {
           console.error(`Error fetching recipes for category ${categoryName}:`, categoryError);
           recipesObj[categoryName] = [];
@@ -160,8 +156,6 @@ function RecipesScreen() {
       await cacheRecipesOffline(newRecipesByCategory, fetchedCategories);
       await updateRecipesCacheTimestamp();
       
-      console.log('Total recipes fetched:', allRecipes.length);
-      console.log('Categories:', fetchedCategories.map(cat => cat.name));
       if (!selectedCategory && fetchedCategories.length > 0) setSelectedCategory("All Recipes");
     } catch (error) {
       console.error("Error fetching categories/recipes:", error);

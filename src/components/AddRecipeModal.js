@@ -16,6 +16,7 @@ import * as ImagePicker from "expo-image-picker";
 import { addDoc } from "firebase/firestore";
 import { useRestaurant } from "../contexts/RestaurantContext";
 import { getRestaurantSubCollection } from "../utils/firestoreHelpers";
+import { uploadImageToStorage } from "../utils/imageUpload";
 import { Colors } from "../constants/Colors";
 import { Typography } from "../constants/Typography";
 import { Spacing } from "../constants/Spacing";
@@ -87,12 +88,31 @@ export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
     }
     setLoading(true);
     try {
+      // Upload image to Firebase Storage if provided
+      let imageUrls = ["https://placehold.co/200x200?text=No+Image"];
+      if (image) {
+        // Check if image is already a URL (shouldn't happen when adding, but just in case)
+        if (image.startsWith('http://') || image.startsWith('https://')) {
+          imageUrls = [image];
+        } else {
+          // Upload local image to Firebase Storage
+          try {
+            const downloadURL = await uploadImageToStorage(image, restaurantId);
+            imageUrls = [downloadURL];
+          } catch (uploadError) {
+            console.error('Error uploading image:', uploadError);
+            Alert.alert("Upload Error", `Failed to upload image: ${uploadError.message}. Recipe will be saved without image.`);
+            // Continue without image or use placeholder
+          }
+        }
+      }
+
       // Save to Firestore under restaurants/{restaurantId}/recipes/categories/{category}/{autoId}
       await addDoc(
         getRestaurantSubCollection(restaurantId, "recipes", "categories", category),
         {
           "recipe name": name,
-          image: image ? [image] : ["https://placehold.co/200x200?text=No+Image"],
+          image: imageUrls,
           ingredients,
           instructions: instructions.map(
             step => `${step.title}. ${step.desc}`

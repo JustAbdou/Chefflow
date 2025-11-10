@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Image, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView, Dimensions } from "react-native";
+import { View, Text, StyleSheet, Image, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView, Dimensions, Alert } from "react-native";
 import { Colors } from "../../constants/Colors";
 import { Typography } from "../../constants/Typography";
 import { Spacing } from "../../constants/Spacing";
 import { getDoc } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantSubDoc } from "../../utils/firestoreHelpers";
+import { useFocusEffect } from "@react-navigation/native";
+import * as Print from "expo-print";
+import { Ionicons } from "@expo/vector-icons";
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -15,28 +18,37 @@ function RecipeDetailScreen({ route, navigation }) {
   const [recipe, setRecipe] = useState(null);
   const [loading, setLoading] = useState(true);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [isPrinting, setIsPrinting] = useState(false);
+
+  const fetchRecipeDetails = React.useCallback(async () => {
+    if (!restaurantId) return;
+    
+    setLoading(true);
+    try {
+      const recipeDoc = await getDoc(
+        getRestaurantSubDoc(restaurantId, "recipes", "categories", category, recipeId)
+      );
+      const recipeData = recipeDoc.data();
+      setRecipe(recipeData);
+      // Reset image index when recipe changes
+      setCurrentImageIndex(0);
+    } catch (error) {
+      console.error("Error fetching recipe details:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [recipeId, category, restaurantId]);
 
   useEffect(() => {
-    const fetchRecipeDetails = async () => {
-      if (!restaurantId) return;
-      
-      try {
-        const recipeDoc = await getDoc(
-          getRestaurantSubDoc(restaurantId, "recipes", "categories", category, recipeId)
-        );
-        const recipeData = recipeDoc.data();
-        setRecipe(recipeData);
-        // Reset image index when recipe changes
-        setCurrentImageIndex(0);
-      } catch (error) {
-        console.error("Error fetching recipe details:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchRecipeDetails();
-  }, [recipeId, category, restaurantId]);
+  }, [fetchRecipeDetails]);
+
+  // Refresh recipe when screen comes into focus (e.g., after editing)
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchRecipeDetails();
+    }, [fetchRecipeDetails])
+  );
 
   if (loading) {
     return (
@@ -68,6 +80,150 @@ function RecipeDetailScreen({ route, navigation }) {
     const slideWidth = screenWidth * 0.92;
     const currentIndex = Math.round(event.nativeEvent.contentOffset.x / slideWidth);
     setCurrentImageIndex(currentIndex);
+  };
+
+  // Print recipe
+  const handlePrintRecipe = async () => {
+    // Prevent multiple simultaneous print requests
+    if (isPrinting) {
+      return;
+    }
+
+    setIsPrinting(true);
+    try {
+      const recipeName = recipe["recipe name"] || recipe.recipeName || "Recipe";
+      const recipeImage = recipeImages[0]; // Use first image
+      const ingredients = recipe.ingredients || [];
+      const allergens = recipe.notes || "";
+
+      // Helper function to escape HTML
+      const escapeHtml = (text) => {
+        if (!text) return '';
+        return String(text)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      };
+
+      // Create HTML for printing
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>${escapeHtml(recipeName)}</title>
+          <style>
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+              margin: 0;
+              padding: 40px;
+              color: #333;
+              line-height: 1.6;
+            }
+            .header {
+              text-align: center;
+              margin-bottom: 30px;
+            }
+            .recipe-title {
+              font-size: 28px;
+              font-weight: bold;
+              color: #1f2937;
+              margin-bottom: 20px;
+            }
+            .recipe-image {
+              max-width: 100%;
+              height: auto;
+              border-radius: 12px;
+              margin-bottom: 30px;
+              display: block;
+              margin-left: auto;
+              margin-right: auto;
+            }
+            .section {
+              margin-bottom: 30px;
+            }
+            .section-title {
+              font-size: 20px;
+              font-weight: bold;
+              color: #1f2937;
+              margin-bottom: 15px;
+              border-bottom: 2px solid #e5e7eb;
+              padding-bottom: 10px;
+            }
+            .ingredients-list {
+              list-style: none;
+              padding: 0;
+            }
+            .ingredient-item {
+              padding: 8px 0;
+              font-size: 16px;
+              color: #374151;
+            }
+            .ingredient-item:before {
+              content: "✓ ";
+              color: #2563eb;
+              font-weight: bold;
+              margin-right: 8px;
+            }
+            .allergens {
+              background-color: #f8fafc;
+              padding: 15px;
+              border-radius: 8px;
+              border-left: 4px solid #dc2626;
+              font-size: 16px;
+              color: #374151;
+              white-space: pre-wrap;
+            }
+            @media print {
+              body {
+                padding: 20px;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1 class="recipe-title">${escapeHtml(recipeName)}</h1>
+          </div>
+          
+          ${recipeImage && !recipeImage.includes('placehold') ? `
+            <img src="${escapeHtml(recipeImage)}" alt="${escapeHtml(recipeName)}" class="recipe-image" />
+          ` : ''}
+          
+          <div class="section">
+            <h2 class="section-title">Ingredients</h2>
+            <ul class="ingredients-list">
+              ${ingredients.map(ingredient => `
+                <li class="ingredient-item">${escapeHtml(ingredient)}</li>
+              `).join('')}
+            </ul>
+          </div>
+          
+          ${allergens ? `
+            <div class="section">
+              <h2 class="section-title">Allergens</h2>
+              <div class="allergens">${escapeHtml(allergens)}</div>
+            </div>
+          ` : ''}
+        </body>
+        </html>
+      `;
+
+      // Open print dialog
+      await Print.printAsync({ html });
+    } catch (error) {
+      // Don't show error if user cancelled printing or if another request is in progress
+      if (error.message && (error.message.includes("did not complete") || error.message.includes("already in progress"))) {
+        console.log("Print cancelled or already in progress");
+        return;
+      }
+      console.error("Error printing recipe:", error);
+      Alert.alert("Print Error", "Failed to print recipe. Please try again.");
+    } finally {
+      setIsPrinting(false);
+    }
   };
 
   return (
@@ -122,10 +278,29 @@ function RecipeDetailScreen({ route, navigation }) {
       {/* Title */}
       <Text style={styles.title}>{recipe["recipe name"]}</Text>
 
-      {/* Recipe Details Button */}
-      <TouchableOpacity style={styles.detailsButton}>
-        <Text style={styles.detailsButtonText}>Recipe Details</Text>
-      </TouchableOpacity>
+      {/* Action Buttons */}
+      <View style={styles.actionButtonsContainer}>
+        <TouchableOpacity 
+          style={[styles.actionButton, styles.editButton]}
+          onPress={() => navigation.navigate("EditRecipe", { recipeId, category, recipe })}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="pencil" size={18} color={Colors.primary} style={styles.buttonIcon} />
+          <Text style={styles.actionButtonText}>Edit</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.actionButton, styles.printButton, isPrinting && styles.actionButtonDisabled]}
+          onPress={handlePrintRecipe}
+          activeOpacity={0.7}
+          disabled={isPrinting}
+        >
+          <Ionicons name="print" size={18} color={isPrinting ? Colors.gray400 : Colors.primary} style={styles.buttonIcon} />
+          <Text style={[styles.actionButtonText, isPrinting && styles.actionButtonTextDisabled]}>
+            {isPrinting ? "Printing..." : "Print"}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Card */}
       <View style={styles.card}>
@@ -228,6 +403,41 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: Spacing.sm,
     marginTop: Spacing.xs,
+  },
+  actionButtonsContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: Spacing.lg,
+  },
+  actionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F4F7FF",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginHorizontal: 6,
+  },
+  editButton: {
+    backgroundColor: "#F4F7FF",
+  },
+  printButton: {
+    backgroundColor: "#F4F7FF",
+  },
+  buttonIcon: {
+    marginRight: 6,
+  },
+  actionButtonText: {
+    color: Colors.primary,
+    fontSize: Typography.base,
+    fontWeight: "600",
+  },
+  actionButtonDisabled: {
+    opacity: 0.5,
+  },
+  actionButtonTextDisabled: {
+    color: Colors.gray400,
   },
   detailsButton: {
     alignSelf: "center",
