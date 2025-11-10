@@ -295,46 +295,35 @@ export default function FridgeTempLogsScreen({ navigation }) {
            log.done === true;
   };
 
-  // Helper to get status text
-  const getStatusText = (log) => {
-    // Check if there are pending changes (input values different from saved values)
-    const amInput = tempInputs[`${log.id}_AM`] || '';
-    const pmInput = tempInputs[`${log.id}_PM`] || '';
-    const amSaved = log.temperatureAM || '';
-    const pmSaved = log.temperaturePM || '';
-    
-    const hasPendingChanges = amInput !== amSaved || pmInput !== pmSaved;
-    
-    if (hasPendingChanges && (amInput.trim() !== '' || pmInput.trim() !== '')) {
-      return 'Pending';
-    }
-    
-    if (log.done) return 'Logged';
-    if (log.temperatureAM && log.temperaturePM) return 'Logged';
-    if (log.temperatureAM || log.temperaturePM) return 'Partial';
-    return 'Pending';
-  };
+  const getPeriodStatus = (log, period) => {
+    const key = period === 'AM' ? 'temperatureAM' : 'temperaturePM';
+    const savedValue = (log[key] || '').toString().trim();
+    const inputValue = (tempInputs[`${log.id}_${period}`] || '').toString().trim();
 
-  // Helper to get status color
-  const getStatusColor = (log) => {
-    const status = getStatusText(log);
-    switch (status) {
-      case 'Logged':
-        return '#059669';
-      case 'Partial':
-        return '#d97706';
-      case 'Pending':
-        // Check if there are unsaved changes
-        const amInput = tempInputs[`${log.id}_AM`] || '';
-        const pmInput = tempInputs[`${log.id}_PM`] || '';
-        const amSaved = log.temperatureAM || '';
-        const pmSaved = log.temperaturePM || '';
-        
-        const hasPendingChanges = amInput !== amSaved || pmInput !== pmSaved;
-        return hasPendingChanges && (amInput.trim() !== '' || pmInput.trim() !== '') ? '#dc2626' : '#6b7280';
-      default:
-        return '#6b7280';
+    const hasSavedValue = savedValue !== '';
+    const hasUnsavedInput = inputValue !== '' && inputValue !== savedValue;
+
+    if (hasSavedValue) {
+      return {
+        text: `${period} logged`,
+        color: '#059669',
+        icon: 'checkmark-circle',
+      };
     }
+
+    if (hasUnsavedInput) {
+      return {
+        text: `${period} pending`,
+        color: '#dc2626',
+        icon: 'alert-circle',
+      };
+    }
+
+    return {
+      text: `${period} pending`,
+      color: '#6b7280',
+      icon: 'time-outline',
+    };
   };
 
   // Toggle card expansion
@@ -633,15 +622,35 @@ export default function FridgeTempLogsScreen({ navigation }) {
                         </Text>
                       </View>
                       <View style={styles.logStatus}>
-                        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(log) + '20' }]}>
-                          <Ionicons 
-                            name={isLogged(log) ? "checkmark" : "time-outline"} 
-                            size={16} 
-                            color={getStatusColor(log)} 
-                          />
-                          <Text style={[styles.statusText, { color: getStatusColor(log) }]}>
-                            {getStatusText(log)}
-                          </Text>
+                        <View style={styles.periodStatusContainer}>
+                          {['AM', 'PM'].map((period) => {
+                            const periodStatus = getPeriodStatus(log, period);
+                            const isLast = period === 'PM';
+                            return (
+                              <View
+                                key={`${log.id}_${period}`}
+                                style={[
+                                  styles.periodBadge,
+                                  { backgroundColor: `${periodStatus.color}20` },
+                                  !isLast && styles.periodBadgeSpacing,
+                                ]}
+                              >
+                                <Ionicons
+                                  name={periodStatus.icon}
+                                  size={14}
+                                  color={periodStatus.color}
+                                />
+                                <Text
+                                  style={[
+                                    styles.periodBadgeText,
+                                    { color: periodStatus.color },
+                                  ]}
+                                >
+                                  {periodStatus.text}
+                                </Text>
+                              </View>
+                            );
+                          })}
                         </View>
                         <Ionicons 
                           name={isExpanded ? "chevron-up" : "chevron-down"} 
@@ -663,8 +672,6 @@ export default function FridgeTempLogsScreen({ navigation }) {
                               style={styles.tempInput}
                               value={tempInputs[`${log.id}_AM`] || ''}
                               onChangeText={(value) => handleTempInputChange(log.id, 'AM', value)}
-                              placeholder={log.fridgeType === 'freezer' ? '-18' : '4'}
-                              placeholderTextColor="#9CA3AF"
                               keyboardType="numeric"
                               maxLength={6}
                             />
@@ -682,8 +689,6 @@ export default function FridgeTempLogsScreen({ navigation }) {
                               style={styles.tempInput}
                               value={tempInputs[`${log.id}_PM`] || ''}
                               onChangeText={(value) => handleTempInputChange(log.id, 'PM', value)}
-                              placeholder={log.fridgeType === 'freezer' ? '-18' : '4'}
-                              placeholderTextColor="#9CA3AF"
                               keyboardType="numeric"
                               maxLength={6}
                             />
@@ -866,19 +871,24 @@ const styles = StyleSheet.create({
   logStatus: {
     alignItems: "flex-end",
   },
-  statusBadge: {
+  periodStatusContainer: {
+    flexDirection: "column",
+    alignItems: "flex-end",
+    marginBottom: 4,
+  },
+  periodBadge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#ecfdf5",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
+  },
+  periodBadgeSpacing: {
     marginBottom: 4,
   },
-  statusText: {
+  periodBadgeText: {
     fontSize: 12,
     fontFamily: Typography.fontMedium,
-    color: "#059669",
     marginLeft: 4,
   },
   temperatureInfo: {

@@ -737,7 +737,11 @@ export default function PrepListsScreen() {
           // Show loading indicator for temporary items
           <Text style={styles.loadingIndicator}>⋯</Text>
         ) : (
-          <TouchableOpacity onPress={() => openFlagModal(item.id)} activeOpacity={0.7}>
+          <TouchableOpacity
+            onPress={() => openFlagModal(item.id)}
+            activeOpacity={0.7}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
             <Text
               style={[
                 styles.flagIcon,
