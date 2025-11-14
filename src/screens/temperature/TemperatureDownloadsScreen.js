@@ -36,6 +36,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
   const [coolingLogs, setCoolingLogs] = useState([]);
   const [sousVideLogs, setSousVideLogs] = useState([]);
   const [hotHoldingLogs, setHotHoldingLogs] = useState([]);
+  const [shellfishLogs, setShellfishLogs] = useState([]);
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
   const [recentDownloads, setRecentDownloads] = useState([]);
@@ -132,6 +133,20 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         ...doc.data(),
         createdAt: doc.data().createdAt?.toDate?.() || null,
         type: 'hotholding'
+      })));
+
+      // Fetch shellfish logs
+      const shellfishQuery = query(
+        getRestaurantCollection(restaurantId, "shellfishlogs"),
+        where("createdAt", ">=", start),
+        where("createdAt", "<=", end),
+        orderBy("createdAt", "desc")
+      );
+      const shellfishSnapshot = await getDocs(shellfishQuery);
+      setShellfishLogs(shellfishSnapshot.docs.map(doc => ({
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate?.() || null,
+        type: 'shellfish'
       })));
     };
 
@@ -275,8 +290,8 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
   };
 
   const exportToPDF = async () => {
-    if (!fridgeLogs.length && !deliveryLogs.length && !coolingReheatingLogs.length && !coolingLogs.length && !sousVideLogs.length && !hotHoldingLogs.length) {
-      Alert.alert('No Data', 'No temperature records found for the selected date range.');
+    if (!fridgeLogs.length && !deliveryLogs.length && !coolingReheatingLogs.length && !coolingLogs.length && !sousVideLogs.length && !hotHoldingLogs.length && !shellfishLogs.length) {
+      Alert.alert('No Data', 'No food safety records found for the selected date range.');
       return;
     }
 
@@ -423,6 +438,28 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
               <td>${log.item || 'Unknown'}</td>
               <td>${log.time || '--'}</td>
               <td>${log.temperature || '--'}°C</td>
+              <td>${log.createdAt ? log.createdAt.toLocaleDateString('en-GB', { 
+                day: '2-digit', 
+                month: '2-digit', 
+                year: 'numeric' 
+              }) : '--'}</td>
+            </tr>
+          `).join('')}
+        </table>
+        
+        <h2>Shellfish Recording</h2>
+        <table border="1" cellspacing="0" cellpadding="8" style="width: 100%; border-collapse: collapse;">
+          <tr style="background-color: #f5f5f5;">
+            <th>Item</th>
+            <th>Health/ID Mark</th>
+            <th>Source</th>
+            <th>Date</th>
+          </tr>
+          ${shellfishLogs.map(log => `
+            <tr>
+              <td>${log.item || '--'}</td>
+              <td>${log.healthIdMark || '--'}</td>
+              <td>${log.source || '--'}</td>
               <td>${log.createdAt ? log.createdAt.toLocaleDateString('en-GB', { 
                 day: '2-digit', 
                 month: '2-digit', 

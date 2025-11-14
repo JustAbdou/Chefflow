@@ -256,6 +256,17 @@ const DashboardScreen = ({ navigation }) => {
     },
   ];
 
+  const maintenanceManagement = [
+    {
+      title: 'Maintenance and Incidents',
+      subtitle: 'Track and manage maintenance issues',
+      icon: 'construct-outline',
+      iconColor: Colors.primary,
+      iconType: 'ionicon',
+      screen: 'MaintenanceIssues',
+    },
+  ];
+
   const shiftManagement = [
     {
       title: 'Shift Handover',
@@ -340,6 +351,34 @@ const DashboardScreen = ({ navigation }) => {
         <View style={styles.section}>
           <View style={styles.menuContainer}>
             {kitchenManagement.map((item, index) => (
+              <TouchableOpacity
+                key={index}
+                style={styles.highlightedMenuItem}
+                onPress={() => {
+                  if (item.screen) {
+                    navigation.navigate(item.screen);
+                  }
+                }}
+              >
+                <View style={styles.menuItemLeft}>
+                  <View style={styles.highlightedMenuItemIcon}>
+                    {renderIcon(item.icon, '#FFFFFF', item.iconType)}
+                  </View>
+                  <View>
+                    <Text style={styles.highlightedMenuItemTitle}>{item.title}</Text>
+                    <Text style={styles.highlightedMenuItemSubtitle}>{item.subtitle}</Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Maintenance and Incidents */}
+        <View style={styles.section}>
+          <View style={styles.menuContainer}>
+            {maintenanceManagement.map((item, index) => (
               <TouchableOpacity
                 key={index}
                 style={styles.highlightedMenuItem}

@@ -672,6 +672,8 @@ export default function FridgeTempLogsScreen({ navigation }) {
                               style={styles.tempInput}
                               value={tempInputs[`${log.id}_AM`] || ''}
                               onChangeText={(value) => handleTempInputChange(log.id, 'AM', value)}
+                              placeholder="--"
+                              placeholderTextColor="#9CA3AF"
                               keyboardType="numeric"
                               maxLength={6}
                             />
@@ -689,6 +691,8 @@ export default function FridgeTempLogsScreen({ navigation }) {
                               style={styles.tempInput}
                               value={tempInputs[`${log.id}_PM`] || ''}
                               onChangeText={(value) => handleTempInputChange(log.id, 'PM', value)}
+                              placeholder="--"
+                              placeholderTextColor="#9CA3AF"
                               keyboardType="numeric"
                               maxLength={6}
                             />

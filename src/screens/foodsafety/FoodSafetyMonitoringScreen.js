@@ -60,6 +60,13 @@ const FoodSafetyMonitoringScreen = ({ navigation }) => {
       iconColor: Colors.primary,
       screen: 'HotHolding',
     },
+    {
+      title: 'Shellfish Recording',
+      subtitle: 'Record shellfish information',
+      icon: 'fish-outline',
+      iconColor: Colors.primary,
+      screen: 'ShellfishRecording',
+    },
   ];
 
   return (
