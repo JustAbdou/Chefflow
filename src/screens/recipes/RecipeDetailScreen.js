@@ -9,6 +9,7 @@ import { getRestaurantSubDoc } from "../../utils/firestoreHelpers";
 import { useFocusEffect } from "@react-navigation/native";
 import * as Print from "expo-print";
 import { Ionicons } from "@expo/vector-icons";
+import FullscreenImageViewer from "../../components/FullscreenImageViewer";
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -19,6 +20,7 @@ function RecipeDetailScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [fullscreenImageVisible, setFullscreenImageVisible] = useState(false);
 
   const fetchRecipeDetails = React.useCallback(async () => {
     if (!restaurantId) return;
@@ -75,11 +77,30 @@ function RecipeDetailScreen({ route, navigation }) {
 
   const recipeImages = getRecipeImages();
   const hasMultipleImages = recipeImages.length > 1;
+  
+  // Filter out placeholder images for fullscreen viewer
+  const validImages = recipeImages.filter(img => img && !img.includes('placehold'));
 
   const handleScroll = (event) => {
     const slideWidth = screenWidth * 0.92;
     const currentIndex = Math.round(event.nativeEvent.contentOffset.x / slideWidth);
     setCurrentImageIndex(currentIndex);
+  };
+
+  // Handle image click - open fullscreen viewer
+  const handleImagePress = () => {
+    if (validImages.length === 0) {
+      return;
+    }
+    setFullscreenImageVisible(true);
+  };
+  
+  // Calculate initial index for fullscreen viewer
+  const getFullscreenInitialIndex = () => {
+    if (validImages.length === 0) return 0;
+    const displayedImage = recipeImages[currentImageIndex];
+    const index = validImages.findIndex(img => img === displayedImage);
+    return index >= 0 ? index : 0;
   };
 
   // Print recipe
@@ -107,6 +128,15 @@ function RecipeDetailScreen({ route, navigation }) {
           .replace(/'/g, '&#039;');
       };
 
+      // Split ingredients into two columns (max 7 per column)
+      const splitIngredients = () => {
+        const leftColumn = ingredients.slice(0, 7);
+        const rightColumn = ingredients.slice(7, 14);
+        return { leftColumn, rightColumn };
+      };
+      
+      const { leftColumn, rightColumn } = splitIngredients();
+
       // Create HTML for printing
       const html = `
         <!DOCTYPE html>
@@ -115,96 +145,162 @@ function RecipeDetailScreen({ route, navigation }) {
           <meta charset="utf-8">
           <title>${escapeHtml(recipeName)}</title>
           <style>
+            * {
+              box-sizing: border-box;
+              margin: 0;
+              padding: 0;
+            }
+            @page {
+              size: A4;
+              margin: 10mm;
+            }
             body {
               font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
               margin: 0;
-              padding: 40px;
+              padding: 0;
               color: #333;
-              line-height: 1.6;
+              line-height: 1.4;
+              font-size: 14px;
             }
-            .header {
-              text-align: center;
-              margin-bottom: 30px;
-            }
-            .recipe-title {
-              font-size: 28px;
-              font-weight: bold;
-              color: #1f2937;
-              margin-bottom: 20px;
+            .recipe-image-container {
+              width: 100%;
+              height: 75mm;
+              max-height: 75mm;
+              margin: 0 auto 8mm auto;
+              overflow: hidden;
+              border-radius: 4px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              background-color: #f3f4f6;
+              page-break-inside: avoid;
             }
             .recipe-image {
-              max-width: 100%;
-              height: auto;
-              border-radius: 12px;
-              margin-bottom: 30px;
+              width: 100%;
+              height: 100%;
+              object-fit: cover;
               display: block;
-              margin-left: auto;
-              margin-right: auto;
             }
-            .section {
-              margin-bottom: 30px;
+            .ingredients-section {
+              margin-bottom: 8mm;
+              page-break-inside: avoid;
             }
-            .section-title {
-              font-size: 20px;
+            .ingredients-title {
+              font-size: 18px;
               font-weight: bold;
               color: #1f2937;
-              margin-bottom: 15px;
+              margin-bottom: 6mm;
+              text-align: center;
               border-bottom: 2px solid #e5e7eb;
-              padding-bottom: 10px;
+              padding-bottom: 4mm;
+            }
+            .ingredients-container {
+              display: flex;
+              gap: 8mm;
+              justify-content: space-between;
+            }
+            .ingredients-column {
+              flex: 1;
+              min-width: 0;
             }
             .ingredients-list {
               list-style: none;
               padding: 0;
+              margin: 0;
             }
             .ingredient-item {
-              padding: 8px 0;
-              font-size: 16px;
+              padding: 3mm 0;
+              font-size: 13px;
               color: #374151;
+              border-bottom: 1px solid #f3f4f6;
+              line-height: 1.5;
+            }
+            .ingredient-item:last-child {
+              border-bottom: none;
             }
             .ingredient-item:before {
               content: "✓ ";
               color: #2563eb;
               font-weight: bold;
-              margin-right: 8px;
+              margin-right: 4px;
             }
-            .allergens {
-              background-color: #f8fafc;
-              padding: 15px;
-              border-radius: 8px;
+            .allergens-section {
+              margin-top: 8mm;
+              margin-bottom: 0;
+              page-break-inside: avoid;
+            }
+            .allergens-title {
+              font-size: 18px;
+              font-weight: bold;
+              color: #1f2937;
+              margin-bottom: 4mm;
+              text-align: center;
+              border-bottom: 2px solid #e5e7eb;
+              padding-bottom: 4mm;
+            }
+            .allergens-content {
+              background-color: #fef2f2;
+              padding: 6mm;
+              border-radius: 4px;
               border-left: 4px solid #dc2626;
-              font-size: 16px;
+              font-size: 13px;
               color: #374151;
               white-space: pre-wrap;
+              line-height: 1.6;
             }
             @media print {
               body {
-                padding: 20px;
+                padding: 0;
+                margin: 0;
+              }
+              .recipe-image-container {
+                height: 75mm;
+                max-height: 75mm;
+              }
+            }
+            @media screen {
+              body {
+                max-width: 210mm;
+                margin: 0 auto;
+                padding: 10mm;
+                background: white;
               }
             }
           </style>
         </head>
         <body>
-          <div class="header">
-            <h1 class="recipe-title">${escapeHtml(recipeName)}</h1>
-          </div>
-          
           ${recipeImage && !recipeImage.includes('placehold') ? `
-            <img src="${escapeHtml(recipeImage)}" alt="${escapeHtml(recipeName)}" class="recipe-image" />
+            <div class="recipe-image-container">
+              <img src="${escapeHtml(recipeImage)}" alt="${escapeHtml(recipeName)}" class="recipe-image" />
+            </div>
           ` : ''}
           
-          <div class="section">
-            <h2 class="section-title">Ingredients</h2>
-            <ul class="ingredients-list">
-              ${ingredients.map(ingredient => `
-                <li class="ingredient-item">${escapeHtml(ingredient)}</li>
-              `).join('')}
-            </ul>
+          <div class="ingredients-section">
+            <h2 class="ingredients-title">Ingredients</h2>
+            <div class="ingredients-container">
+              <div class="ingredients-column">
+                <ul class="ingredients-list">
+                  ${leftColumn.map(ingredient => `
+                    <li class="ingredient-item">${escapeHtml(ingredient)}</li>
+                  `).join('')}
+                </ul>
+              </div>
+              ${rightColumn.length > 0 ? `
+                <div class="ingredients-column">
+                  <ul class="ingredients-list">
+                    ${rightColumn.map(ingredient => `
+                      <li class="ingredient-item">${escapeHtml(ingredient)}</li>
+                    `).join('')}
+                  </ul>
+                </div>
+              ` : '<div class="ingredients-column"></div>'}
+            </div>
           </div>
           
           ${allergens ? `
-            <div class="section">
-              <h2 class="section-title">Allergens</h2>
-              <div class="allergens">${escapeHtml(allergens)}</div>
+            <div class="allergens-section">
+              <h2 class="allergens-title">Allergens</h2>
+              <div class="allergens-content">${escapeHtml(allergens)}</div>
             </div>
           ` : ''}
         </body>
@@ -250,12 +346,18 @@ function RecipeDetailScreen({ route, navigation }) {
           contentContainerStyle={styles.imageScrollContainer}
         >
           {recipeImages.map((imageUri, index) => (
-            <Image
+            <TouchableOpacity
               key={index}
-              source={{ uri: imageUri }}
-              style={styles.image}
-              resizeMode="cover"
-            />
+              activeOpacity={0.9}
+              onPress={handleImagePress}
+              style={styles.imageTouchable}
+            >
+              <Image
+                source={{ uri: imageUri }}
+                style={styles.image}
+                resizeMode="cover"
+              />
+            </TouchableOpacity>
           ))}
         </ScrollView>
         
@@ -335,6 +437,14 @@ function RecipeDetailScreen({ route, navigation }) {
         )}
       </View>
     </ScrollView>
+    
+    {/* Fullscreen Image Viewer */}
+    <FullscreenImageViewer
+      visible={fullscreenImageVisible}
+      images={validImages}
+      initialIndex={getFullscreenInitialIndex()}
+      onClose={() => setFullscreenImageVisible(false)}
+    />
     </SafeAreaView>
   );
 }
@@ -373,11 +483,15 @@ const styles = StyleSheet.create({
   imageScrollContainer: {
     alignItems: 'center',
   },
-  image: {
+  imageTouchable: {
     width: screenWidth * 0.92,
     height: 220,
-    borderRadius: 18,
     marginHorizontal: screenWidth * 0.04,
+  },
+  image: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 18,
   },
   paginationContainer: {
     flexDirection: 'row',
