@@ -5,10 +5,11 @@ import { Typography } from "../../constants/Typography"
 import { Spacing } from "../../constants/Spacing"
 import { getAndroidTitleMargin } from "../../utils/responsive"
 import useNavigationBar from "../../hooks/useNavigationBar"
-import { doc, getDoc, getDocs } from "firebase/firestore";
-import React, { useEffect, useState } from "react";
+import { doc, getDoc, getDocs, onSnapshot, updateDoc, serverTimestamp, deleteField } from "firebase/firestore";
+import React, { useEffect, useState, useRef } from "react";
 import { useRestaurant } from "../../contexts/RestaurantContext";
-import { getRestaurantDoc, getRestaurantSubCollection, getRestaurantNestedCollection } from "../../utils/firestoreHelpers";
+import { getRestaurantDoc, getRestaurantSubCollection, getRestaurantNestedCollection, getRestaurantSubDoc } from "../../utils/firestoreHelpers";
+import { fetchActiveCategories, fetchArchivedCategories, fetchAllCategories, isCategoryArchived } from "../../utils/categoryHelpers";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { 
@@ -20,12 +21,15 @@ import {
 import { getNetworkStatus } from '../../utils/networkMonitor';
 
 function RecipesScreen() {
-  const { restaurantId } = useRestaurant();
+  const restaurantContext = useRestaurant();
+  // Safely destructure restaurantId with fallback
+  const restaurantId = restaurantContext?.restaurantId || null;
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("All Recipes");
   const [recipesByCategory, setRecipesByCategory] = useState({});
   const [loading, setLoading] = useState(true);
   const [loadingFromCache, setLoadingFromCache] = useState(false);
+  const [activeTab, setActiveTab] = useState('active'); // Active/Archived tab state
 
   // Hide Android navigation bar
   const navigationBar = useNavigationBar();
@@ -33,6 +37,10 @@ function RecipesScreen() {
   const [search, setSearch] = useState(""); // <-- Add search state
   const [refreshing, setRefreshing] = useState(false);
   const navigation = useNavigation();
+  
+  // Store unsubscribe functions for real-time listeners
+  const unsubscribeRefs = useRef([]);
+  const isSettingUpListeners = useRef(false);
 
   // Load from cache first, then fetch fresh data if needed
   const loadRecipesWithCaching = async (forceRefresh = false) => {
@@ -96,40 +104,79 @@ function RecipesScreen() {
     setRefreshing(false);
   };
 
-  // Fetch categories and all recipes from category documents
-  const fetchCategoriesAndRecipes = async () => {
+  // Fetch categories and all recipes from category documents with proper archived filtering
+  const fetchCategoriesAndRecipes = async (showArchived = false) => {
     try {
-      console.log('Fetching recipes for restaurantId:', restaurantId);
+      console.log(`Fetching ${showArchived ? 'archived' : 'active'} recipes for restaurantId:`, restaurantId);
       
-      // Fetch category names from restaurants/{restaurantId}/recipes/categories/names
-      const categoryNamesDoc = await getDoc(getRestaurantDoc(restaurantId, "recipes", "categories"));
-      let categoryNames = [];
+      // Fetch categories based on tab (active or archived)
+      const fetchedCategories = showArchived 
+        ? await fetchArchivedCategories(restaurantId)
+        : await fetchActiveCategories(restaurantId);
       
-      if (categoryNamesDoc.exists()) {
-        const data = categoryNamesDoc.data();
-        categoryNames = data?.names || [];
-        console.log('Fetched category names from Firestore:', categoryNames);
-      } else {
-        console.warn('No category names document found, using default categories');
-        categoryNames = ['Desserts', 'Main', 'Starters']; // Fallback categories
+      // Ensure fetchedCategories is an array
+      if (!Array.isArray(fetchedCategories)) {
+        console.warn('fetchCategories did not return an array:', fetchedCategories);
+        return;
       }
       
-      const fetchedCategories = [];
+      console.log(`Found ${fetchedCategories.length} ${showArchived ? 'archived' : 'active'} categories`);
+      
       const recipesObj = {};
       let allRecipes = [];
 
-      // For each category name from the array
-      for (const categoryName of categoryNames) {
-        fetchedCategories.push({ id: categoryName, name: categoryName });
+      // Get all categories to check archive status when filtering recipes
+      const allCategories = await fetchAllCategories(restaurantId);
+      
+      // For archived tab: we need to fetch from ALL categories to find all archived recipes
+      // For active tab: only fetch from active categories
+      let categoriesToProcess = [];
+      
+      if (showArchived) {
+        // For archived tab: get ALL categories (both active and archived) to find all archived recipes
+        // This ensures we find archived recipes even if they're in active categories
+        categoriesToProcess = allCategories;
+        console.log(`📦 Processing ${categoriesToProcess.length} total categories to find archived recipes`);
+        const archivedCats = allCategories.filter(c => c.archived === true);
+        console.log(`📦 Archived categories: ${archivedCats.map(c => c.name).join(', ') || 'none'}`);
+      } else {
+        // For active tab: only process active categories
+        categoriesToProcess = fetchedCategories;
+      }
+
+      // Process each category
+      for (const categoryInfo of categoriesToProcess) {
+        const categoryName = categoryInfo.name;
+        const isCategoryArchived = categoryInfo.archived === true;
+        
+        // For active tab: skip archived categories
+        if (!showArchived && isCategoryArchived) {
+          continue;
+        }
 
         try {
-          // Fetch recipe documents directly from the category path
+          // Fetch recipe documents - get all recipes, filter in memory based on archive status
           // Path: restaurants/{restaurantId}/recipes/categories/{categoryName}/
-          const categoryRecipesSnapshot = await getDocs(getRestaurantSubCollection(restaurantId, "recipes", "categories", categoryName));
+          const categoryCollectionRef = getRestaurantSubCollection(restaurantId, "recipes", "categories", categoryName);
+          const categoryRecipesSnapshot = await getDocs(categoryCollectionRef);
           
           const categoryRecipes = [];
           categoryRecipesSnapshot.forEach(recipeDoc => {
             const recipeData = recipeDoc.data();
+            const recipeArchived = recipeData.archived === true;
+            
+            // Filter based on recipe and category archive status
+            if (showArchived) {
+              // Archived tab: show recipe if category is archived OR recipe is archived
+              if (!isCategoryArchived && !recipeArchived) {
+                return; // Skip non-archived recipes from active categories
+              }
+            } else {
+              // Active tab: skip if recipe is archived OR category is archived
+              if (recipeArchived || isCategoryArchived) {
+                return; // Skip archived recipes and recipes from archived categories
+              }
+            }
             
             const recipe = { 
               id: recipeDoc.id, 
@@ -140,21 +187,34 @@ function RecipesScreen() {
             allRecipes.push(recipe);
           });
           
-          recipesObj[categoryName] = categoryRecipes;
+          // For archived tab: include category even if empty (to show archived categories)
+          // For active tab: only include if has recipes
+          if (showArchived) {
+            recipesObj[categoryName] = categoryRecipes;
+          } else if (categoryRecipes.length > 0) {
+            recipesObj[categoryName] = categoryRecipes;
+          }
         } catch (categoryError) {
           console.error(`Error fetching recipes for category ${categoryName}:`, categoryError);
-          recipesObj[categoryName] = [];
+          // Still add empty array for archived categories in archived tab
+          if (showArchived && isCategoryArchived) {
+            recipesObj[categoryName] = [];
+          }
         }
       }
 
       const newRecipesByCategory = { "All Recipes": allRecipes, ...recipesObj };
       
+      // Set categories based on current tab (fetchedCategories already filtered)
       setCategories(fetchedCategories);
+      
       setRecipesByCategory(newRecipesByCategory);
       
-      // Cache the data immediately after fetching
-      await cacheRecipesOffline(newRecipesByCategory, fetchedCategories);
-      await updateRecipesCacheTimestamp();
+      // Cache only active recipes and categories
+      if (!showArchived) {
+        await cacheRecipesOffline(newRecipesByCategory, fetchedCategories);
+        await updateRecipesCacheTimestamp();
+      }
       
       if (!selectedCategory && fetchedCategories.length > 0) setSelectedCategory("All Recipes");
     } catch (error) {
@@ -163,14 +223,216 @@ function RecipesScreen() {
     }
   };
 
+  // Setup real-time listeners for recipes
+  const setupRealtimeListeners = () => {
+    // Prevent concurrent listener setups
+    if (isSettingUpListeners.current) {
+      console.log('Listener setup already in progress, skipping...');
+      return;
+    }
+    
+    isSettingUpListeners.current = true;
+    
+    // Cleanup previous listeners FIRST - this must complete before setting up new ones
+    if (Array.isArray(unsubscribeRefs.current)) {
+      unsubscribeRefs.current.forEach(unsubscribe => {
+        if (typeof unsubscribe === 'function') {
+          try {
+            unsubscribe();
+          } catch (error) {
+            console.warn('Error unsubscribing listener:', error);
+          }
+        }
+      });
+    }
+    unsubscribeRefs.current = [];
+
+    if (!restaurantId) {
+      isSettingUpListeners.current = false;
+      return;
+    }
+
+    // Fetch categories based on current tab
+    // For archived tab, we need to listen to ALL categories to catch archived recipes
+    const isArchived = activeTab === 'archived';
+    
+    // Get all categories to check archive status
+    fetchAllCategories(restaurantId).then(allCategories => {
+      // For archived tab: listen to all categories to catch all archived recipes
+      // For active tab: only listen to active categories
+      const categoriesToListen = isArchived 
+        ? allCategories // Listen to all for archived tab
+        : allCategories.filter(cat => cat.archived !== true); // Only active for active tab
+      
+      console.log(`🔔 Setting up listeners for ${categoriesToListen.length} categories (archived tab: ${isArchived})`);
+      
+      // Track which categories we've already set up listeners for to prevent duplicates
+      const categoriesWithListeners = new Set();
+      
+      // For each category, set up a listener
+      categoriesToListen.forEach(categoryInfo => {
+        const categoryName = categoryInfo.name;
+        const isCategoryArchived = categoryInfo.archived === true;
+        
+        // Skip archived categories for active tab
+        if (!isArchived && isCategoryArchived) {
+          return;
+        }
+        
+        // Skip if we've already set up a listener for this category
+        if (categoriesWithListeners.has(categoryName)) {
+          return;
+        }
+        categoriesWithListeners.add(categoryName);
+        
+        const categoryCollectionRef = getRestaurantSubCollection(restaurantId, "recipes", "categories", categoryName);
+        
+        // Set up real-time listener - always listen to all recipes, filter in memory
+        const unsubscribe = onSnapshot(categoryCollectionRef, (snapshot) => {
+          setRecipesByCategory(prev => {
+            // Ensure prev is an object
+            const updated = prev && typeof prev === 'object' ? { ...prev } : {};
+            const categoryRecipes = [];
+            
+            snapshot.forEach(recipeDoc => {
+              const recipeData = recipeDoc.data();
+              
+              // Filter based on recipe and category archive status
+              const recipeArchived = recipeData.archived === true;
+              
+              if (isArchived) {
+                // Archived tab: show recipe if category is archived OR recipe is archived
+                if (!isCategoryArchived && !recipeArchived) {
+                  return; // Skip non-archived recipes from active categories
+                }
+              } else {
+                // Active tab: skip if recipe is archived OR category is archived
+                if (recipeArchived || isCategoryArchived) {
+                  return; // Skip archived recipes and recipes from archived categories
+                }
+              }
+              
+              const recipe = {
+                id: recipeDoc.id,
+                ...recipeData,
+                category: categoryName
+              };
+              categoryRecipes.push(recipe);
+            });
+            
+            updated[categoryName] = categoryRecipes;
+            
+            // Recalculate "All Recipes" - need to filter based on category archive status
+            let allRecipes = [];
+            Object.keys(updated).forEach(key => {
+              if (key !== "All Recipes" && Array.isArray(updated[key])) {
+                const filteredRecipes = updated[key].filter(recipe => {
+                  const recipeArchived = recipe.archived === true;
+                  const categoryArchived = isCategoryArchived;
+                  
+                  if (isArchived) {
+                    return categoryArchived || recipeArchived;
+                  } else {
+                    return !recipeArchived && !categoryArchived;
+                  }
+                });
+                allRecipes = allRecipes.concat(filteredRecipes);
+              }
+            });
+            updated["All Recipes"] = allRecipes;
+            
+            return updated;
+          });
+        }, (error) => {
+          console.error(`Error in real-time listener for category ${categoryName}:`, error);
+        });
+        
+        unsubscribeRefs.current.push(unsubscribe);
+      });
+      
+      // Mark setup as complete
+      isSettingUpListeners.current = false;
+    }).catch(error => {
+      console.error('Error setting up real-time listeners:', error);
+      isSettingUpListeners.current = false;
+    });
+  };
+
+  // Set up real-time listener for categories document
   useEffect(() => {
-    loadRecipesWithCaching();
-  }, [restaurantId]);
+    if (!restaurantId) return;
+    
+    const categoriesDocRef = getRestaurantDoc(restaurantId, "recipes", "categories");
+    
+    // Listen to categories document changes
+    const unsubscribeCategories = onSnapshot(categoriesDocRef, (doc) => {
+      if (doc.exists()) {
+        // When categories change, refresh the categories and recipes
+        fetchCategoriesAndRecipes(activeTab === 'archived').catch(error => {
+          console.error('Error refreshing after category change:', error);
+        });
+      }
+    }, (error) => {
+      console.error('Error in categories document listener:', error);
+    });
+    
+    return () => {
+      unsubscribeCategories();
+    };
+  }, [restaurantId, activeTab]);
+
+  // Update recipes when tab changes
+  useEffect(() => {
+    if (!restaurantId) return;
+    
+    // Cleanup any existing listeners first
+    if (Array.isArray(unsubscribeRefs.current)) {
+      unsubscribeRefs.current.forEach(unsubscribe => {
+        if (typeof unsubscribe === 'function') {
+          try {
+            unsubscribe();
+          } catch (error) {
+            // Ignore errors during cleanup
+          }
+        }
+      });
+      unsubscribeRefs.current = [];
+    }
+    
+    setLoading(true);
+    fetchCategoriesAndRecipes(activeTab === 'archived').then(() => {
+      setLoading(false);
+      setRefreshing(false);
+      
+      // Setup real-time listeners AFTER fetching initial data
+      setupRealtimeListeners();
+    }).catch(() => {
+      setLoading(false);
+      setRefreshing(false);
+    });
+    
+    // Cleanup listeners on unmount or tab change
+    return () => {
+      if (Array.isArray(unsubscribeRefs.current)) {
+        unsubscribeRefs.current.forEach(unsubscribe => {
+          if (typeof unsubscribe === 'function') {
+            try {
+              unsubscribe();
+            } catch (error) {
+              // Ignore errors during cleanup
+            }
+          }
+        });
+        unsubscribeRefs.current = [];
+      }
+    };
+  }, [restaurantId, activeTab]);
 
   // Swipe down to refresh handler
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadRecipesWithCaching(true); // Force refresh from server
+    await fetchCategoriesAndRecipes(activeTab === 'archived');
+    setRefreshing(false);
   };
 
   // Recipes to display (filtered by search)
@@ -217,12 +479,47 @@ function RecipesScreen() {
           <Text style={styles.title}>Recipe Library</Text>
           <View style={styles.subtitleContainer}>
             <Text style={styles.subtitle}>
-              {recipesByCategory["All Recipes"] ? `${recipesByCategory["All Recipes"].length} Recipes` : "Loading..."}
+              {recipesByCategory["All Recipes"] ? `${recipesByCategory["All Recipes"].length} ${activeTab === 'archived' ? 'Archived' : ''} Recipes` : "Loading..."}
             </Text>
             {loadingFromCache && (
               <Text style={styles.cacheIndicator}>📚 Loading from cache...</Text>
             )}
           </View>
+        </View>
+        
+        {/* Active/Archived Tabs */}
+        <View style={styles.tabsContainer}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'active' && styles.activeTab]}
+            onPress={() => setActiveTab('active')}
+            activeOpacity={0.7}
+          >
+            <Ionicons 
+              name="restaurant-outline" 
+              size={18} 
+              color={activeTab === 'active' ? Colors.background : Colors.textSecondary} 
+              style={styles.tabIcon}
+            />
+            <Text style={[styles.tabText, activeTab === 'active' && styles.activeTabText]}>
+              Active
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'archived' && styles.activeTab]}
+            onPress={() => setActiveTab('archived')}
+            activeOpacity={0.7}
+          >
+            <Ionicons 
+              name="archive-outline" 
+              size={18} 
+              color={activeTab === 'archived' ? Colors.background : Colors.textSecondary} 
+              style={styles.tabIcon}
+            />
+            <Text style={[styles.tabText, activeTab === 'archived' && styles.activeTabText]}>
+              Archived
+            </Text>
+          </TouchableOpacity>
         </View>
         {/* Search Bar */}
         <View style={styles.searchContainer}>
@@ -261,9 +558,9 @@ function RecipesScreen() {
                   styles.categoryText,
                   selectedCategory === "All Recipes" && styles.activeCategoryText,
                 ]}
-              >
-                All Recipes
-              </Text>
+                >
+                  All {activeTab === 'archived' ? 'Archived ' : ''}Recipes
+                </Text>
             </TouchableOpacity>
             {categories.map(category => (
               <TouchableOpacity
@@ -497,6 +794,58 @@ const styles = StyleSheet.create({
   recipeTime: {
     fontSize: Typography.xs,
     color: Colors.gray400,
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+    backgroundColor: Colors.gray100,
+    borderRadius: 12,
+    padding: 4,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: 8,
+  },
+  activeTab: {
+    backgroundColor: Colors.primary,
+  },
+  tabIcon: {
+    marginRight: 6,
+  },
+  tabText: {
+    fontSize: Typography.base,
+    fontFamily: Typography.fontMedium,
+    color: Colors.textSecondary,
+  },
+  activeTabText: {
+    color: Colors.background,
+    fontFamily: Typography.fontSemibold,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.xxl * 2,
+    paddingHorizontal: Spacing.lg,
+  },
+  emptyText: {
+    fontSize: Typography.lg,
+    fontFamily: Typography.fontMedium,
+    color: Colors.textSecondary,
+    marginTop: Spacing.md,
+    textAlign: 'center',
+  },
+  emptySubtext: {
+    fontSize: Typography.base,
+    fontFamily: Typography.fontRegular,
+    color: Colors.gray400,
+    marginTop: Spacing.sm,
+    textAlign: 'center',
   },
 })
 
