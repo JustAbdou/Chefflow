@@ -53,7 +53,9 @@
           "photosPermission": "This app uses photos to add images to recipes and invoices.",
           "cameraPermission": "This app uses the camera to take photos for recipes and invoices."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker",
+      "expo-build-properties"
     ],
     "extra": {
       "eas": {
