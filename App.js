@@ -3,6 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import { ActivityIndicator, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase';
 
@@ -122,8 +123,9 @@ export default function App() {
   }
 
   return (
-    <RestaurantProvider>
-      <NavigationContainer>
+    <SafeAreaProvider>
+      <RestaurantProvider>
+        <NavigationContainer>
         <Stack.Navigator
           initialRouteName={isUserLoggedIn ? "Main" : "Login"}
           screenOptions={{
@@ -158,7 +160,8 @@ export default function App() {
           <Stack.Screen name="TemperatureRecords" component={TemperatureRecordsScreen} />
           <Stack.Screen name="TemperatureDownloads" component={TemperatureDownloadsScreen} />
         </Stack.Navigator>
-      </NavigationContainer>
-    </RestaurantProvider>
+        </NavigationContainer>
+      </RestaurantProvider>
+    </SafeAreaProvider>
   );
 }

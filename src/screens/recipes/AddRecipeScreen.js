@@ -117,6 +117,7 @@ export default function AddRecipeScreen({ navigation }) {
         instructions,
         notes,
         image: imageUrls,
+        restaurantId, // Add restaurantId for collectionGroup queries
         createdAt: serverTimestamp(),
       };
       await addDoc(

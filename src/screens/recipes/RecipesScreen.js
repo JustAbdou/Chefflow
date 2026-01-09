@@ -1,5 +1,6 @@
 "use client"
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, RefreshControl } from "react-native"
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, RefreshControl } from "react-native"
+import { SafeAreaView } from "react-native-safe-area-context"
 import { Image } from "expo-image"
 import { Colors } from "../../constants/Colors"
 import { Typography } from "../../constants/Typography"
@@ -17,7 +18,9 @@ import {
   cacheRecipesOffline, 
   getCachedRecipes, 
   isRecipesCacheValid, 
-  updateRecipesCacheTimestamp 
+  updateRecipesCacheTimestamp,
+  cacheAllRecipesPage1,
+  getCachedAllRecipesPage1
 } from '../../utils/offlineSync';
 import { getNetworkStatus } from '../../utils/networkMonitor';
 
@@ -51,11 +54,11 @@ function RecipesScreen() {
   const [allRecipesHasMore, setAllRecipesHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [allRecipesLoading, setAllRecipesLoading] = useState(false);
+  const [totalRecipesCount, setTotalRecipesCount] = useState(0); // Total count of all recipes
 
   // Load from cache first, then fetch fresh data if needed
   const loadRecipesWithCaching = async (forceRefresh = false) => {
     if (!restaurantId) {
-      console.log('No restaurantId available, skipping fetch');
       return;
     }
 
@@ -64,7 +67,6 @@ function RecipesScreen() {
     const isOnline = getNetworkStatus();
     
     // Always try to load from cache first for instant display
-    console.log('📚 Loading recipes from cache...');
     setLoadingFromCache(true);
     
     const { recipesByCategory: cachedRecipes, categories: cachedCategories } = await getCachedRecipes();
@@ -77,8 +79,6 @@ function RecipesScreen() {
       if (!selectedCategory && cachedCategories.length > 0) {
         setSelectedCategory("All Recipes");
       }
-      
-      console.log(`📚 Loaded ${cachedRecipes["All Recipes"]?.length || 0} recipes from cache`);
       
       // If cache is valid and not forcing refresh, we're done
       if (cacheValid && !forceRefresh) {
@@ -95,7 +95,6 @@ function RecipesScreen() {
       if (!loadingFromCache) setLoading(true);
       
       try {
-        console.log('🌐 Fetching fresh recipes from server...');
         await fetchCategoriesAndRecipes();
         
       } catch (error) {
@@ -104,7 +103,6 @@ function RecipesScreen() {
         if (Object.keys(recipesByCategory).length === 0 && Object.keys(cachedRecipes).length > 0) {
           setCategories(cachedCategories);
           setRecipesByCategory(cachedRecipes);
-          console.log('📚 Fallback to cached recipes after fetch error');
         }
       }
     }
@@ -117,8 +115,6 @@ function RecipesScreen() {
   // Fetch categories and all recipes from category documents with proper archived filtering
   const fetchCategoriesAndRecipes = async (showArchived = false) => {
     try {
-      console.log(`Fetching ${showArchived ? 'archived' : 'active'} recipes for restaurantId:`, restaurantId);
-      
       // Fetch categories based on tab (active or archived)
       const fetchedCategories = showArchived 
         ? await fetchArchivedCategories(restaurantId)
@@ -126,11 +122,9 @@ function RecipesScreen() {
       
       // Ensure fetchedCategories is an array
       if (!Array.isArray(fetchedCategories)) {
-        console.warn('fetchCategories did not return an array:', fetchedCategories);
+        console.warn('fetchCategories did not return an array');
         return;
       }
-      
-      console.log(`Found ${fetchedCategories.length} ${showArchived ? 'archived' : 'active'} categories`);
       
       const recipesObj = {};
 
@@ -145,9 +139,6 @@ function RecipesScreen() {
         // For archived tab: get ALL categories (both active and archived) to find all archived recipes
         // This ensures we find archived recipes even if they're in active categories
         categoriesToProcess = allCategories;
-        console.log(`📦 Processing ${categoriesToProcess.length} total categories to find archived recipes`);
-        const archivedCats = allCategories.filter(c => c.archived === true);
-        console.log(`📦 Archived categories: ${archivedCats.map(c => c.name).join(', ') || 'none'}`);
       } else {
         // For active tab: only process active categories
         categoriesToProcess = fetchedCategories;
@@ -233,47 +224,25 @@ function RecipesScreen() {
     }
   };
 
-  // Fetch "All Recipes" with pagination - dedicated query, NOT aggregated from categories
+  // Fetch "All Recipes" with true Firestore pagination
+  // Since category subcollections have different names, we query each category separately
+  // with proper Firestore pagination and combine results
+  // 
+  // REQUIRED FIRESTORE INDEXES:
+  // For each category subcollection (e.g., "Main", "Desserts", "Starters"):
+  // - Collection: restaurants/{restaurantId}/recipes/categories/{categoryName}
+  // - Fields: restaurantId (Ascending), archived (Ascending), updatedAt (Descending)
+  // Firestore will prompt to create these indexes automatically if missing
   const fetchAllRecipes = async (reset = true) => {
     if (!restaurantId) return;
     
     const isArchived = activeTab === 'archived';
     const PAGE_SIZE = 30;
     
-    // If loading more and we already have all recipes stored, just paginate from stored list
-    if (!reset && allFetchedRecipesRef.current.length > 0) {
-      const currentCount = allRecipes.length;
-      const fetchedRecipes = allFetchedRecipesRef.current;
-      
-      // Safety check: if current count is already >= total in ref, we're done
-      if (currentCount >= fetchedRecipes.length) {
-        console.log(`📚 Already showing all recipes: ${currentCount} >= ${fetchedRecipes.length}`);
-        setAllRecipesHasMore(false);
-        return;
-      }
-      
-      const nextBatch = fetchedRecipes.slice(currentCount, currentCount + PAGE_SIZE);
-      const totalAfterLoad = currentCount + nextBatch.length;
-      const hasMore = totalAfterLoad < fetchedRecipes.length;
-      
-      console.log(`📚 Load more: current=${currentCount}, total in ref=${fetchedRecipes.length}, next batch=${nextBatch.length}, will show=${totalAfterLoad}, hasMore=${hasMore}`);
-      
-      if (nextBatch.length > 0) {
-        const recipesToShow = [...allRecipes, ...nextBatch];
-        setAllRecipes(recipesToShow);
-        setAllRecipesHasMore(hasMore);
-        console.log(`📚 Updated: now showing ${recipesToShow.length} recipes, hasMore=${hasMore}`);
-      } else {
-        console.log(`📚 No more recipes to load (nextBatch is empty)`);
-        setAllRecipesHasMore(false);
-      }
-      return;
-    }
-    
     setAllRecipesLoading(true);
     
     try {
-      // Get categories for state (but don't fetch their recipes)
+      // Get categories for state
       const fetchedCategories = isArchived 
         ? await fetchArchivedCategories(restaurantId)
         : await fetchActiveCategories(restaurantId);
@@ -285,13 +254,11 @@ function RecipesScreen() {
         ? allCategories
         : allCategories.filter(cat => cat.archived !== true);
       
-      console.log(`📚 Fetching from ${categoriesToFetch.length} categories for "All Recipes"`);
-      console.log(`📚 Category names: ${categoriesToFetch.map(c => c.name).join(', ')}`);
+      let allFetchedRecipes = [];
+      let indexWarningsShown = new Set(); // Track which categories we've warned about
       
-      let fetchedRecipes = [];
-      
-      // Query each category - fetch ALL recipes from ALL categories
-      // We need all recipes to enable proper pagination
+      // Query each category with proper Firestore pagination
+      // Since subcollections have different names, we query each separately
       for (const categoryInfo of categoriesToFetch) {
         const categoryName = categoryInfo.name;
         const isCategoryArchived = categoryInfo.archived === true;
@@ -302,96 +269,154 @@ function RecipesScreen() {
         }
         
         try {
-          const categoryCollectionRef = getRestaurantSubCollection(restaurantId, "recipes", "categories", categoryName);
+          const categoryCollectionRef = getRestaurantSubCollection(
+            restaurantId, 
+            "recipes", 
+            "categories", 
+            categoryName
+          );
           
-          // Always fetch ALL recipes from each category (no orderBy, no limit)
-          // This ensures we get all recipes, even if some don't have updatedAt
-          // We'll sort in memory after fetching
-          const categoryRecipesSnapshot = await getDocs(categoryCollectionRef);
-          const totalInCategory = categoryRecipesSnapshot.docs.length;
-          console.log(`📚 Category "${categoryName}": fetched ${totalInCategory} recipes (total in category, isArchived=${isArchived}, isCategoryArchived=${isCategoryArchived})`);
+          // Try to build query with proper filters and ordering
+          // First check if restaurantId field exists on recipes (many may not have it yet)
+          // Fetch more per category to ensure we have enough after combining
+          let categoryQuery;
+          try {
+            categoryQuery = query(
+              categoryCollectionRef,
+              where("restaurantId", "==", restaurantId),
+              where("archived", "==", isArchived),
+              orderBy("updatedAt", "desc"),
+              limit(PAGE_SIZE * 3) // Fetch more to account for combining across categories
+            );
+          } catch (queryError) {
+            // If query building fails, throw to trigger fallback
+            throw queryError;
+          }
           
-          let addedCount = 0;
-          let skippedArchived = 0;
-          let skippedOther = 0;
-          categoryRecipesSnapshot.forEach(recipeDoc => {
+          const categorySnapshot = await getDocs(categoryQuery);
+          
+          categorySnapshot.docs.forEach(recipeDoc => {
             const recipeData = recipeDoc.data();
-            const recipeArchived = recipeData.archived === true;
-            
-            // Filter based on recipe and category archive status
-            if (isArchived) {
-              if (!isCategoryArchived && !recipeArchived) {
-                skippedOther++;
-                return; // Skip non-archived recipes from active categories
-              }
-            } else {
-              if (recipeArchived || isCategoryArchived) {
-                skippedArchived++;
-                return; // Skip archived recipes and recipes from archived categories
-              }
-            }
-            
-            const updatedAt = recipeData.updatedAt || recipeData.createdAt || recipeData.created_at;
-            
             const recipe = {
               id: recipeDoc.id,
               ...recipeData,
               category: categoryName,
-              updatedAt: updatedAt || Timestamp.now()
+              updatedAt: recipeData.updatedAt || recipeData.createdAt || Timestamp.now()
             };
-            fetchedRecipes.push(recipe);
-            addedCount++;
+            allFetchedRecipes.push(recipe);
           });
-          console.log(`📚 Category "${categoryName}": added ${addedCount} recipes (skipped ${skippedArchived} archived, ${skippedOther} other)`);
+          
         } catch (categoryError) {
-          console.error(`❌ Error fetching recipes from category ${categoryName}:`, categoryError);
+          // If query fails (e.g., missing index or restaurantId field), try fallback
+          // Track which categories we've warned about (no logging to avoid performance impact)
+          if (!indexWarningsShown.has(categoryName)) {
+            const isIndexError = categoryError.message?.includes('index');
+            if (isIndexError) {
+              indexWarningsShown.add(categoryName);
+            }
+          }
+          try {
+            const categoryCollectionRef = getRestaurantSubCollection(
+              restaurantId, 
+              "recipes", 
+              "categories", 
+              categoryName
+            );
+            // Fallback: query recipes without filters/ordering that require indexes
+            // Fetch more to account for in-memory filtering (will filter out many)
+            // Use a reasonable limit to avoid fetching everything
+            const fallbackLimit = Math.max(PAGE_SIZE * 10, 100); // Fetch at least 100 or 10x page size
+            const fallbackSnapshot = await getDocs(query(categoryCollectionRef, limit(fallbackLimit)));
+            let addedFromFallback = 0;
+            fallbackSnapshot.docs.forEach(recipeDoc => {
+              const recipeData = recipeDoc.data();
+              const recipeArchived = recipeData.archived === true;
+              
+              // Filter in memory: only include matching recipes
+              if (isArchived) {
+                // Archived tab: show if recipe is archived
+                if (!recipeArchived) return;
+              } else {
+                // Active tab: skip archived recipes
+                if (recipeArchived) return;
+              }
+              
+              // Only include if restaurantId matches or is missing (legacy recipes)
+              if (recipeData.restaurantId && recipeData.restaurantId !== restaurantId) {
+                return;
+              }
+              
+              const recipe = {
+                id: recipeDoc.id,
+                ...recipeData,
+                category: categoryName,
+                updatedAt: recipeData.updatedAt || recipeData.createdAt || Timestamp.now()
+              };
+              allFetchedRecipes.push(recipe);
+              addedFromFallback++;
+            });
+          } catch (fallbackError) {
+            // Only log fallback errors if they're not index-related
+            if (!fallbackError.message?.includes('index')) {
+              console.error(`❌ Error fetching recipes from category ${categoryName}:`, fallbackError.message);
+            }
+          }
         }
       }
       
-      console.log(`📚 Total recipes fetched from all categories: ${fetchedRecipes.length}`);
-      
       // Sort all fetched recipes by updatedAt desc
-      fetchedRecipes.sort((a, b) => {
+      allFetchedRecipes.sort((a, b) => {
         const aTime = a.updatedAt?.toMillis?.() || (a.updatedAt?.seconds ? a.updatedAt.seconds * 1000 : 0) || 0;
         const bTime = b.updatedAt?.toMillis?.() || (b.updatedAt?.seconds ? b.updatedAt.seconds * 1000 : 0) || 0;
         return bTime - aTime;
       });
       
-      // Store all fetched recipes in ref for pagination
-      allFetchedRecipesRef.current = fetchedRecipes;
-      console.log(`📚 Stored ${fetchedRecipes.length} total recipes in ref for pagination`);
-      
-      // Handle reset vs load more
-      let recipesToShow = [];
-      if (reset) {
-        // Take first PAGE_SIZE (or all if we have fewer)
-        recipesToShow = fetchedRecipes.slice(0, PAGE_SIZE);
-        console.log(`📚 After sorting and slicing to ${PAGE_SIZE}: ${recipesToShow.length} recipes to show`);
-        
-        // If we got fewer than PAGE_SIZE, we might need to fetch more aggressively
-        if (recipesToShow.length < PAGE_SIZE && fetchedRecipes.length < PAGE_SIZE) {
-          console.warn(`⚠️ Only got ${fetchedRecipes.length} recipes total. May need to fetch without limits or check filtering.`);
+      // Dedupe by recipe id
+      const uniqueRecipes = [];
+      const seenIds = new Set();
+      for (const recipe of allFetchedRecipes) {
+        if (!seenIds.has(recipe.id)) {
+          seenIds.add(recipe.id);
+          uniqueRecipes.push(recipe);
         }
-        
-        setAllRecipes(recipesToShow);
-        setAllRecipesLastDoc(null);
-        setAllRecipesHasMore(fetchedRecipes.length > PAGE_SIZE);
-        console.log(`📚 Initial load: showing ${recipesToShow.length}, total available=${fetchedRecipes.length}, hasMore=${fetchedRecipes.length > PAGE_SIZE}`);
-      } else {
-        // Load more: take next PAGE_SIZE from already-fetched-and-sorted list
-        const currentCount = allRecipes.length;
-        const nextBatch = fetchedRecipes.slice(currentCount, currentCount + PAGE_SIZE);
-        const totalAfterLoad = currentCount + nextBatch.length;
-        const hasMore = totalAfterLoad < fetchedRecipes.length;
-        
-        console.log(`📚 Load more (in fetchAllRecipes): current=${currentCount}, total in ref=${fetchedRecipes.length}, next batch=${nextBatch.length}, will show=${totalAfterLoad}, hasMore=${hasMore}`);
-        
-        recipesToShow = [...allRecipes, ...nextBatch];
-        setAllRecipes(recipesToShow);
-        setAllRecipesHasMore(hasMore);
       }
       
-      // Update last document for pagination
+      // Handle reset vs load more with proper pagination
+      let recipesToShow = [];
+      if (reset) {
+        // Reset: take first PAGE_SIZE
+        recipesToShow = uniqueRecipes.slice(0, PAGE_SIZE);
+        setAllRecipes(recipesToShow);
+        setAllRecipesLastDoc(null);
+        setAllRecipesHasMore(uniqueRecipes.length > PAGE_SIZE);
+        
+        // Store remaining recipes for load more (in-memory pagination)
+        allFetchedRecipesRef.current = uniqueRecipes.slice(PAGE_SIZE);
+        
+        // Cache only page 1 for offline support
+        await cacheAllRecipesPage1(recipesToShow);
+        
+        // For total count, we'll need to estimate or do a count query
+        // For now, estimate based on fetched results
+        setTotalRecipesCount(uniqueRecipes.length > PAGE_SIZE ? uniqueRecipes.length : uniqueRecipes.length);
+      } else {
+        // Load more: use stored recipes from ref first
+        if (allFetchedRecipesRef.current.length > 0) {
+          const nextBatch = allFetchedRecipesRef.current.slice(0, PAGE_SIZE);
+          recipesToShow = [...allRecipes, ...nextBatch];
+          allFetchedRecipesRef.current = allFetchedRecipesRef.current.slice(PAGE_SIZE);
+          setAllRecipesHasMore(allFetchedRecipesRef.current.length > 0 || uniqueRecipes.length > PAGE_SIZE);
+        } else {
+          // No more in ref, append from new fetch
+          const nextBatch = uniqueRecipes.slice(0, PAGE_SIZE);
+          recipesToShow = [...allRecipes, ...nextBatch];
+          allFetchedRecipesRef.current = uniqueRecipes.slice(PAGE_SIZE);
+          setAllRecipesHasMore(uniqueRecipes.length > PAGE_SIZE);
+        }
+        setAllRecipes(recipesToShow);
+      }
+      
+      // Update last document for pagination tracking
       if (recipesToShow.length > 0) {
         const lastRecipe = recipesToShow[recipesToShow.length - 1];
         setAllRecipesLastDoc({
@@ -400,9 +425,8 @@ function RecipesScreen() {
         });
       }
       
-      console.log(`📚 Fetched ${recipesToShow.length} recipes for "All Recipes" (${reset ? 'initial' : 'more'})`);
     } catch (error) {
-      console.error('Error fetching all recipes:', error);
+      console.error('❌ Error fetching all recipes:', error);
     } finally {
       setAllRecipesLoading(false);
     }
@@ -411,16 +435,23 @@ function RecipesScreen() {
   // Load more recipes for "All Recipes"
   const loadMoreAllRecipes = async () => {
     if (loadingMore || !allRecipesHasMore || selectedCategory !== "All Recipes") {
-      console.log(`📚 Load more blocked: loadingMore=${loadingMore}, hasMore=${allRecipesHasMore}, category=${selectedCategory}`);
       return;
     }
     
-    console.log(`📚 Load more triggered: current count=${allRecipes.length}, ref count=${allFetchedRecipesRef.current.length}`);
     setLoadingMore(true);
     try {
-      await fetchAllRecipes(false);
+      // First try to use cached recipes from ref
+      if (allFetchedRecipesRef.current.length > 0) {
+        const nextBatch = allFetchedRecipesRef.current.slice(0, 30);
+        setAllRecipes([...allRecipes, ...nextBatch]);
+        allFetchedRecipesRef.current = allFetchedRecipesRef.current.slice(30);
+        setAllRecipesHasMore(allFetchedRecipesRef.current.length > 0);
+      } else {
+        // No cached recipes, fetch more from Firestore
+        await fetchAllRecipes(false);
+      }
     } catch (error) {
-      console.error('Error loading more recipes:', error);
+      console.error('❌ Error loading more recipes:', error);
     } finally {
       setLoadingMore(false);
     }
@@ -446,7 +477,6 @@ function RecipesScreen() {
     fetchAllCategories(restaurantId).then(allCategories => {
       const categoryInfo = allCategories.find(cat => cat.name === categoryName);
       if (!categoryInfo) {
-        console.warn(`Category ${categoryName} not found`);
         return;
       }
       
@@ -455,13 +485,10 @@ function RecipesScreen() {
       
       // Skip archived categories for active tab
       if (!isArchived && isCategoryArchived) {
-        console.log(`Skipping listener for archived category ${categoryName} on active tab`);
         return;
       }
       
       const categoryCollectionRef = getRestaurantSubCollection(restaurantId, "recipes", "categories", categoryName);
-      
-      console.log(`🔔 Setting up listener for category: ${categoryName}`);
       
       // Set up real-time listener for this specific category
       const unsubscribe = onSnapshot(categoryCollectionRef, (snapshot) => {
@@ -594,6 +621,7 @@ function RecipesScreen() {
       setAllRecipesLastDoc(null);
       setAllRecipesHasMore(true);
       allFetchedRecipesRef.current = []; // Clear stored recipes when tab changes
+      setTotalRecipesCount(0); // Reset total count
     }
   }, [activeTab]);
 
@@ -612,14 +640,22 @@ function RecipesScreen() {
     }
     
     if (selectedCategory === "All Recipes") {
-      // For "All Recipes", do a paginated fetch (no real-time listener)
-      console.log('📚 "All Recipes" selected - fetching first 30 recipes');
+      // For "All Recipes", load from cache first, then fetch fresh
       // Reset pagination state
       setAllRecipesLastDoc(null);
       setAllRecipesHasMore(true);
       setAllRecipes([]); // Clear previous recipes
       allFetchedRecipesRef.current = []; // Clear stored recipes
-      fetchAllRecipes(true); // Reset pagination
+      setTotalRecipesCount(0); // Reset total count
+      
+      // Load from cache first for instant display
+      getCachedAllRecipesPage1().then(cachedPage1 => {
+        if (cachedPage1.length > 0) {
+          setAllRecipes(cachedPage1);
+        }
+        // Always fetch fresh data
+        fetchAllRecipes(true); // Reset pagination
+      });
       // Ensure no category listener is running
       if (currentUnsubscribeRef.current) {
         try {
@@ -656,6 +692,7 @@ function RecipesScreen() {
     if (selectedCategory === "All Recipes") {
       // Refresh "All Recipes" with paginated fetch (reset)
       allFetchedRecipesRef.current = []; // Clear stored recipes on refresh
+      setTotalRecipesCount(0); // Reset total count
       await fetchAllRecipes(true);
     } else {
       // Refresh specific category
@@ -684,18 +721,6 @@ function RecipesScreen() {
     const description = recipe.description || "";
     const category = recipe.category || "";
     
-    // Debug: Log recipe data for first few recipes when searching
-    if (search && recipe === recipesToFilter[0]) {
-      console.log('🔍 Search Debug - Recipe fields:', {
-        'recipe name': recipe["recipe name"],
-        name: recipe.name,
-        title: recipe.title,
-        recipeName: recipe.recipeName,
-        searchTerm: search,
-        allFields: Object.keys(recipe)
-      });
-    }
-    
     // Create a searchable string with all relevant fields
     const searchableText = `${recipeName} ${ingredients} ${description} ${category}`.toLowerCase();
     const searchTerm = search.toLowerCase().trim();
@@ -719,7 +744,7 @@ function RecipesScreen() {
           <View style={styles.subtitleContainer}>
             <Text style={styles.subtitle}>
               {selectedCategory === "All Recipes" 
-                ? `${allRecipes.length} ${activeTab === 'archived' ? 'Archived' : ''} Recipes`
+                ? `${totalRecipesCount} ${activeTab === 'archived' ? 'Archived' : ''} Recipes`
                 : recipesByCategory[selectedCategory] 
                   ? `${recipesByCategory[selectedCategory].length} ${activeTab === 'archived' ? 'Archived' : ''} Recipes`
                   : "Loading..."}

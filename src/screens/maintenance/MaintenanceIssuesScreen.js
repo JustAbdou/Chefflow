@@ -3,13 +3,13 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
   RefreshControl,
   Alert,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { getDocs, addDoc, updateDoc, doc, query, orderBy, Timestamp } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";

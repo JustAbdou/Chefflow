@@ -3,7 +3,6 @@ import {
   View, 
   Text, 
   StyleSheet, 
-  SafeAreaView, 
   TouchableOpacity, 
   TextInput, 
   ScrollView,
@@ -13,6 +12,7 @@ import {
   Modal,
   ActivityIndicator
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from "@expo/vector-icons";
 import NetInfo from '@react-native-community/netinfo';
 import { Colors } from '../../constants/Colors';

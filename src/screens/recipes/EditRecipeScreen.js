@@ -227,6 +227,7 @@ export default function EditRecipeScreen({ route, navigation }) {
         instructions,
         notes,
         image: uploadedImages.length > 0 ? uploadedImages : ["https://placehold.co/200x200?text=No+Image"],
+        restaurantId, // Add restaurantId for collectionGroup queries
         updatedAt: serverTimestamp(),
       };
       

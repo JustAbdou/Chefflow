@@ -126,6 +126,7 @@ export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
           step => `${step.title}. ${step.desc}`
         ),
         notes,
+        restaurantId, // Add restaurantId for collectionGroup queries
       };
       
       // Add thumbnail field if we have thumbnails

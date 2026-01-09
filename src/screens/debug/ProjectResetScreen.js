@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, Alert, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, StyleSheet, ActivityIndicator } from 'react-native';
 import { resetForNewProject, quickConnectionReset } from '../utils/projectReset';
 import { Colors, Spacing, Typography } from '../constants';
+import { backfillRecipeRestaurantIds, checkBackfillNeeded } from '../utils/recipeBackfill';
+import { useRestaurant } from '../contexts/RestaurantContext';
 
 const ProjectResetScreen = () => {
   const [isResetting, setIsResetting] = useState(false);
+  const [isBackfilling, setIsBackfilling] = useState(false);
+  const { restaurantId } = useRestaurant();
 
   const handleFullReset = async () => {
     Alert.alert(
@@ -45,6 +49,43 @@ const ProjectResetScreen = () => {
     );
   };
 
+  const handleBackfillRecipes = async () => {
+    if (!restaurantId) {
+      Alert.alert('Error', 'No restaurant ID available');
+      return;
+    }
+
+    // Check if backfill is needed
+    const checkResult = await checkBackfillNeeded(restaurantId);
+    if (!checkResult.needed) {
+      Alert.alert('Info', `No backfill needed. All recipes already have restaurantId.`);
+      return;
+    }
+
+    Alert.alert(
+      'Backfill Recipe restaurantId',
+      `This will add restaurantId field to ${checkResult.count} recipes that are missing it. Continue?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Backfill',
+          onPress: async () => {
+            setIsBackfilling(true);
+            const result = await backfillRecipeRestaurantIds(restaurantId);
+            setIsBackfilling(false);
+            
+            Alert.alert(
+              result.success ? 'Success' : 'Error',
+              result.success
+                ? `Backfill complete!\nUpdated: ${result.totalUpdated}\nSkipped: ${result.totalSkipped}${result.errors ? `\nErrors: ${result.errors.length}` : ''}`
+                : `Backfill failed: ${result.error}`
+            );
+          }
+        }
+      ]
+    );
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Firebase Project Reset</Text>
@@ -68,8 +109,23 @@ const ProjectResetScreen = () => {
         <Text style={styles.buttonText}>Full Project Reset</Text>
       </TouchableOpacity>
 
+      <TouchableOpacity 
+        style={[styles.button, styles.backfillButton]} 
+        onPress={handleBackfillRecipes}
+        disabled={isBackfilling || !restaurantId}
+      >
+        {isBackfilling ? (
+          <ActivityIndicator color={Colors.white} />
+        ) : (
+          <Text style={styles.buttonText}>Backfill Recipe restaurantId</Text>
+        )}
+      </TouchableOpacity>
+
       {isResetting && (
         <Text style={styles.status}>Resetting...</Text>
+      )}
+      {isBackfilling && (
+        <Text style={styles.status}>Backfilling recipes...</Text>
       )}
 
       <View style={styles.info}>
@@ -112,6 +168,10 @@ const styles = StyleSheet.create({
   },
   fullButton: {
     backgroundColor: Colors.error,
+  },
+  backfillButton: {
+    backgroundColor: Colors.primary,
+    opacity: 0.8,
   },
   buttonText: {
     ...Typography.buttonText,

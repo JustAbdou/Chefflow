@@ -9,6 +9,7 @@ const OFFLINE_ORDER_ITEMS_KEY = 'offline_order_items';
 const OFFLINE_FRIDGE_LOGS_KEY = 'offline_fridge_logs';
 const OFFLINE_RECIPES_KEY = 'offline_recipes';
 const OFFLINE_RECIPE_CATEGORIES_KEY = 'offline_recipe_categories';
+const OFFLINE_ALL_RECIPES_PAGE1_KEY = 'offline_all_recipes_page1'; // Cache only page 1 for All Recipes
 const OFFLINE_QUEUE_KEY = 'offline_queue';
 
 // Initialize offline sync system
@@ -163,6 +164,29 @@ export const updateRecipesCacheTimestamp = async () => {
     await AsyncStorage.setItem('recipes_cache_timestamp', Date.now().toString());
   } catch (error) {
     console.error('❌ Error updating recipes cache timestamp:', error);
+  }
+};
+
+// Cache only page 1 of All Recipes (for offline support)
+export const cacheAllRecipesPage1 = async (recipes) => {
+  try {
+    // Only cache first 30 recipes (page 1)
+    const page1Recipes = Array.isArray(recipes) ? recipes.slice(0, 30) : [];
+    await AsyncStorage.setItem(OFFLINE_ALL_RECIPES_PAGE1_KEY, JSON.stringify(page1Recipes));
+    console.log(`💾 Cached ${page1Recipes.length} recipes (page 1) for All Recipes`);
+  } catch (error) {
+    console.error('❌ Error caching All Recipes page 1:', error);
+  }
+};
+
+// Get cached All Recipes page 1
+export const getCachedAllRecipesPage1 = async () => {
+  try {
+    const cached = await AsyncStorage.getItem(OFFLINE_ALL_RECIPES_PAGE1_KEY);
+    return cached ? JSON.parse(cached) : [];
+  } catch (error) {
+    console.error('❌ Error getting cached All Recipes page 1:', error);
+    return [];
   }
 };
 
