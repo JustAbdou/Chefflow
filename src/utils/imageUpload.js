@@ -1,12 +1,13 @@
 import { storage } from '../../firebase';
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import * as ImageManipulator from 'expo-image-manipulator';
 
 /**
- * Upload an image file to Firebase Storage and return the download URL
+ * Upload an image file to Firebase Storage and return both full-size and thumbnail URLs
  * @param {string} imageUri - Local file URI of the image
  * @param {string} restaurantId - Restaurant ID for organizing files
  * @param {string} recipeId - Recipe ID (optional, for organizing recipe images)
- * @returns {Promise<string>} - Download URL of the uploaded image
+ * @returns {Promise<{fullUrl: string, thumbUrl: string}>} - Object with full-size and thumbnail download URLs
  */
 export const uploadImageToStorage = async (imageUri, restaurantId, recipeId = null) => {
   try {
@@ -22,11 +23,9 @@ export const uploadImageToStorage = async (imageUri, restaurantId, recipeId = nu
     // Check if image is already a URL (from Firebase Storage)
     if (imageUri.startsWith('http://') || imageUri.startsWith('https://')) {
       console.log('✅ Image is already a URL, skipping upload');
-      return imageUri;
+      // Return both URLs as the same (no thumbnail generation for existing URLs)
+      return { fullUrl: imageUri, thumbUrl: imageUri };
     }
-
-    // Image is already compressed by ImagePicker with quality: 0.5
-    // No additional compression needed - using existing libraries only
 
     // Generate unique filename with timestamp
     const timestamp = Date.now();
@@ -49,31 +48,44 @@ export const uploadImageToStorage = async (imageUri, restaurantId, recipeId = nu
       ? `${recipeId}_${timestamp}_${randomString}.${fileExtension}`
       : `${timestamp}_${randomString}.${fileExtension}`;
 
-    // Create storage reference with restaurant-specific path
-    const storagePath = recipeId
-      ? `restaurants/${restaurantId}/recipes/${recipeId}/${fileName}`
-      : `restaurants/${restaurantId}/recipes/${fileName}`;
-    const fileRef = storageRef(storage, storagePath);
-
-    console.log('📁 Uploading to path:', storagePath);
-
-    // Read the image file as blob (already compressed by ImagePicker)
-    const response = await fetch(imageUri);
-    if (!response.ok) {
-      throw new Error(`Failed to read image: ${response.status} ${response.statusText}`);
+    // Generate thumbnail first (~300px wide, JPEG, lower quality)
+    console.log('🖼️ Generating thumbnail...');
+    let thumbUri;
+    try {
+      const manipResult = await ImageManipulator.manipulateAsync(
+        imageUri,
+        [{ resize: { width: 300 } }],
+        { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG }
+      );
+      thumbUri = manipResult.uri;
+      console.log('✅ Thumbnail generated:', thumbUri);
+    } catch (thumbError) {
+      console.warn('⚠️ Failed to generate thumbnail, using original:', thumbError);
+      thumbUri = imageUri; // Fallback to original if thumbnail generation fails
     }
 
-    const blob = await response.blob();
-    console.log('🗂️ Image blob created, size:', blob.size, 'bytes, type:', blob.type);
+    // Upload full-size image
+    const fullStoragePath = recipeId
+      ? `restaurants/${restaurantId}/recipes/${recipeId}/${fileName}`
+      : `restaurants/${restaurantId}/recipes/${fileName}`;
+    const fullFileRef = storageRef(storage, fullStoragePath);
+    console.log('📁 Uploading full-size image to path:', fullStoragePath);
 
-    if (blob.size === 0) {
+    const fullResponse = await fetch(imageUri);
+    if (!fullResponse.ok) {
+      throw new Error(`Failed to read image: ${fullResponse.status} ${fullResponse.statusText}`);
+    }
+
+    const fullBlob = await fullResponse.blob();
+    console.log('🗂️ Full image blob created, size:', fullBlob.size, 'bytes');
+
+    if (fullBlob.size === 0) {
       throw new Error('Image is empty or could not be read');
     }
 
-    // Determine content type from blob or file extension
-    let contentType = blob.type || 'image/jpeg';
-    // If blob type is not set or is generic, use file extension
-    if (!blob.type || blob.type === 'application/octet-stream') {
+    // Determine content type
+    let contentType = fullBlob.type || 'image/jpeg';
+    if (!fullBlob.type || fullBlob.type === 'application/octet-stream') {
       if (fileExtension.toLowerCase() === 'png') {
         contentType = 'image/png';
       } else if (fileExtension.toLowerCase() === 'webp') {
@@ -84,9 +96,8 @@ export const uploadImageToStorage = async (imageUri, restaurantId, recipeId = nu
         contentType = 'image/jpeg';
       }
     }
-    console.log('📋 Using content type:', contentType);
 
-    const metadata = {
+    const fullMetadata = {
       contentType: contentType,
       customMetadata: {
         restaurantId: restaurantId,
@@ -95,39 +106,87 @@ export const uploadImageToStorage = async (imageUri, restaurantId, recipeId = nu
       }
     };
 
-    console.log('☁️ Starting Firebase Storage upload...');
-
-    // Use uploadBytesResumable for better progress tracking and error handling
-    const uploadTask = uploadBytesResumable(fileRef, blob, metadata);
-
-    // Return a promise that resolves when upload completes
-    const downloadURL = await new Promise((resolve, reject) => {
-      uploadTask.on(
+    // Upload full-size image
+    const fullUploadTask = uploadBytesResumable(fullFileRef, fullBlob, fullMetadata);
+    const fullUrl = await new Promise((resolve, reject) => {
+      fullUploadTask.on(
         'state_changed',
         (snapshot) => {
-          // Progress tracking
           const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-          console.log(`⏳ Image upload progress: ${progress.toFixed(1)}%`);
+          console.log(`⏳ Full image upload progress: ${progress.toFixed(1)}%`);
         },
         (error) => {
-          console.error('❌ Error uploading image:', error);
+          console.error('❌ Error uploading full image:', error);
           reject(error);
         },
         async () => {
-          // Upload completed successfully
           try {
-            const url = await getDownloadURL(uploadTask.snapshot.ref);
-            console.log('✅ Image uploaded successfully:', url);
+            const url = await getDownloadURL(fullUploadTask.snapshot.ref);
+            console.log('✅ Full image uploaded successfully:', url);
             resolve(url);
           } catch (error) {
-            console.error('❌ Error getting download URL:', error);
+            console.error('❌ Error getting full image download URL:', error);
             reject(error);
           }
         }
       );
     });
 
-    return downloadURL;
+    // Upload thumbnail image
+    const thumbFileName = `thumb_${fileName}`;
+    const thumbStoragePath = recipeId
+      ? `restaurants/${restaurantId}/recipes/${recipeId}/${thumbFileName}`
+      : `restaurants/${restaurantId}/recipes/${thumbFileName}`;
+    const thumbFileRef = storageRef(storage, thumbStoragePath);
+    console.log('📁 Uploading thumbnail to path:', thumbStoragePath);
+
+    const thumbResponse = await fetch(thumbUri);
+    if (!thumbResponse.ok) {
+      throw new Error(`Failed to read thumbnail: ${thumbResponse.status} ${thumbResponse.statusText}`);
+    }
+
+    const thumbBlob = await thumbResponse.blob();
+    console.log('🗂️ Thumbnail blob created, size:', thumbBlob.size, 'bytes');
+
+    const thumbMetadata = {
+      contentType: 'image/jpeg',
+      customMetadata: {
+        restaurantId: restaurantId,
+        uploadedAt: new Date().toISOString(),
+        isThumbnail: 'true',
+        ...(recipeId && { recipeId: recipeId }),
+      }
+    };
+
+    const thumbUploadTask = uploadBytesResumable(thumbFileRef, thumbBlob, thumbMetadata);
+    const thumbUrl = await new Promise((resolve, reject) => {
+      thumbUploadTask.on(
+        'state_changed',
+        (snapshot) => {
+          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          console.log(`⏳ Thumbnail upload progress: ${progress.toFixed(1)}%`);
+        },
+        (error) => {
+          console.error('❌ Error uploading thumbnail:', error);
+          // Don't fail the whole upload if thumbnail fails, just use full URL as fallback
+          console.warn('⚠️ Using full image URL as thumbnail fallback');
+          resolve(fullUrl);
+        },
+        async () => {
+          try {
+            const url = await getDownloadURL(thumbUploadTask.snapshot.ref);
+            console.log('✅ Thumbnail uploaded successfully:', url);
+            resolve(url);
+          } catch (error) {
+            console.error('❌ Error getting thumbnail download URL:', error);
+            // Fallback to full URL if thumbnail URL fetch fails
+            resolve(fullUrl);
+          }
+        }
+      );
+    });
+
+    return { fullUrl, thumbUrl };
 
   } catch (error) {
     console.error('❌ Error uploading image to Firebase Storage:', error);
@@ -149,5 +208,18 @@ export const uploadImageToStorage = async (imageUri, restaurantId, recipeId = nu
     
     throw new Error('Failed to upload image to cloud storage: ' + error.message);
   }
+};
+
+/**
+ * Legacy function for backward compatibility - returns just the full URL
+ * @deprecated Use uploadImageToStorage() which returns {fullUrl, thumbUrl}
+ */
+export const uploadImageToStorageLegacy = async (imageUri, restaurantId, recipeId = null) => {
+  const result = await uploadImageToStorage(imageUri, restaurantId, recipeId);
+  // If result is already a string (from the early return), return it
+  if (typeof result === 'string') {
+    return result;
+  }
+  return result.fullUrl;
 };
 

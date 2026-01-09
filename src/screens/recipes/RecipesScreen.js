@@ -1,11 +1,12 @@
 "use client"
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Image, ActivityIndicator, TextInput, RefreshControl } from "react-native"
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, RefreshControl } from "react-native"
+import { Image } from "expo-image"
 import { Colors } from "../../constants/Colors"
 import { Typography } from "../../constants/Typography"
 import { Spacing } from "../../constants/Spacing"
 import { getAndroidTitleMargin } from "../../utils/responsive"
 import useNavigationBar from "../../hooks/useNavigationBar"
-import { doc, getDoc, getDocs, onSnapshot, updateDoc, serverTimestamp, deleteField } from "firebase/firestore";
+import { doc, getDoc, getDocs, onSnapshot, updateDoc, serverTimestamp, deleteField, query, where, orderBy, limit, startAfter, Timestamp } from "firebase/firestore";
 import React, { useEffect, useState, useRef } from "react";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantDoc, getRestaurantSubCollection, getRestaurantNestedCollection, getRestaurantSubDoc } from "../../utils/firestoreHelpers";
@@ -38,9 +39,18 @@ function RecipesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const navigation = useNavigation();
   
-  // Store unsubscribe functions for real-time listeners
-  const unsubscribeRefs = useRef([]);
-  const isSettingUpListeners = useRef(false);
+  // Store unsubscribe function for current real-time listener
+  const currentUnsubscribeRef = useRef(null);
+  
+  // Store all fetched recipes for "All Recipes" to enable pagination without re-fetching
+  const allFetchedRecipesRef = useRef([]);
+  
+  // Separate state for "All Recipes" - independent of category aggregation
+  const [allRecipes, setAllRecipes] = useState([]);
+  const [allRecipesLastDoc, setAllRecipesLastDoc] = useState(null);
+  const [allRecipesHasMore, setAllRecipesHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [allRecipesLoading, setAllRecipesLoading] = useState(false);
 
   // Load from cache first, then fetch fresh data if needed
   const loadRecipesWithCaching = async (forceRefresh = false) => {
@@ -123,7 +133,6 @@ function RecipesScreen() {
       console.log(`Found ${fetchedCategories.length} ${showArchived ? 'archived' : 'active'} categories`);
       
       const recipesObj = {};
-      let allRecipes = [];
 
       // Get all categories to check archive status when filtering recipes
       const allCategories = await fetchAllCategories(restaurantId);
@@ -144,7 +153,7 @@ function RecipesScreen() {
         categoriesToProcess = fetchedCategories;
       }
 
-      // Process each category
+      // Process each category - DO NOT aggregate into "All Recipes"
       for (const categoryInfo of categoriesToProcess) {
         const categoryName = categoryInfo.name;
         const isCategoryArchived = categoryInfo.archived === true;
@@ -184,7 +193,7 @@ function RecipesScreen() {
               category: categoryName
             };
             categoryRecipes.push(recipe);
-            allRecipes.push(recipe);
+            // DO NOT push to allRecipes - "All Recipes" has its own state and query
           });
           
           // For archived tab: include category even if empty (to show archived categories)
@@ -203,7 +212,8 @@ function RecipesScreen() {
         }
       }
 
-      const newRecipesByCategory = { "All Recipes": allRecipes, ...recipesObj };
+      // DO NOT include "All Recipes" - it has its own state managed separately
+      const newRecipesByCategory = { ...recipesObj };
       
       // Set categories based on current tab (fetchedCategories already filtered)
       setCategories(fetchedCategories);
@@ -223,138 +233,281 @@ function RecipesScreen() {
     }
   };
 
-  // Setup real-time listeners for recipes
-  const setupRealtimeListeners = () => {
-    // Prevent concurrent listener setups
-    if (isSettingUpListeners.current) {
-      console.log('Listener setup already in progress, skipping...');
-      return;
-    }
+  // Fetch "All Recipes" with pagination - dedicated query, NOT aggregated from categories
+  const fetchAllRecipes = async (reset = true) => {
+    if (!restaurantId) return;
     
-    isSettingUpListeners.current = true;
-    
-    // Cleanup previous listeners FIRST - this must complete before setting up new ones
-    if (Array.isArray(unsubscribeRefs.current)) {
-      unsubscribeRefs.current.forEach(unsubscribe => {
-        if (typeof unsubscribe === 'function') {
-          try {
-            unsubscribe();
-          } catch (error) {
-            console.warn('Error unsubscribing listener:', error);
-          }
-        }
-      });
-    }
-    unsubscribeRefs.current = [];
-
-    if (!restaurantId) {
-      isSettingUpListeners.current = false;
-      return;
-    }
-
-    // Fetch categories based on current tab
-    // For archived tab, we need to listen to ALL categories to catch archived recipes
     const isArchived = activeTab === 'archived';
+    const PAGE_SIZE = 30;
     
-    // Get all categories to check archive status
-    fetchAllCategories(restaurantId).then(allCategories => {
-      // For archived tab: listen to all categories to catch all archived recipes
-      // For active tab: only listen to active categories
-      const categoriesToListen = isArchived 
-        ? allCategories // Listen to all for archived tab
-        : allCategories.filter(cat => cat.archived !== true); // Only active for active tab
+    // If loading more and we already have all recipes stored, just paginate from stored list
+    if (!reset && allFetchedRecipesRef.current.length > 0) {
+      const currentCount = allRecipes.length;
+      const fetchedRecipes = allFetchedRecipesRef.current;
       
-      console.log(`🔔 Setting up listeners for ${categoriesToListen.length} categories (archived tab: ${isArchived})`);
+      // Safety check: if current count is already >= total in ref, we're done
+      if (currentCount >= fetchedRecipes.length) {
+        console.log(`📚 Already showing all recipes: ${currentCount} >= ${fetchedRecipes.length}`);
+        setAllRecipesHasMore(false);
+        return;
+      }
       
-      // Track which categories we've already set up listeners for to prevent duplicates
-      const categoriesWithListeners = new Set();
+      const nextBatch = fetchedRecipes.slice(currentCount, currentCount + PAGE_SIZE);
+      const totalAfterLoad = currentCount + nextBatch.length;
+      const hasMore = totalAfterLoad < fetchedRecipes.length;
       
-      // For each category, set up a listener
-      categoriesToListen.forEach(categoryInfo => {
+      console.log(`📚 Load more: current=${currentCount}, total in ref=${fetchedRecipes.length}, next batch=${nextBatch.length}, will show=${totalAfterLoad}, hasMore=${hasMore}`);
+      
+      if (nextBatch.length > 0) {
+        const recipesToShow = [...allRecipes, ...nextBatch];
+        setAllRecipes(recipesToShow);
+        setAllRecipesHasMore(hasMore);
+        console.log(`📚 Updated: now showing ${recipesToShow.length} recipes, hasMore=${hasMore}`);
+      } else {
+        console.log(`📚 No more recipes to load (nextBatch is empty)`);
+        setAllRecipesHasMore(false);
+      }
+      return;
+    }
+    
+    setAllRecipesLoading(true);
+    
+    try {
+      // Get categories for state (but don't fetch their recipes)
+      const fetchedCategories = isArchived 
+        ? await fetchArchivedCategories(restaurantId)
+        : await fetchActiveCategories(restaurantId);
+      setCategories(fetchedCategories);
+      
+      // Get all categories to query recipes from
+      const allCategories = await fetchAllCategories(restaurantId);
+      const categoriesToFetch = isArchived 
+        ? allCategories
+        : allCategories.filter(cat => cat.archived !== true);
+      
+      console.log(`📚 Fetching from ${categoriesToFetch.length} categories for "All Recipes"`);
+      console.log(`📚 Category names: ${categoriesToFetch.map(c => c.name).join(', ')}`);
+      
+      let fetchedRecipes = [];
+      
+      // Query each category - fetch ALL recipes from ALL categories
+      // We need all recipes to enable proper pagination
+      for (const categoryInfo of categoriesToFetch) {
         const categoryName = categoryInfo.name;
         const isCategoryArchived = categoryInfo.archived === true;
         
         // Skip archived categories for active tab
         if (!isArchived && isCategoryArchived) {
-          return;
+          continue;
         }
         
-        // Skip if we've already set up a listener for this category
-        if (categoriesWithListeners.has(categoryName)) {
-          return;
-        }
-        categoriesWithListeners.add(categoryName);
-        
-        const categoryCollectionRef = getRestaurantSubCollection(restaurantId, "recipes", "categories", categoryName);
-        
-        // Set up real-time listener - always listen to all recipes, filter in memory
-        const unsubscribe = onSnapshot(categoryCollectionRef, (snapshot) => {
-          setRecipesByCategory(prev => {
-            // Ensure prev is an object
-            const updated = prev && typeof prev === 'object' ? { ...prev } : {};
-            const categoryRecipes = [];
+        try {
+          const categoryCollectionRef = getRestaurantSubCollection(restaurantId, "recipes", "categories", categoryName);
+          
+          // Always fetch ALL recipes from each category (no orderBy, no limit)
+          // This ensures we get all recipes, even if some don't have updatedAt
+          // We'll sort in memory after fetching
+          const categoryRecipesSnapshot = await getDocs(categoryCollectionRef);
+          const totalInCategory = categoryRecipesSnapshot.docs.length;
+          console.log(`📚 Category "${categoryName}": fetched ${totalInCategory} recipes (total in category, isArchived=${isArchived}, isCategoryArchived=${isCategoryArchived})`);
+          
+          let addedCount = 0;
+          let skippedArchived = 0;
+          let skippedOther = 0;
+          categoryRecipesSnapshot.forEach(recipeDoc => {
+            const recipeData = recipeDoc.data();
+            const recipeArchived = recipeData.archived === true;
             
-            snapshot.forEach(recipeDoc => {
-              const recipeData = recipeDoc.data();
-              
-              // Filter based on recipe and category archive status
-              const recipeArchived = recipeData.archived === true;
-              
-              if (isArchived) {
-                // Archived tab: show recipe if category is archived OR recipe is archived
-                if (!isCategoryArchived && !recipeArchived) {
-                  return; // Skip non-archived recipes from active categories
-                }
-              } else {
-                // Active tab: skip if recipe is archived OR category is archived
-                if (recipeArchived || isCategoryArchived) {
-                  return; // Skip archived recipes and recipes from archived categories
-                }
+            // Filter based on recipe and category archive status
+            if (isArchived) {
+              if (!isCategoryArchived && !recipeArchived) {
+                skippedOther++;
+                return; // Skip non-archived recipes from active categories
               }
-              
-              const recipe = {
-                id: recipeDoc.id,
-                ...recipeData,
-                category: categoryName
-              };
-              categoryRecipes.push(recipe);
-            });
-            
-            updated[categoryName] = categoryRecipes;
-            
-            // Recalculate "All Recipes" - need to filter based on category archive status
-            let allRecipes = [];
-            Object.keys(updated).forEach(key => {
-              if (key !== "All Recipes" && Array.isArray(updated[key])) {
-                const filteredRecipes = updated[key].filter(recipe => {
-                  const recipeArchived = recipe.archived === true;
-                  const categoryArchived = isCategoryArchived;
-                  
-                  if (isArchived) {
-                    return categoryArchived || recipeArchived;
-                  } else {
-                    return !recipeArchived && !categoryArchived;
-                  }
-                });
-                allRecipes = allRecipes.concat(filteredRecipes);
+            } else {
+              if (recipeArchived || isCategoryArchived) {
+                skippedArchived++;
+                return; // Skip archived recipes and recipes from archived categories
               }
-            });
-            updated["All Recipes"] = allRecipes;
+            }
             
-            return updated;
+            const updatedAt = recipeData.updatedAt || recipeData.createdAt || recipeData.created_at;
+            
+            const recipe = {
+              id: recipeDoc.id,
+              ...recipeData,
+              category: categoryName,
+              updatedAt: updatedAt || Timestamp.now()
+            };
+            fetchedRecipes.push(recipe);
+            addedCount++;
           });
-        }, (error) => {
-          console.error(`Error in real-time listener for category ${categoryName}:`, error);
-        });
-        
-        unsubscribeRefs.current.push(unsubscribe);
+          console.log(`📚 Category "${categoryName}": added ${addedCount} recipes (skipped ${skippedArchived} archived, ${skippedOther} other)`);
+        } catch (categoryError) {
+          console.error(`❌ Error fetching recipes from category ${categoryName}:`, categoryError);
+        }
+      }
+      
+      console.log(`📚 Total recipes fetched from all categories: ${fetchedRecipes.length}`);
+      
+      // Sort all fetched recipes by updatedAt desc
+      fetchedRecipes.sort((a, b) => {
+        const aTime = a.updatedAt?.toMillis?.() || (a.updatedAt?.seconds ? a.updatedAt.seconds * 1000 : 0) || 0;
+        const bTime = b.updatedAt?.toMillis?.() || (b.updatedAt?.seconds ? b.updatedAt.seconds * 1000 : 0) || 0;
+        return bTime - aTime;
       });
       
-      // Mark setup as complete
-      isSettingUpListeners.current = false;
+      // Store all fetched recipes in ref for pagination
+      allFetchedRecipesRef.current = fetchedRecipes;
+      console.log(`📚 Stored ${fetchedRecipes.length} total recipes in ref for pagination`);
+      
+      // Handle reset vs load more
+      let recipesToShow = [];
+      if (reset) {
+        // Take first PAGE_SIZE (or all if we have fewer)
+        recipesToShow = fetchedRecipes.slice(0, PAGE_SIZE);
+        console.log(`📚 After sorting and slicing to ${PAGE_SIZE}: ${recipesToShow.length} recipes to show`);
+        
+        // If we got fewer than PAGE_SIZE, we might need to fetch more aggressively
+        if (recipesToShow.length < PAGE_SIZE && fetchedRecipes.length < PAGE_SIZE) {
+          console.warn(`⚠️ Only got ${fetchedRecipes.length} recipes total. May need to fetch without limits or check filtering.`);
+        }
+        
+        setAllRecipes(recipesToShow);
+        setAllRecipesLastDoc(null);
+        setAllRecipesHasMore(fetchedRecipes.length > PAGE_SIZE);
+        console.log(`📚 Initial load: showing ${recipesToShow.length}, total available=${fetchedRecipes.length}, hasMore=${fetchedRecipes.length > PAGE_SIZE}`);
+      } else {
+        // Load more: take next PAGE_SIZE from already-fetched-and-sorted list
+        const currentCount = allRecipes.length;
+        const nextBatch = fetchedRecipes.slice(currentCount, currentCount + PAGE_SIZE);
+        const totalAfterLoad = currentCount + nextBatch.length;
+        const hasMore = totalAfterLoad < fetchedRecipes.length;
+        
+        console.log(`📚 Load more (in fetchAllRecipes): current=${currentCount}, total in ref=${fetchedRecipes.length}, next batch=${nextBatch.length}, will show=${totalAfterLoad}, hasMore=${hasMore}`);
+        
+        recipesToShow = [...allRecipes, ...nextBatch];
+        setAllRecipes(recipesToShow);
+        setAllRecipesHasMore(hasMore);
+      }
+      
+      // Update last document for pagination
+      if (recipesToShow.length > 0) {
+        const lastRecipe = recipesToShow[recipesToShow.length - 1];
+        setAllRecipesLastDoc({
+          updatedAt: lastRecipe.updatedAt,
+          id: lastRecipe.id
+        });
+      }
+      
+      console.log(`📚 Fetched ${recipesToShow.length} recipes for "All Recipes" (${reset ? 'initial' : 'more'})`);
+    } catch (error) {
+      console.error('Error fetching all recipes:', error);
+    } finally {
+      setAllRecipesLoading(false);
+    }
+  };
+
+  // Load more recipes for "All Recipes"
+  const loadMoreAllRecipes = async () => {
+    if (loadingMore || !allRecipesHasMore || selectedCategory !== "All Recipes") {
+      console.log(`📚 Load more blocked: loadingMore=${loadingMore}, hasMore=${allRecipesHasMore}, category=${selectedCategory}`);
+      return;
+    }
+    
+    console.log(`📚 Load more triggered: current count=${allRecipes.length}, ref count=${allFetchedRecipesRef.current.length}`);
+    setLoadingMore(true);
+    try {
+      await fetchAllRecipes(false);
+    } catch (error) {
+      console.error('Error loading more recipes:', error);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  // Setup real-time listener for a specific category
+  const setupCategoryListener = (categoryName) => {
+    if (!restaurantId || !categoryName || categoryName === "All Recipes") {
+      return;
+    }
+    
+    // Cleanup previous listener
+    if (currentUnsubscribeRef.current) {
+      try {
+        currentUnsubscribeRef.current();
+      } catch (error) {
+        console.warn('Error unsubscribing previous listener:', error);
+      }
+      currentUnsubscribeRef.current = null;
+    }
+    
+    // Get category info to check archive status
+    fetchAllCategories(restaurantId).then(allCategories => {
+      const categoryInfo = allCategories.find(cat => cat.name === categoryName);
+      if (!categoryInfo) {
+        console.warn(`Category ${categoryName} not found`);
+        return;
+      }
+      
+      const isCategoryArchived = categoryInfo.archived === true;
+      const isArchived = activeTab === 'archived';
+      
+      // Skip archived categories for active tab
+      if (!isArchived && isCategoryArchived) {
+        console.log(`Skipping listener for archived category ${categoryName} on active tab`);
+        return;
+      }
+      
+      const categoryCollectionRef = getRestaurantSubCollection(restaurantId, "recipes", "categories", categoryName);
+      
+      console.log(`🔔 Setting up listener for category: ${categoryName}`);
+      
+      // Set up real-time listener for this specific category
+      const unsubscribe = onSnapshot(categoryCollectionRef, (snapshot) => {
+        setRecipesByCategory(prev => {
+          const updated = prev && typeof prev === 'object' ? { ...prev } : {};
+          const categoryRecipes = [];
+          
+          snapshot.forEach(recipeDoc => {
+            const recipeData = recipeDoc.data();
+            const recipeArchived = recipeData.archived === true;
+            
+            // Filter based on recipe and category archive status
+            if (isArchived) {
+              // Archived tab: show recipe if category is archived OR recipe is archived
+              if (!isCategoryArchived && !recipeArchived) {
+                return; // Skip non-archived recipes from active categories
+              }
+            } else {
+              // Active tab: skip if recipe is archived OR category is archived
+              if (recipeArchived || isCategoryArchived) {
+                return; // Skip archived recipes and recipes from archived categories
+              }
+            }
+            
+            const recipe = {
+              id: recipeDoc.id,
+              ...recipeData,
+              category: categoryName
+            };
+            categoryRecipes.push(recipe);
+          });
+          
+          updated[categoryName] = categoryRecipes;
+          
+          // DO NOT aggregate into "All Recipes" - it has its own state and query
+          // "All Recipes" is managed separately via allRecipes state
+          
+          return updated;
+        });
+      }, (error) => {
+        console.error(`Error in real-time listener for category ${categoryName}:`, error);
+      });
+      
+      currentUnsubscribeRef.current = unsubscribe;
     }).catch(error => {
-      console.error('Error setting up real-time listeners:', error);
-      isSettingUpListeners.current = false;
+      console.error('Error setting up category listener:', error);
     });
   };
 
@@ -381,62 +534,148 @@ function RecipesScreen() {
     };
   }, [restaurantId, activeTab]);
 
-  // Update recipes when tab changes
+  // Update recipes when tab changes - fetch initial data
   useEffect(() => {
     if (!restaurantId) return;
     
-    // Cleanup any existing listeners first
-    if (Array.isArray(unsubscribeRefs.current)) {
-      unsubscribeRefs.current.forEach(unsubscribe => {
-        if (typeof unsubscribe === 'function') {
-          try {
-            unsubscribe();
-          } catch (error) {
-            // Ignore errors during cleanup
-          }
-        }
-      });
-      unsubscribeRefs.current = [];
+    // Cleanup any existing listener
+    if (currentUnsubscribeRef.current) {
+      try {
+        currentUnsubscribeRef.current();
+      } catch (error) {
+        // Ignore errors during cleanup
+      }
+      currentUnsubscribeRef.current = null;
     }
     
     setLoading(true);
-    fetchCategoriesAndRecipes(activeTab === 'archived').then(() => {
-      setLoading(false);
-      setRefreshing(false);
-      
-      // Setup real-time listeners AFTER fetching initial data
-      setupRealtimeListeners();
-    }).catch(() => {
-      setLoading(false);
-      setRefreshing(false);
-    });
     
-    // Cleanup listeners on unmount or tab change
+    // If "All Recipes" is selected, use fetchAllRecipes (which also updates categories)
+    // Otherwise, use fetchCategoriesAndRecipes
+    if (selectedCategory === "All Recipes") {
+      fetchAllRecipes(true).then(() => {
+        setLoading(false);
+        setRefreshing(false);
+      }).catch(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
+    } else {
+      fetchCategoriesAndRecipes(activeTab === 'archived').then(() => {
+        setLoading(false);
+        setRefreshing(false);
+        
+        // After fetching initial data, set up listener based on selectedCategory
+        if (selectedCategory && selectedCategory !== "All Recipes") {
+          setupCategoryListener(selectedCategory);
+        }
+      }).catch(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
+    }
+    
+    // Cleanup listener on unmount or tab change
     return () => {
-      if (Array.isArray(unsubscribeRefs.current)) {
-        unsubscribeRefs.current.forEach(unsubscribe => {
-          if (typeof unsubscribe === 'function') {
-            try {
-              unsubscribe();
-            } catch (error) {
-              // Ignore errors during cleanup
-            }
-          }
-        });
-        unsubscribeRefs.current = [];
+      if (currentUnsubscribeRef.current) {
+        try {
+          currentUnsubscribeRef.current();
+        } catch (error) {
+          // Ignore errors during cleanup
+        }
+        currentUnsubscribeRef.current = null;
       }
     };
   }, [restaurantId, activeTab]);
 
+  // Reset pagination when tab changes
+  useEffect(() => {
+    if (selectedCategory === "All Recipes") {
+      setAllRecipesLastDoc(null);
+      setAllRecipesHasMore(true);
+      allFetchedRecipesRef.current = []; // Clear stored recipes when tab changes
+    }
+  }, [activeTab]);
+
+  // Update listener when selectedCategory changes
+  useEffect(() => {
+    if (!restaurantId) return;
+    
+    // Cleanup previous listener
+    if (currentUnsubscribeRef.current) {
+      try {
+        currentUnsubscribeRef.current();
+      } catch (error) {
+        console.warn('Error unsubscribing previous listener:', error);
+      }
+      currentUnsubscribeRef.current = null;
+    }
+    
+    if (selectedCategory === "All Recipes") {
+      // For "All Recipes", do a paginated fetch (no real-time listener)
+      console.log('📚 "All Recipes" selected - fetching first 30 recipes');
+      // Reset pagination state
+      setAllRecipesLastDoc(null);
+      setAllRecipesHasMore(true);
+      setAllRecipes([]); // Clear previous recipes
+      allFetchedRecipesRef.current = []; // Clear stored recipes
+      fetchAllRecipes(true); // Reset pagination
+      // Ensure no category listener is running
+      if (currentUnsubscribeRef.current) {
+        try {
+          currentUnsubscribeRef.current();
+        } catch (error) {
+          console.warn('Error unsubscribing category listener:', error);
+        }
+        currentUnsubscribeRef.current = null;
+      }
+    } else if (selectedCategory) {
+      // For specific category, set up real-time listener
+      // Clear allRecipes when switching away from "All Recipes"
+      setAllRecipes([]);
+      setupCategoryListener(selectedCategory);
+    }
+    
+    // Cleanup on unmount or category change
+    return () => {
+      if (currentUnsubscribeRef.current) {
+        try {
+          currentUnsubscribeRef.current();
+        } catch (error) {
+          // Ignore errors during cleanup
+        }
+        currentUnsubscribeRef.current = null;
+      }
+    };
+  }, [selectedCategory, restaurantId, activeTab]);
+
   // Swipe down to refresh handler
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchCategoriesAndRecipes(activeTab === 'archived');
+    
+    if (selectedCategory === "All Recipes") {
+      // Refresh "All Recipes" with paginated fetch (reset)
+      allFetchedRecipesRef.current = []; // Clear stored recipes on refresh
+      await fetchAllRecipes(true);
+    } else {
+      // Refresh specific category
+      await fetchCategoriesAndRecipes(activeTab === 'archived');
+      // Re-setup listener for current category
+      if (selectedCategory && selectedCategory !== "All Recipes") {
+        setupCategoryListener(selectedCategory);
+      }
+    }
+    
     setRefreshing(false);
   };
 
   // Recipes to display (filtered by search)
-  const recipes = (recipesByCategory[selectedCategory] || []).filter(recipe => {
+  // Use allRecipes state when "All Recipes" is selected, otherwise use recipesByCategory
+  const recipesToFilter = selectedCategory === "All Recipes" 
+    ? allRecipes 
+    : (recipesByCategory[selectedCategory] || []);
+  
+  const recipes = recipesToFilter.filter(recipe => {
     if (!search || search.trim() === "") return true; // Show all if no search
     
     // Get all possible name fields from the recipe
@@ -446,7 +685,7 @@ function RecipesScreen() {
     const category = recipe.category || "";
     
     // Debug: Log recipe data for first few recipes when searching
-    if (search && recipe === (recipesByCategory[selectedCategory] || [])[0]) {
+    if (search && recipe === recipesToFilter[0]) {
       console.log('🔍 Search Debug - Recipe fields:', {
         'recipe name': recipe["recipe name"],
         name: recipe.name,
@@ -479,7 +718,11 @@ function RecipesScreen() {
           <Text style={styles.title}>Recipe Library</Text>
           <View style={styles.subtitleContainer}>
             <Text style={styles.subtitle}>
-              {recipesByCategory["All Recipes"] ? `${recipesByCategory["All Recipes"].length} ${activeTab === 'archived' ? 'Archived' : ''} Recipes` : "Loading..."}
+              {selectedCategory === "All Recipes" 
+                ? `${allRecipes.length} ${activeTab === 'archived' ? 'Archived' : ''} Recipes`
+                : recipesByCategory[selectedCategory] 
+                  ? `${recipesByCategory[selectedCategory].length} ${activeTab === 'archived' ? 'Archived' : ''} Recipes`
+                  : "Loading..."}
             </Text>
             {loadingFromCache && (
               <Text style={styles.cacheIndicator}>📚 Loading from cache...</Text>
@@ -586,13 +829,14 @@ function RecipesScreen() {
         </View>
         {/* Recipes List */}
         <View style={styles.recipesContainer}>
-          {loading && !loadingFromCache ? (
+          {(loading || (selectedCategory === "All Recipes" && allRecipesLoading)) && !loadingFromCache ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={Colors.primary} />
               <Text style={styles.loadingText}>Loading recipes...</Text>
             </View>
           ) : (
-            recipes.map(recipe => (
+            <>
+            {recipes.map(recipe => (
               <TouchableOpacity
                 key={recipe.id}
                 style={styles.recipeCard}
@@ -601,12 +845,25 @@ function RecipesScreen() {
               >
                 <Image 
                   source={{ 
-                    uri: Array.isArray(recipe.image) && recipe.image.length > 0 
-                      ? recipe.image[0] 
-                      : recipe.image || "https://placehold.co/200x200?text=No+Image"
+                    uri: (() => {
+                      // Prefer thumbnail if available
+                      if (recipe.thumbs) {
+                        const thumbs = Array.isArray(recipe.thumbs) ? recipe.thumbs : [recipe.thumbs];
+                        if (thumbs.length > 0 && thumbs[0]) return thumbs[0];
+                      }
+                      if (recipe.thumb) return recipe.thumb;
+                      // Fallback to full image
+                      if (Array.isArray(recipe.image) && recipe.image.length > 0) {
+                        return recipe.image[0];
+                      }
+                      return recipe.image || "https://placehold.co/200x200?text=No+Image";
+                    })()
                   }} 
                   style={styles.recipeImage} 
-                  resizeMode="cover" 
+                  contentFit="cover"
+                  cachePolicy="disk"
+                  placeholder={{ blurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4' }}
+                  transition={200}
                 />
                 <View style={styles.recipeInfo}>
                   <Text style={styles.recipeName}>
@@ -615,7 +872,24 @@ function RecipesScreen() {
                   <Text style={styles.recipeCategory}>{recipe.category}</Text>
                 </View>
               </TouchableOpacity>
-            ))
+            ))}
+            
+            {/* Load More Button for All Recipes */}
+            {selectedCategory === "All Recipes" && allRecipesHasMore && (
+              <TouchableOpacity
+                style={styles.loadMoreButton}
+                onPress={loadMoreAllRecipes}
+                disabled={loadingMore}
+                activeOpacity={0.7}
+              >
+                {loadingMore ? (
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                ) : (
+                  <Text style={styles.loadMoreText}>Load More Recipes</Text>
+                )}
+              </TouchableOpacity>
+            )}
+            </>
           )}
         </View>
       </ScrollView>
@@ -777,6 +1051,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.gray100,
     marginRight: Spacing.md,
   },
+  recipeImagePlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 15,
+    backgroundColor: Colors.gray100,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   recipeInfo: {
     flex: 1,
   },
@@ -826,6 +1108,23 @@ const styles = StyleSheet.create({
   activeTabText: {
     color: Colors.background,
     fontFamily: Typography.fontSemibold,
+  },
+  loadMoreButton: {
+    backgroundColor: Colors.gray100,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Spacing.md,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  loadMoreText: {
+    fontSize: Typography.base,
+    fontFamily: Typography.fontMedium,
+    color: Colors.primary,
   },
   emptyContainer: {
     alignItems: 'center',

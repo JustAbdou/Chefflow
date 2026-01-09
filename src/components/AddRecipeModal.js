@@ -90,15 +90,25 @@ export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
     try {
       // Upload image to Firebase Storage if provided
       let imageUrls = ["https://placehold.co/200x200?text=No+Image"];
+      let thumbUrls = [];
       if (image) {
         // Check if image is already a URL (shouldn't happen when adding, but just in case)
         if (image.startsWith('http://') || image.startsWith('https://')) {
           imageUrls = [image];
+          thumbUrls = [image]; // Use same URL as fallback
         } else {
           // Upload local image to Firebase Storage
           try {
-            const downloadURL = await uploadImageToStorage(image, restaurantId);
-            imageUrls = [downloadURL];
+            const uploadResult = await uploadImageToStorage(image, restaurantId);
+            // Handle both new format {fullUrl, thumbUrl} and legacy string format
+            if (typeof uploadResult === 'object' && uploadResult.fullUrl) {
+              imageUrls = [uploadResult.fullUrl];
+              thumbUrls = [uploadResult.thumbUrl];
+            } else {
+              // Legacy format (string)
+              imageUrls = [uploadResult];
+              thumbUrls = [uploadResult];
+            }
           } catch (uploadError) {
             console.error('Error uploading image:', uploadError);
             Alert.alert("Upload Error", `Failed to upload image: ${uploadError.message}. Recipe will be saved without image.`);
@@ -108,17 +118,24 @@ export default function AddRecipeModal({ visible, onClose, onRecipeAdded }) {
       }
 
       // Save to Firestore under restaurants/{restaurantId}/recipes/categories/{category}/{autoId}
+      const recipeData = {
+        "recipe name": name,
+        image: imageUrls,
+        ingredients,
+        instructions: instructions.map(
+          step => `${step.title}. ${step.desc}`
+        ),
+        notes,
+      };
+      
+      // Add thumbnail field if we have thumbnails
+      if (thumbUrls.length > 0 && thumbUrls[0] !== imageUrls[0]) {
+        recipeData.thumb = thumbUrls[0]; // Single thumbnail for single image
+      }
+      
       await addDoc(
         getRestaurantSubCollection(restaurantId, "recipes", "categories", category),
-        {
-          "recipe name": name,
-          image: imageUrls,
-          ingredients,
-          instructions: instructions.map(
-            step => `${step.title}. ${step.desc}`
-          ),
-          notes,
-        }
+        recipeData
       );
       onRecipeAdded && onRecipeAdded();
       onClose();

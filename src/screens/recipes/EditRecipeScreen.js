@@ -188,18 +188,29 @@ export default function EditRecipeScreen({ route, navigation }) {
     try {
       // Upload images that aren't already URLs (local images need to be uploaded)
       const uploadedImages = [];
+      const uploadedThumbs = [];
       for (const imageUri of images) {
         // If already a URL (from Firebase Storage), keep it
         if (imageUri.startsWith('http://') || imageUri.startsWith('https://')) {
           console.log('✅ Image already uploaded, keeping URL:', imageUri);
           uploadedImages.push(imageUri);
+          uploadedThumbs.push(imageUri); // Use same URL as fallback for existing images
         } else {
           // Otherwise, upload to Firebase Storage
           try {
             console.log('📤 Uploading local image:', imageUri);
-            const downloadURL = await uploadImageToStorage(imageUri, restaurantId, recipeId);
-            console.log('✅ Image uploaded successfully:', downloadURL);
-            uploadedImages.push(downloadURL);
+            const uploadResult = await uploadImageToStorage(imageUri, restaurantId, recipeId);
+            // Handle both new format {fullUrl, thumbUrl} and legacy string format
+            if (typeof uploadResult === 'object' && uploadResult.fullUrl) {
+              console.log('✅ Image uploaded successfully:', uploadResult.fullUrl);
+              uploadedImages.push(uploadResult.fullUrl);
+              uploadedThumbs.push(uploadResult.thumbUrl);
+            } else {
+              // Legacy format (string)
+              console.log('✅ Image uploaded successfully:', uploadResult);
+              uploadedImages.push(uploadResult);
+              uploadedThumbs.push(uploadResult);
+            }
           } catch (error) {
             console.error('❌ Error uploading image:', error);
             Alert.alert("Upload Error", `Failed to upload image: ${error.message}. Please try again.`);
@@ -218,6 +229,16 @@ export default function EditRecipeScreen({ route, navigation }) {
         image: uploadedImages.length > 0 ? uploadedImages : ["https://placehold.co/200x200?text=No+Image"],
         updatedAt: serverTimestamp(),
       };
+      
+      // Add thumbnail field(s) if we have thumbnails
+      if (uploadedThumbs.length > 0) {
+        // Check if all thumbs are different from full images
+        const hasUniqueThumbs = uploadedThumbs.some((thumb, idx) => thumb !== uploadedImages[idx]);
+        if (hasUniqueThumbs) {
+          // Use array format if multiple images, single string if one image
+          recipeData.thumbs = uploadedThumbs.length === 1 ? uploadedThumbs[0] : uploadedThumbs;
+        }
+      }
 
       // Preserve createdAt timestamp if it exists
       if (initialRecipe?.createdAt) {
