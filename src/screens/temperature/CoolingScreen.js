@@ -12,6 +12,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Dimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -26,6 +27,8 @@ import { Typography } from "../../constants/Typography";
 import { Spacing } from "../../constants/Spacing";
 import { getAndroidTitleMargin } from "../../utils/responsive";
 import useNavigationBar from "../../hooks/useNavigationBar";
+
+const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 export default function CoolingScreen({ navigation }) {
   const { restaurantId } = useRestaurant();
@@ -288,6 +291,7 @@ export default function CoolingScreen({ navigation }) {
         visible={showAddModal}
         transparent
         animationType="slide"
+        presentationStyle={Platform.OS === "ios" ? "overFullScreen" : undefined}
         onRequestClose={() => setShowAddModal(false)}
       >
         <KeyboardAvoidingView
@@ -308,8 +312,13 @@ export default function CoolingScreen({ navigation }) {
                 </TouchableOpacity>
               </View>
 
-              {/* Form */}
-              <View style={styles.form}>
+              {/* Form - Scrollable */}
+              <ScrollView
+                style={styles.modalScrollView}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={styles.modalScrollContent}
+                showsVerticalScrollIndicator={true}
+              >
                 <Text style={styles.label}>Food Item</Text>
                 <TextInput
                   style={styles.input}
@@ -348,10 +357,10 @@ export default function CoolingScreen({ navigation }) {
                   placeholderTextColor={Colors.gray200}
                   keyboardType="numeric"
                 />
-              </View>
+              </ScrollView>
 
-              {/* Save Button */}
-              <View style={styles.buttonContainer}>
+              {/* Footer - Save Button */}
+              <View style={styles.modalFooter}>
                 <Button 
                   onPress={handleSaveLog} 
                   disabled={!foodItem.trim() || !startTemp.trim() || !coolingTime.trim() || !endTemp.trim()} 
@@ -585,16 +594,17 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
+    width: "100%",
+    maxHeight: SCREEN_HEIGHT * 0.75,
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.lg,
     paddingBottom: Spacing.xl,
-    minHeight: 300,
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: Spacing.xl,
+    marginBottom: Spacing.lg,
   },
   titleContainer: {
     flex: 1,
@@ -617,8 +627,11 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontWeight: "300",
   },
-  form: {
-    marginBottom: Spacing.xl,
+  modalScrollView: {
+    maxHeight: SCREEN_HEIGHT * 0.75 - 200,
+  },
+  modalScrollContent: {
+    paddingBottom: Spacing.lg,
   },
   label: {
     fontSize: Typography.base,
@@ -634,8 +647,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.borderLight,
   },
-  buttonContainer: {
-    marginTop: "auto",
+  modalFooter: {
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xl,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLight,
   },
 });
 

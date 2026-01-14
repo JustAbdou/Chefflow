@@ -8,11 +8,11 @@ import { Spacing } from "../../constants/Spacing"
 import { getAndroidTitleMargin } from "../../utils/responsive"
 import useNavigationBar from "../../hooks/useNavigationBar"
 import { doc, getDoc, getDocs, onSnapshot, updateDoc, serverTimestamp, deleteField, query, where, orderBy, limit, startAfter, Timestamp } from "firebase/firestore";
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantDoc, getRestaurantSubCollection, getRestaurantNestedCollection, getRestaurantSubDoc } from "../../utils/firestoreHelpers";
 import { fetchActiveCategories, fetchArchivedCategories, fetchAllCategories, isCategoryArchived } from "../../utils/categoryHelpers";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { 
   cacheRecipesOffline, 
@@ -684,6 +684,33 @@ function RecipesScreen() {
       }
     };
   }, [selectedCategory, restaurantId, activeTab]);
+
+  // Refresh recipes when screen comes into focus (e.g., after archiving/restoring from detail screen)
+  useFocusEffect(
+    useCallback(() => {
+      if (!restaurantId) return;
+      
+      // Refresh based on current selection
+      if (selectedCategory === "All Recipes") {
+        // Refresh "All Recipes" view
+        allFetchedRecipesRef.current = []; // Clear stored recipes
+        setTotalRecipesCount(0); // Reset total count
+        fetchAllRecipes(true).catch(error => {
+          console.error('Error refreshing all recipes:', error);
+        });
+      } else {
+        // Refresh specific category
+        fetchCategoriesAndRecipes(activeTab === 'archived').then(() => {
+          // Re-setup listener for current category
+          if (selectedCategory && selectedCategory !== "All Recipes") {
+            setupCategoryListener(selectedCategory);
+          }
+        }).catch(error => {
+          console.error('Error refreshing category recipes:', error);
+        });
+      }
+    }, [restaurantId, selectedCategory, activeTab])
+  );
 
   // Swipe down to refresh handler
   const onRefresh = async () => {

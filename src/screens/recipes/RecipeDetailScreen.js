@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Colors } from "../../constants/Colors";
 import { Typography } from "../../constants/Typography";
 import { Spacing } from "../../constants/Spacing";
-import { getDoc } from "firebase/firestore";
+import { getDoc, updateDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantSubDoc } from "../../utils/firestoreHelpers";
 import { useFocusEffect } from "@react-navigation/native";
@@ -22,6 +22,7 @@ function RecipeDetailScreen({ route, navigation }) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isPrinting, setIsPrinting] = useState(false);
   const [fullscreenImageVisible, setFullscreenImageVisible] = useState(false);
+  const [isArchiving, setIsArchiving] = useState(false);
 
   const fetchRecipeDetails = React.useCallback(async () => {
     if (!restaurantId) return;
@@ -52,6 +53,80 @@ function RecipeDetailScreen({ route, navigation }) {
       fetchRecipeDetails();
     }, [fetchRecipeDetails])
   );
+
+  // Set up real-time listener for recipe updates
+  useEffect(() => {
+    if (!restaurantId || !recipeId || !category) return;
+
+    const recipeDocRef = getRestaurantSubDoc(restaurantId, "recipes", "categories", category, recipeId);
+    
+    const unsubscribe = onSnapshot(recipeDocRef, (docSnapshot) => {
+      if (docSnapshot.exists()) {
+        const recipeData = docSnapshot.data();
+        setRecipe(recipeData);
+      }
+    }, (error) => {
+      console.error("Error in recipe listener:", error);
+    });
+
+    return () => unsubscribe();
+  }, [restaurantId, recipeId, category]);
+
+  // Handle archive/restore recipe
+  const handleArchiveRecipe = async () => {
+    if (!restaurantId || !recipeId || !category || !recipe) return;
+
+    const isArchived = recipe.archived === true;
+    const action = isArchived ? "Restore" : "Archive";
+    const message = isArchived 
+      ? "Restore this recipe to Active recipes?"
+      : "Archive this recipe? It will be hidden from Active recipes.";
+
+    Alert.alert(
+      `${action} Recipe`,
+      message,
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: action,
+          style: isArchived ? "default" : "destructive",
+          onPress: async () => {
+            setIsArchiving(true);
+            try {
+              const recipeDocRef = getRestaurantSubDoc(restaurantId, "recipes", "categories", category, recipeId);
+              await updateDoc(recipeDocRef, {
+                archived: !isArchived,
+                updatedAt: serverTimestamp()
+              });
+              
+              // Show success message
+              Alert.alert(
+                "Success",
+                `Recipe ${isArchived ? "restored" : "archived"} successfully.`,
+                [
+                  {
+                    text: "OK",
+                    onPress: () => {
+                      // Navigate back to recipes list
+                      navigation.goBack();
+                    }
+                  }
+                ]
+              );
+            } catch (error) {
+              console.error("Error archiving/restoring recipe:", error);
+              Alert.alert("Error", `Could not ${action.toLowerCase()} recipe. Please try again.`);
+            } finally {
+              setIsArchiving(false);
+            }
+          }
+        }
+      ]
+    );
+  };
 
   if (loading) {
     return (
@@ -332,6 +407,22 @@ function RecipeDetailScreen({ route, navigation }) {
             <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()} activeOpacity={0.7}>
               <Text style={styles.backArrow}>‹</Text>
             </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.archiveButton, recipe.archived === true && styles.restoreButton]}
+              onPress={handleArchiveRecipe}
+              activeOpacity={0.7}
+              disabled={isArchiving}
+            >
+              <Ionicons 
+                name={recipe.archived === true ? "refresh-outline" : "archive-outline"} 
+                size={18} 
+                color={recipe.archived === true ? Colors.secondary : Colors.gray600} 
+                style={styles.archiveButtonIcon} 
+              />
+              <Text style={[styles.archiveButtonText, recipe.archived === true && styles.restoreButtonText]}>
+                {isArchiving ? "..." : (recipe.archived === true ? "Restore" : "Archive")}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -463,12 +554,36 @@ const styles = StyleSheet.create({
   backHeader: {
     flexDirection: "row",
     alignItems: "center",
-    alignSelf: "flex-start",
+    justifyContent: "space-between",
     width: "100%",
   },
   backButton: {
-    marginRight: Spacing.md,
     padding: Spacing.xs,
+  },
+  archiveButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.gray100,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.gray300,
+  },
+  restoreButton: {
+    backgroundColor: "#E6F7F0",
+    borderColor: Colors.secondary,
+  },
+  archiveButtonIcon: {
+    marginRight: 6,
+  },
+  archiveButtonText: {
+    color: Colors.gray600,
+    fontSize: Typography.base,
+    fontWeight: "600",
+  },
+  restoreButtonText: {
+    color: Colors.secondary,
   },
   backArrow: {
     fontSize: 35,

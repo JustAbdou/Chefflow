@@ -57,7 +57,6 @@ const TemperatureRecordsScreen = ({ navigation }) => {
       const coolingReheatingSnapshot = await getDocs(coolingReheatingQuery);
       const coolingReheatingItems = coolingReheatingSnapshot.docs.map(doc => ({
         id: doc.id,
-        type: 'coolingreheating',
         ...doc.data(),
       }));
       setCoolingReheatingLogs(coolingReheatingItems);
@@ -133,7 +132,7 @@ const TemperatureRecordsScreen = ({ navigation }) => {
     <View style={styles.recordCard}>
       <View style={styles.recordInfo}>
         <Text style={styles.recordType}>
-          {item.type === 'cooling' ? 'Cooling' : 'Reheating'} Temperature
+          {item.type === 'cooking' ? 'Cooking' : 'Reheating'} Temperature
         </Text>
         <Text style={styles.recordLocation}>{item.item || 'Unknown Item'}</Text>
         <Text style={styles.recordDate}>
@@ -143,14 +142,14 @@ const TemperatureRecordsScreen = ({ navigation }) => {
         </Text>
       </View>
       <View style={styles.temperatureContainer}>
-        <View style={[styles.typeBadge, item.type === 'cooling' ? styles.coolingBadge : styles.reheatingBadge]}>
+        <View style={[styles.typeBadge, item.type === 'cooking' ? styles.cookingBadge : styles.reheatingBadge]}>
           <Ionicons 
-            name={item.type === 'cooling' ? 'snow' : 'flame'} 
+            name={item.type === 'cooking' ? 'restaurant' : 'flame'} 
             size={12} 
-            color={item.type === 'cooling' ? '#0ea5e9' : '#f97316'} 
+            color={item.type === 'cooking' ? '#22c55e' : '#f97316'} 
           />
-          <Text style={[styles.typeText, item.type === 'cooling' ? styles.coolingText : styles.reheatingText]}>
-            {item.type === 'cooling' ? 'Cooling' : 'Reheating'}
+          <Text style={[styles.typeText, item.type === 'cooking' ? styles.cookingText : styles.reheatingText]}>
+            {item.type === 'cooking' ? 'Cooking' : 'Reheating'}
           </Text>
         </View>
         <Text style={styles.temperatureValue}>

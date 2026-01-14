@@ -23,7 +23,7 @@ import { getRestaurantCollection, getRestaurantSubCollection } from "../../utils
 import { uploadPdfToStorage, uploadPdfToStorageTemporary, generatePdfFileName } from "../../utils/pdfUpload";
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 const InvoicesDownloadsScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();

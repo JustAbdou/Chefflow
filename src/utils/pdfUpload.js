@@ -1,6 +1,6 @@
 import { storage } from '../../firebase';
 import { ref as storageRef, uploadBytes, getDownloadURL, uploadBytesResumable } from 'firebase/storage';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 /**
  * Upload a PDF file to Firebase Storage and return the download URL

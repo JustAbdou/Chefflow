@@ -23,7 +23,7 @@ import { getRestaurantCollection, getRestaurantSubCollection } from "../../utils
 import { uploadPdfToStorage, uploadPdfToStorageTemporary, generatePdfFileName } from "../../utils/pdfUpload";
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 const TemperatureDownloadsScreen = ({ navigation }) => {
   const { restaurantId } = useRestaurant();
@@ -90,7 +90,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
       setCoolingReheatingLogs(coolingReheatingSnapshot.docs.map(doc => ({
         ...doc.data(),
         createdAt: doc.data().createdAt?.toDate?.() || null,
-        type: 'coolingreheating'
+        id: doc.id
       })));
 
       // Fetch cooling logs (new separate collection)
@@ -363,10 +363,12 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
             <th>Temperature</th>
             <th>Date</th>
           </tr>
-          ${coolingReheatingLogs.map(log => `
+          ${coolingReheatingLogs.map(log => {
+            const typeDisplay = log.type === 'cooking' ? 'Cooking' : log.type === 'reheating' ? 'Reheating' : log.type || 'Unknown';
+            return `
             <tr>
               <td>${log.item || 'Unknown'}</td>
-              <td>${log.type || 'Unknown'}</td>
+              <td>${typeDisplay}</td>
               <td>${log.temperature || '--'}°C</td>
               <td>${log.createdAt ? log.createdAt.toLocaleDateString('en-GB', { 
                 day: '2-digit', 
@@ -374,7 +376,8 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
                 year: 'numeric' 
               }) : '--'}</td>
             </tr>
-          `).join('')}
+          `;
+          }).join('')}
         </table>
         
         <h2>Cooling Temperature Logs</h2>

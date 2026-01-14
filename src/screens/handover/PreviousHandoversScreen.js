@@ -22,7 +22,7 @@ import { collection, query, where, orderBy, getDocs, limit } from 'firebase/fire
 import { getRestaurantCollection } from '../../utils/firestoreHelpers';
 import { auth } from '../../../firebase';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 function PreviousHandoversScreen() {
   const navigation = useNavigation();

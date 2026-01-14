@@ -28,7 +28,7 @@ import { getRestaurantCollection } from '../../utils/firestoreHelpers';
 import { uploadPdfToStorage, uploadPdfToStorageTemporary, generatePdfFileName } from '../../utils/pdfUpload';
 import { addHandoverOffline } from '../../utils/offlineSync';
 import * as Print from 'expo-print';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 function HandoverScreen() {
   const navigation = useNavigation();
