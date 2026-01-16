@@ -2,22 +2,43 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getDocs } from 'firebase/firestore';
 import { getRestaurantCollection } from './firestoreHelpers';
 
-const CACHE_KEY = 'recipeCache';
+const CACHE_KEY_PREFIX = 'RECIPES_CACHE';
+const CACHE_TIMESTAMP_PREFIX = 'RECIPES_CACHE_TIMESTAMP';
 const CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
 
-let cachedData = {
-  categories: [],
-  recipesByCategory: {},
-  lastUpdated: null,
-  stats: { isValid: false, totalRecipes: 0, lastUpdated: null }
+// In-memory cache per restaurant
+const cachedDataByRestaurant = {};
+
+// Helper to get cache key for a restaurant
+const getCacheKey = (restaurantId) => `${CACHE_KEY_PREFIX}_${restaurantId}`;
+const getTimestampKey = (restaurantId) => `${CACHE_TIMESTAMP_PREFIX}_${restaurantId}`;
+
+// Get cached data for a specific restaurant
+const getCachedDataForRestaurant = (restaurantId) => {
+  if (!cachedDataByRestaurant[restaurantId]) {
+    cachedDataByRestaurant[restaurantId] = {
+      categories: [],
+      recipesByCategory: {},
+      lastUpdated: null,
+      stats: { isValid: false, totalRecipes: 0, lastUpdated: null }
+    };
+  }
+  return cachedDataByRestaurant[restaurantId];
 };
 
-export const loadRecipeCache = async () => {
+export const loadRecipeCache = async (restaurantId) => {
+  if (!restaurantId) {
+    console.warn('loadRecipeCache called without restaurantId');
+    return false;
+  }
+
   try {
-    const cached = await AsyncStorage.getItem(CACHE_KEY);
+    const cacheKey = getCacheKey(restaurantId);
+    const cached = await AsyncStorage.getItem(cacheKey);
     if (cached) {
-      cachedData = JSON.parse(cached);
-      console.log('📱 Recipe cache loaded from storage');
+      const parsed = JSON.parse(cached);
+      cachedDataByRestaurant[restaurantId] = parsed;
+      console.log(`📱 Recipe cache loaded from storage for restaurant: ${restaurantId}`);
       return true;
     }
   } catch (error) {
@@ -26,17 +47,37 @@ export const loadRecipeCache = async () => {
   return false;
 };
 
-export const saveRecipeCache = async (data) => {
+export const saveRecipeCache = async (restaurantId, data) => {
+  if (!restaurantId) {
+    console.warn('saveRecipeCache called without restaurantId');
+    return;
+  }
+
   try {
-    cachedData = { ...data, lastUpdated: Date.now() };
-    await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cachedData));
-    console.log('💾 Recipe cache saved to storage');
+    const cacheKey = getCacheKey(restaurantId);
+    const timestampKey = getTimestampKey(restaurantId);
+    const cacheData = { ...data, lastUpdated: Date.now() };
+    
+    cachedDataByRestaurant[restaurantId] = cacheData;
+    await AsyncStorage.setItem(cacheKey, JSON.stringify(cacheData));
+    await AsyncStorage.setItem(timestampKey, Date.now().toString());
+    console.log(`💾 Recipe cache saved to storage for restaurant: ${restaurantId}`);
   } catch (error) {
     console.warn('Failed to save recipe cache:', error);
   }
 };
 
-export const getCachedRecipes = () => {
+export const getCachedRecipes = (restaurantId) => {
+  if (!restaurantId) {
+    console.warn('getCachedRecipes called without restaurantId');
+    return {
+      categories: [],
+      recipesByCategory: {},
+      stats: { isValid: false, totalRecipes: 0, lastUpdated: null }
+    };
+  }
+
+  const cachedData = getCachedDataForRestaurant(restaurantId);
   return {
     categories: cachedData.categories || [],
     recipesByCategory: cachedData.recipesByCategory || {},
@@ -48,7 +89,16 @@ export const getCachedRecipes = () => {
   };
 };
 
-export const getRecipeCacheStats = () => {
+export const getRecipeCacheStats = (restaurantId) => {
+  if (!restaurantId) {
+    return {
+      isValid: false,
+      totalRecipes: 0,
+      lastUpdated: null
+    };
+  }
+
+  const cachedData = getCachedDataForRestaurant(restaurantId);
   return {
     isValid: cachedData.lastUpdated && (Date.now() - cachedData.lastUpdated) < CACHE_EXPIRY,
     totalRecipes: cachedData.recipesByCategory?.['All Recipes']?.length || 0,
@@ -57,9 +107,15 @@ export const getRecipeCacheStats = () => {
 };
 
 export const fetchAndCacheRecipes = async (restaurantId, forceRefresh = false) => {
+  if (!restaurantId) {
+    throw new Error('restaurantId is required for fetchAndCacheRecipes');
+  }
+
+  const cachedData = getCachedDataForRestaurant(restaurantId);
+
   // Check if we have valid cached data and don't need to refresh
   if (!forceRefresh && cachedData.lastUpdated && (Date.now() - cachedData.lastUpdated) < CACHE_EXPIRY) {
-    console.log('🔄 Using cached recipe data (still valid)');
+    console.log(`🔄 Using cached recipe data (still valid) for restaurant: ${restaurantId}`);
     return {
       categories: cachedData.categories,
       recipesByCategory: cachedData.recipesByCategory,
@@ -68,7 +124,7 @@ export const fetchAndCacheRecipes = async (restaurantId, forceRefresh = false) =
   }
 
   try {
-    console.log('🌐 Fetching fresh recipe data from Firestore...');
+    console.log(`🌐 Fetching fresh recipe data from Firestore for restaurant: ${restaurantId}...`);
     
     // Fetch all recipe categories
     const categoriesSnapshot = await getDocs(getRestaurantCollection(restaurantId, "recipes"));
@@ -114,13 +170,13 @@ export const fetchAndCacheRecipes = async (restaurantId, forceRefresh = false) =
 
     // Save to cache
     const result = { categories, recipesByCategory };
-    await saveRecipeCache(result);
+    await saveRecipeCache(restaurantId, result);
     
-    console.log(`✅ Fetched and cached ${categories.length} categories with ${recipesByCategory["All Recipes"].length} total recipes`);
+    console.log(`✅ Fetched and cached ${categories.length} categories with ${recipesByCategory["All Recipes"].length} total recipes for restaurant: ${restaurantId}`);
     
     return { ...result, fromCache: false };
   } catch (error) {
-    console.error('❌ Error fetching recipes:', error);
+    console.error(`❌ Error fetching recipes for restaurant ${restaurantId}:`, error);
     
     // Return cached data if available
     if (cachedData.categories?.length > 0) {
@@ -136,7 +192,13 @@ export const fetchAndCacheRecipes = async (restaurantId, forceRefresh = false) =
   }
 };
 
-export const searchCachedRecipes = (searchTerm = '', selectedCategory = 'All Recipes') => {
+export const searchCachedRecipes = (restaurantId, searchTerm = '', selectedCategory = 'All Recipes') => {
+  if (!restaurantId) {
+    console.warn('searchCachedRecipes called without restaurantId');
+    return [];
+  }
+
+  const cachedData = getCachedDataForRestaurant(restaurantId);
   const recipes = cachedData.recipesByCategory?.[selectedCategory] || [];
   
   if (!searchTerm.trim()) {
@@ -167,16 +229,28 @@ export const searchCachedRecipes = (searchTerm = '', selectedCategory = 'All Rec
   });
 };
 
-export const clearRecipeCache = async () => {
+export const clearRecipeCache = async (restaurantId = null) => {
   try {
-    await AsyncStorage.removeItem(CACHE_KEY);
-    cachedData = {
-      categories: [],
-      recipesByCategory: {},
-      lastUpdated: null,
-      stats: { isValid: false, totalRecipes: 0, lastUpdated: null }
-    };
-    console.log('🗑️ Recipe cache cleared');
+    if (restaurantId) {
+      // Clear cache for specific restaurant
+      const cacheKey = getCacheKey(restaurantId);
+      const timestampKey = getTimestampKey(restaurantId);
+      await AsyncStorage.removeItem(cacheKey);
+      await AsyncStorage.removeItem(timestampKey);
+      delete cachedDataByRestaurant[restaurantId];
+      console.log(`🗑️ Recipe cache cleared for restaurant: ${restaurantId}`);
+    } else {
+      // Clear all restaurant caches
+      const keys = await AsyncStorage.getAllKeys();
+      const cacheKeys = keys.filter(key => 
+        key.startsWith(CACHE_KEY_PREFIX) || key.startsWith(CACHE_TIMESTAMP_PREFIX)
+      );
+      await AsyncStorage.multiRemove(cacheKeys);
+      Object.keys(cachedDataByRestaurant).forEach(key => {
+        delete cachedDataByRestaurant[key];
+      });
+      console.log('🗑️ All recipe caches cleared');
+    }
   } catch (error) {
     console.warn('Failed to clear recipe cache:', error);
   }

@@ -15,16 +15,23 @@ import { useRestaurant } from "../../contexts/RestaurantContext"
 import { useState, useEffect } from "react"
 import { doc, getDoc } from "firebase/firestore"
 import { db } from "../../../firebase"
+import RestaurantSwitcherModal from "../../components/RestaurantSwitcherModal"
 
 function ProfileScreen() {
   const navigation = useNavigation()
-  const { restaurantId } = useRestaurant()
+  const { 
+    restaurantId, 
+    activeRestaurantId, 
+    availableRestaurants, 
+    switchRestaurant 
+  } = useRestaurant()
   const [userProfile, setUserProfile] = useState({
     name: "Chef",
     title: "Restaurant",
     fullName: ""
   })
   const [restaurantName, setRestaurantName] = useState("Restaurant")
+  const [showRestaurantModal, setShowRestaurantModal] = useState(false)
 
   // Hide Android navigation bar
   const navigationBar = useNavigationBar();
@@ -52,15 +59,16 @@ function ProfileScreen() {
 
   // Fetch restaurant name from Firestore
   const fetchRestaurantName = async () => {
-    if (!restaurantId) {
+    const currentId = activeRestaurantId || restaurantId
+    if (!currentId) {
       setRestaurantName("Restaurant")
       return
     }
 
     try {
-      console.log('🔍 Fetching restaurant name for:', restaurantId)
+      console.log('🔍 Fetching restaurant name for:', currentId)
       
-      const restaurantDocRef = doc(db, 'restaurants', restaurantId)
+      const restaurantDocRef = doc(db, 'restaurants', currentId)
       const restaurantDoc = await getDoc(restaurantDocRef)
 
       if (restaurantDoc.exists()) {
@@ -129,7 +137,7 @@ function ProfileScreen() {
 
   useEffect(() => {
     fetchRestaurantName()
-  }, [restaurantId])
+  }, [activeRestaurantId, restaurantId])
 
   useEffect(() => {
     fetchUserProfile()
@@ -193,7 +201,36 @@ function ProfileScreen() {
     }
   }
 
+  const handleSwitchRestaurant = () => {
+    if (availableRestaurants.length <= 1) {
+      return // Don't show if only one restaurant
+    }
+    setShowRestaurantModal(true)
+  }
+
+  const handleSelectRestaurant = async (restaurantId) => {
+    if (restaurantId === activeRestaurantId) {
+      setShowRestaurantModal(false)
+      return
+    }
+    
+    try {
+      await switchRestaurant(restaurantId)
+      setShowRestaurantModal(false)
+      // Refresh restaurant name
+      await fetchRestaurantName()
+    } catch (error) {
+      console.error('Error switching restaurant:', error)
+      Alert.alert('Error', 'Failed to switch restaurant. Please try again.')
+    }
+  }
+
   const menuItems = [
+    ...(availableRestaurants.length > 1 ? [{
+      title: "Switch Restaurant",
+      onPress: handleSwitchRestaurant,
+      icon: "store",
+    }] : []),
     {
       title: "Privacy & Security",
       onPress: handlePrivacyPolicy,
@@ -206,7 +243,17 @@ function ProfileScreen() {
 
   const renderMenuItem = (item, index) => (
     <TouchableOpacity key={index} style={styles.menuItem} onPress={item.onPress} activeOpacity={0.7}>
-      <Text style={styles.menuItemTitle}>{item.title}</Text>
+      <View style={styles.menuItemLeft}>
+        {item.icon && (
+          <MaterialIcons 
+            name={item.icon} 
+            size={20} 
+            color={Colors.textPrimary} 
+            style={styles.menuItemIcon}
+          />
+        )}
+        <Text style={styles.menuItemTitle}>{item.title}</Text>
+      </View>
       <ChevronRightIcon color={Colors.gray400} size={20} />
     </TouchableOpacity>
   )
@@ -233,15 +280,27 @@ function ProfileScreen() {
             <Text style={styles.profileName}>
               {loading ? "Loading..." : profileData.name}
             </Text>
-            <Text style={styles.profileTitle}>
-              {loading ? "..." : restaurantName}
-            </Text>
+            <View style={styles.restaurantInfoContainer}>
+              <Text style={styles.signedIntoLabel}>Signed into:</Text>
+              <Text style={styles.profileTitle}>
+                {loading ? "..." : restaurantName}
+              </Text>
+            </View>
           </View>
         </View>
 
         {/* Menu Items */}
         <View style={styles.menuContainer}>{menuItems.map(renderMenuItem)}</View>
       </ScrollView>
+
+      {/* Restaurant Switch Modal */}
+      <RestaurantSwitcherModal
+        visible={showRestaurantModal}
+        onClose={() => setShowRestaurantModal(false)}
+        availableRestaurants={availableRestaurants}
+        activeRestaurantId={activeRestaurantId}
+        onSelectRestaurant={handleSelectRestaurant}
+      />
     </SafeAreaView>
   )
 }
@@ -297,11 +356,21 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     marginBottom: scaleHeight(4),
   },
+  restaurantInfoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: scaleHeight(4),
+  },
+  signedIntoLabel: {
+    fontSize: Typography.sm,
+    fontFamily: Typography.fontRegular,
+    color: Colors.textSecondary,
+    marginRight: Spacing.xs,
+  },
   profileTitle: {
     fontSize: Typography.lg,
-    fontFamily: Typography.fontRegular,
-    opacity: 0.7,
-    color: Colors.textSecondary,
+    fontFamily: Typography.fontSemibold,
+    color: Colors.primary,
   },
   menuContainer: {
     paddingHorizontal: Spacing.lg,
@@ -314,6 +383,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: "#E5E7EB",
+  },
+  menuItemLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  menuItemIcon: {
+    marginRight: Spacing.sm,
   },
   menuItemTitle: {
     fontSize: Typography.base,

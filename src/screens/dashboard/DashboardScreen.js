@@ -11,18 +11,20 @@ import {
   Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons, Feather, MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing, Typography } from '../../constants';
-import { getAndroidTitleMargin } from '../../utils/responsive';
+import { getAndroidTitleMargin, scaleWidth } from '../../utils/responsive';
 import useNavigationBar from '../../hooks/useNavigationBar';
 import { onSnapshot, query, orderBy, limit, where, doc, getDoc, collectionGroup } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection } from "../../utils/firestoreHelpers";
 import { auth, db } from "../../../firebase";
 import { groupPrepItemsByDay } from '../../utils/dateUtils';
+import RestaurantSwitcherModal from '../../components/RestaurantSwitcherModal';
 
 const DashboardScreen = ({ navigation }) => {
-  const { restaurantId } = useRestaurant();
+  const { restaurantId, activeRestaurantId, availableRestaurants, switchRestaurant } = useRestaurant();
+  const [showRestaurantModal, setShowRestaurantModal] = useState(false);
   const [currentDate, setCurrentDate] = useState('');
   const [chefName, setChefName] = useState('Chef');
   const [prepCount, setPrepCount] = useState(0);
@@ -297,6 +299,22 @@ const DashboardScreen = ({ navigation }) => {
     }, 500); // Adjust delay as needed
   }, []);
 
+  // Handle restaurant switching
+  const handleSelectRestaurant = async (newRestaurantId) => {
+    if (newRestaurantId === activeRestaurantId) {
+      setShowRestaurantModal(false);
+      return;
+    }
+    
+    try {
+      await switchRestaurant(newRestaurantId);
+      setShowRestaurantModal(false);
+    } catch (error) {
+      console.error('Error switching restaurant:', error);
+      Alert.alert('Error', 'Failed to switch restaurant. Please try again.');
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
@@ -307,10 +325,28 @@ const DashboardScreen = ({ navigation }) => {
       >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.appTitle}>ChefFlow</Text>
-          <View style={styles.greetingContainer}>
-            <Text style={styles.greeting}>Good morning, {chefName}</Text>
-            <Text style={styles.date}>{currentDate}</Text>
+          <View style={styles.headerTopRow}>
+            <View style={styles.greetingContainer}>
+              <Text style={styles.greeting}>{chefName}</Text>
+            </View>
+            {/* Active Restaurant Dropdown - Top Right */}
+            {availableRestaurants.length > 1 && activeRestaurantId && (() => {
+              const activeRestaurant = availableRestaurants.find(r => r.id === activeRestaurantId);
+              const restaurantName = activeRestaurant?.name || activeRestaurantId;
+              return (
+                <TouchableOpacity
+                  style={styles.restaurantDropdown}
+                  onPress={() => setShowRestaurantModal(true)}
+                  activeOpacity={0.7}
+                >
+                  <MaterialIcons name="store" size={18} color={Colors.primary} />
+                  <Text style={styles.restaurantDropdownText} numberOfLines={1}>
+                    {restaurantName}
+                  </Text>
+                  <MaterialIcons name="keyboard-arrow-down" size={20} color={Colors.primary} />
+                </TouchableOpacity>
+              );
+            })()}
           </View>
         </View>
 
@@ -476,6 +512,15 @@ const DashboardScreen = ({ navigation }) => {
         {/* Add bottom padding to account for bottom navigation */}
         <View style={{ height: 80 }} />
       </ScrollView>
+
+      {/* Restaurant Switcher Modal */}
+      <RestaurantSwitcherModal
+        visible={showRestaurantModal}
+        onClose={() => setShowRestaurantModal(false)}
+        availableRestaurants={availableRestaurants}
+        activeRestaurantId={activeRestaurantId}
+        onSelectRestaurant={handleSelectRestaurant}
+      />
     </SafeAreaView>
   );
 };
@@ -493,26 +538,20 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.lg + getAndroidTitleMargin(),
     paddingBottom: Spacing.md,
   },
-  appTitle: {
-    fontSize: Typography.xxl,
-    fontFamily: Typography.fontBold,
-    color: Colors.primary,
-    textAlign: 'center',
+  headerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: Spacing.lg,
   },
   greetingContainer: {
-    marginBottom: Spacing.lg,
+    flex: 1,
+    marginRight: Spacing.md,
   },
   greeting: {
     fontSize: Typography.xl,
     fontFamily: Typography.fontBold,
     color: Colors.textPrimary,
-    marginBottom: Spacing.xs,
-  },
-  date: {
-    fontSize: Typography.base,
-    fontFamily: Typography.fontRegular,
-    color: Colors.textSecondary,
   },
   statsGrid: {
     flexDirection: 'row',
@@ -648,6 +687,25 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontRegular,
     color: '#FFFFFF',
     opacity: 0.9,
+  },
+  restaurantDropdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.gray50,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    maxWidth: 150,
+  },
+  restaurantDropdownText: {
+    fontSize: Typography.sm,
+    fontFamily: Typography.fontMedium,
+    color: Colors.primary,
+    marginLeft: Spacing.xs,
+    marginRight: Spacing.xs,
+    flexShrink: 1,
   },
 });
 
