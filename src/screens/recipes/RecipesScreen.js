@@ -55,6 +55,8 @@ function RecipesScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [allRecipesLoading, setAllRecipesLoading] = useState(false);
   const [totalRecipesCount, setTotalRecipesCount] = useState(0); // Total count of all recipes
+  const [searchResults, setSearchResults] = useState([]); // Store search results from database
+  const [searching, setSearching] = useState(false); // Track if we're searching the database
 
   // Load from cache first, then fetch fresh data if needed
   const loadRecipesWithCaching = async (forceRefresh = false) => {
@@ -432,6 +434,103 @@ function RecipesScreen() {
     }
   };
 
+  // Search recipes across the entire database
+  const searchRecipesInDatabase = useCallback(async (searchTerm) => {
+    if (!restaurantId || !searchTerm || !searchTerm.trim()) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+
+    setSearching(true);
+    try {
+      const isArchived = activeTab === 'archived';
+      const searchLower = searchTerm.toLowerCase().trim();
+      
+      // Get all categories to search through
+      const allCategories = await fetchAllCategories(restaurantId);
+      const categoriesToSearch = isArchived 
+        ? allCategories
+        : allCategories.filter(cat => cat.archived !== true);
+      
+      const matchingRecipes = [];
+      
+      // Search through each category
+      for (const categoryInfo of categoriesToSearch) {
+        const categoryName = categoryInfo.name;
+        const isCategoryArchived = categoryInfo.archived === true;
+        
+        // Skip archived categories for active tab
+        if (!isArchived && isCategoryArchived) {
+          continue;
+        }
+        
+        try {
+          const categoryCollectionRef = getRestaurantSubCollection(
+            restaurantId, 
+            "recipes", 
+            "categories", 
+            categoryName
+          );
+          
+          // Fetch all recipes from this category (for search, we need all recipes)
+          // Use a high limit to get all recipes for searching
+          const categorySnapshot = await getDocs(query(categoryCollectionRef, limit(1000)));
+          
+          categorySnapshot.docs.forEach(recipeDoc => {
+            const recipeData = recipeDoc.data();
+            const recipeArchived = recipeData.archived === true;
+            
+            // Filter based on archive status
+            if (isArchived) {
+              // Archived tab: show if recipe is archived
+              if (!recipeArchived) return;
+            } else {
+              // Active tab: skip archived recipes
+              if (recipeArchived) return;
+            }
+            
+            // Get all possible name fields from the recipe
+            const recipeName = recipeData["recipe name"] || recipeData.name || recipeData.title || recipeData.recipeName || "";
+            const ingredients = recipeData.ingredients || "";
+            const description = recipeData.description || "";
+            const category = categoryName || "";
+            
+            // Create a searchable string with all relevant fields
+            const searchableText = `${recipeName} ${ingredients} ${description} ${category}`.toLowerCase();
+            
+            // Check if search term matches
+            if (searchableText.includes(searchLower)) {
+              const recipe = {
+                id: recipeDoc.id,
+                ...recipeData,
+                category: categoryName,
+                updatedAt: recipeData.updatedAt || recipeData.createdAt || Timestamp.now()
+              };
+              matchingRecipes.push(recipe);
+            }
+          });
+        } catch (categoryError) {
+          console.error(`Error searching recipes in category ${categoryName}:`, categoryError);
+        }
+      }
+      
+      // Sort by updatedAt desc
+      matchingRecipes.sort((a, b) => {
+        const aTime = a.updatedAt?.toMillis?.() || (a.updatedAt?.seconds ? a.updatedAt.seconds * 1000 : 0) || 0;
+        const bTime = b.updatedAt?.toMillis?.() || (b.updatedAt?.seconds ? b.updatedAt.seconds * 1000 : 0) || 0;
+        return bTime - aTime;
+      });
+      
+      setSearchResults(matchingRecipes);
+    } catch (error) {
+      console.error('❌ Error searching recipes:', error);
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }, [restaurantId, activeTab]);
+
   // Load more recipes for "All Recipes"
   const loadMoreAllRecipes = async () => {
     if (loadingMore || !allRecipesHasMore || selectedCategory !== "All Recipes") {
@@ -733,28 +832,33 @@ function RecipesScreen() {
     setRefreshing(false);
   };
 
+  // Search effect: when search term changes, query the entire database
+  useEffect(() => {
+    if (!restaurantId) return;
+    
+    const searchTerm = search?.trim() || "";
+    
+    if (searchTerm.length > 0) {
+      // Debounce search to avoid too many queries
+      const timeoutId = setTimeout(() => {
+        searchRecipesInDatabase(searchTerm);
+      }, 300); // 300ms debounce
+      
+      return () => clearTimeout(timeoutId);
+    } else {
+      // Clear search results when search is cleared
+      setSearchResults([]);
+      setSearching(false);
+    }
+  }, [search, restaurantId, activeTab, searchRecipesInDatabase]);
+
   // Recipes to display (filtered by search)
-  // Use allRecipes state when "All Recipes" is selected, otherwise use recipesByCategory
-  const recipesToFilter = selectedCategory === "All Recipes" 
-    ? allRecipes 
-    : (recipesByCategory[selectedCategory] || []);
-  
-  const recipes = recipesToFilter.filter(recipe => {
-    if (!search || search.trim() === "") return true; // Show all if no search
-    
-    // Get all possible name fields from the recipe
-    const recipeName = recipe["recipe name"] || recipe.name || recipe.title || recipe.recipeName || "";
-    const ingredients = recipe.ingredients || "";
-    const description = recipe.description || "";
-    const category = recipe.category || "";
-    
-    // Create a searchable string with all relevant fields
-    const searchableText = `${recipeName} ${ingredients} ${description} ${category}`.toLowerCase();
-    const searchTerm = search.toLowerCase().trim();
-    
-    // Return true if any part matches
-    return searchableText.includes(searchTerm);
-  });
+  // When searching, use searchResults; otherwise use loaded recipes
+  const recipes = search.trim().length > 0 
+    ? searchResults 
+    : (selectedCategory === "All Recipes" 
+        ? allRecipes 
+        : (recipesByCategory[selectedCategory] || []));
 
   return (
     <SafeAreaView style={styles.container}>
@@ -881,14 +985,25 @@ function RecipesScreen() {
         </View>
         {/* Recipes List */}
         <View style={styles.recipesContainer}>
-          {(loading || (selectedCategory === "All Recipes" && allRecipesLoading)) && !loadingFromCache ? (
+          {searching ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={Colors.primary} />
+              <Text style={styles.loadingText}>Searching recipes...</Text>
+            </View>
+          ) : (loading || (selectedCategory === "All Recipes" && allRecipesLoading)) && !loadingFromCache ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={Colors.primary} />
               <Text style={styles.loadingText}>Loading recipes...</Text>
             </View>
           ) : (
             <>
-            {recipes.map(recipe => (
+            {recipes.length === 0 && search.trim().length > 0 ? (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>No recipes found</Text>
+                <Text style={styles.emptySubtext}>Try a different search term</Text>
+              </View>
+            ) : (
+              recipes.map(recipe => (
               <TouchableOpacity
                 key={recipe.id}
                 style={styles.recipeCard}
@@ -924,10 +1039,11 @@ function RecipesScreen() {
                   <Text style={styles.recipeCategory}>{recipe.category}</Text>
                 </View>
               </TouchableOpacity>
-            ))}
+              ))
+            )}
             
-            {/* Load More Button for All Recipes */}
-            {selectedCategory === "All Recipes" && allRecipesHasMore && (
+            {/* Load More Button for All Recipes - hide when searching */}
+            {search.trim().length === 0 && selectedCategory === "All Recipes" && allRecipesHasMore && (
               <TouchableOpacity
                 style={styles.loadMoreButton}
                 onPress={loadMoreAllRecipes}
