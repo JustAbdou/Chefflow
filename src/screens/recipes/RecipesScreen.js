@@ -861,7 +861,7 @@ function RecipesScreen() {
         : (recipesByCategory[selectedCategory] || []));
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
