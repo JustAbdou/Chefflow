@@ -760,6 +760,7 @@ function RecipesScreen() {
     if (selectedCategory === "All Recipes") {
       setAllRecipesLastDoc(null);
       setAllRecipesHasMore(true);
+      setAllRecipes([]); // Clear displayed recipes when tab changes
       allFetchedRecipesRef.current = []; // Clear stored recipes when tab changes
       setTotalRecipesCount(0); // Reset total count
     }
@@ -780,25 +781,28 @@ function RecipesScreen() {
     }
 
     if (selectedCategory === "All Recipes") {
-      // For "All Recipes", load from cache first (active tab only), then fetch fresh
-      // Reset pagination state
-      setAllRecipesLastDoc(null);
-      setAllRecipesHasMore(true);
-      setAllRecipes([]); // Clear previous recipes
-      allFetchedRecipesRef.current = []; // Clear stored recipes
-      setTotalRecipesCount(0); // Reset total count
+      // Only fetch if we don't already have "All Recipes" loaded
+      const needsLoading = allRecipes.length === 0;
 
-      // Load from cache first for instant display - ONLY for active tab
-      if (activeTab === 'active') {
-        const { recipesByCategory } = getCachedRecipes(restaurantId);
-        if (recipesByCategory["All Recipes"]?.length > 0) {
-          // Show first 30 from cache
-          const cachedPage1 = recipesByCategory["All Recipes"].slice(0, 30);
-          setAllRecipes(cachedPage1);
+      if (needsLoading) {
+        // Reset pagination state
+        setAllRecipesLastDoc(null);
+        setAllRecipesHasMore(true);
+        allFetchedRecipesRef.current = []; // Clear stored recipes
+        setTotalRecipesCount(0); // Reset total count
+
+        // Load from cache first for instant display - ONLY for active tab
+        if (activeTab === 'active') {
+          const { recipesByCategory } = getCachedRecipes(restaurantId);
+          if (recipesByCategory["All Recipes"]?.length > 0) {
+            // Show first 30 from cache
+            const cachedPage1 = recipesByCategory["All Recipes"].slice(0, 30);
+            setAllRecipes(cachedPage1);
+          }
         }
+        // Fetch fresh data for pagination
+        fetchAllRecipes(true); // Reset pagination
       }
-      // Always fetch fresh data for pagination
-      fetchAllRecipes(true); // Reset pagination
 
       // Ensure no category listener is running
       if (currentUnsubscribeRef.current) {
@@ -811,8 +815,7 @@ function RecipesScreen() {
       }
     } else if (selectedCategory) {
       // For specific category, set up real-time listener
-      // Clear allRecipes when switching away from "All Recipes"
-      setAllRecipes([]);
+      // Keep allRecipes in memory for instant switching back
       setupCategoryListener(selectedCategory);
     }
     
