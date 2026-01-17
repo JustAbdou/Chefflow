@@ -14,14 +14,13 @@ import { getRestaurantDoc, getRestaurantSubCollection, getRestaurantNestedCollec
 import { fetchActiveCategories, fetchArchivedCategories, fetchAllCategories, isCategoryArchived } from "../../utils/categoryHelpers";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
-import { 
-  cacheRecipesOffline, 
-  getCachedRecipes, 
-  isRecipesCacheValid, 
-  updateRecipesCacheTimestamp,
-  cacheAllRecipesPage1,
-  getCachedAllRecipesPage1
-} from '../../utils/offlineSync';
+import {
+  getCachedRecipes,
+  saveRecipeCache,
+  fetchAndCacheRecipes,
+  getRecipeCacheStats,
+  loadRecipeCache
+} from '../../utils/recipeCache';
 import { getNetworkStatus } from '../../utils/networkMonitor';
 
 function RecipesScreen() {
@@ -64,54 +63,63 @@ function RecipesScreen() {
       return;
     }
 
-    // Check if we should use cache
-    const cacheValid = await isRecipesCacheValid();
-    const isOnline = getNetworkStatus();
-    
-    // Always try to load from cache first for instant display
-    setLoadingFromCache(true);
-    
-    const { recipesByCategory: cachedRecipes, categories: cachedCategories } = await getCachedRecipes();
-    
-    if (Object.keys(cachedRecipes).length > 0) {
-      setCategories(cachedCategories);
-      setRecipesByCategory(cachedRecipes);
-      setLoadingFromCache(false);
-      
-      if (!selectedCategory && cachedCategories.length > 0) {
-        setSelectedCategory("All Recipes");
-      }
-      
-      // If cache is valid and not forcing refresh, we're done
-      if (cacheValid && !forceRefresh) {
-        setLoading(false);
-        setRefreshing(false);
-        return;
-      }
-    } else {
-      setLoadingFromCache(false);
-    }
+    try {
+      // First, load cache from AsyncStorage into memory if not already loaded
+      await loadRecipeCache(restaurantId);
 
-    // Fetch fresh data from server if needed
-    if ((isOnline && (!cacheValid || forceRefresh)) || Object.keys(cachedRecipes).length === 0) {
-      if (!loadingFromCache) setLoading(true);
-      
-      try {
-        await fetchCategoriesAndRecipes();
-        
-      } catch (error) {
-        console.error('❌ Error fetching fresh recipes:', error);
-        // If we have cached data and fetch fails, keep using cache
-        if (Object.keys(recipesByCategory).length === 0 && Object.keys(cachedRecipes).length > 0) {
-          setCategories(cachedCategories);
-          setRecipesByCategory(cachedRecipes);
+      // Check cache validity
+      const cacheStats = getRecipeCacheStats(restaurantId);
+      const isOnline = getNetworkStatus();
+
+      // Get cached data (from in-memory cache)
+      const { recipesByCategory: cachedRecipes, categories: cachedCategories } = getCachedRecipes(restaurantId);
+
+      // Display cached data immediately if available
+      if (Object.keys(cachedRecipes).length > 0) {
+        setLoadingFromCache(true);
+        setCategories(cachedCategories);
+        setRecipesByCategory(cachedRecipes);
+        setLoadingFromCache(false);
+
+        if (!selectedCategory && cachedCategories.length > 0) {
+          setSelectedCategory("All Recipes");
+        }
+
+        // If cache is valid and not forcing refresh, we're done
+        if (cacheStats.isValid && !forceRefresh) {
+          console.log(`✅ Using valid cache (${cacheStats.totalRecipes} recipes)`);
+          setLoading(false);
+          setRefreshing(false);
+          return;
         }
       }
+
+      // Fetch fresh data if needed (cache invalid, forced refresh, or no cache)
+      if ((isOnline && (!cacheStats.isValid || forceRefresh)) || Object.keys(cachedRecipes).length === 0) {
+        if (Object.keys(cachedRecipes).length === 0) {
+          setLoading(true); // Show loading only if no cached data
+        }
+
+        try {
+          const result = await fetchAndCacheRecipes(restaurantId, forceRefresh);
+          setCategories(result.categories);
+          setRecipesByCategory(result.recipesByCategory);
+
+          if (!selectedCategory && result.categories.length > 0) {
+            setSelectedCategory("All Recipes");
+          }
+        } catch (error) {
+          console.error('❌ Error fetching fresh recipes:', error);
+          // Keep using cached data if fetch fails
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error in loadRecipesWithCaching:', error);
+    } finally {
+      setLoading(false);
+      setLoadingFromCache(false);
+      setRefreshing(false);
     }
-    
-    setLoading(false);
-    setLoadingFromCache(false);
-    setRefreshing(false);
   };
 
   // Fetch categories and all recipes from category documents with proper archived filtering
@@ -207,18 +215,26 @@ function RecipesScreen() {
 
       // DO NOT include "All Recipes" - it has its own state managed separately
       const newRecipesByCategory = { ...recipesObj };
-      
+
       // Set categories based on current tab (fetchedCategories already filtered)
       setCategories(fetchedCategories);
-      
+
       setRecipesByCategory(newRecipesByCategory);
-      
+
       // Cache only active recipes and categories
+      // For archived tab, we skip caching entirely - just read fresh from DB
       if (!showArchived) {
-        await cacheRecipesOffline(newRecipesByCategory, fetchedCategories);
-        await updateRecipesCacheTimestamp();
+        const { recipesByCategory: existingCache } = getCachedRecipes(restaurantId);
+        await saveRecipeCache(restaurantId, {
+          categories: fetchedCategories,
+          recipesByCategory: {
+            ...existingCache, // Keep existing cached data (like "All Recipes")
+            ...newRecipesByCategory // Update with new category data
+          }
+        });
       }
-      
+      // Note: If showArchived === true, we don't touch cache at all
+
       if (!selectedCategory && fetchedCategories.length > 0) setSelectedCategory("All Recipes");
     } catch (error) {
       console.error("Error fetching categories/recipes:", error);
@@ -394,10 +410,20 @@ function RecipesScreen() {
         
         // Store remaining recipes for load more (in-memory pagination)
         allFetchedRecipesRef.current = uniqueRecipes.slice(PAGE_SIZE);
-        
-        // Cache only page 1 for offline support
-        await cacheAllRecipesPage1(recipesToShow);
-        
+
+        // Update cache with "All Recipes" data ONLY for active recipes, not archived
+        if (!isArchived) {
+          const { recipesByCategory: existingCache, categories: existingCategories } = getCachedRecipes(restaurantId);
+          await saveRecipeCache(restaurantId, {
+            categories: existingCategories || fetchedCategories,
+            recipesByCategory: {
+              ...existingCache,
+              "All Recipes": uniqueRecipes // Cache all fetched recipes, not just page 1
+            }
+          });
+        }
+        // Note: If isArchived === true, we skip caching entirely
+
         // For total count, we'll need to estimate or do a count query
         // For now, estimate based on fetched results
         setTotalRecipesCount(uniqueRecipes.length > PAGE_SIZE ? uniqueRecipes.length : uniqueRecipes.length);
@@ -663,7 +689,7 @@ function RecipesScreen() {
   // Update recipes when tab changes - fetch initial data
   useEffect(() => {
     if (!restaurantId) return;
-    
+
     // Cleanup any existing listener
     if (currentUnsubscribeRef.current) {
       try {
@@ -673,34 +699,49 @@ function RecipesScreen() {
       }
       currentUnsubscribeRef.current = null;
     }
-    
-    setLoading(true);
-    
-    // If "All Recipes" is selected, use fetchAllRecipes (which also updates categories)
-    // Otherwise, use fetchCategoriesAndRecipes
-    if (selectedCategory === "All Recipes") {
-      fetchAllRecipes(true).then(() => {
-        setLoading(false);
-        setRefreshing(false);
-      }).catch(() => {
+
+    // For active tab, use cache-first approach
+    // For archived tab, always fetch fresh (since archived recipes aren't cached)
+    if (activeTab === 'active') {
+      // Use cache-first loading for active recipes
+      loadRecipesWithCaching(false).then(() => {
+        // After loading, set up listener if a specific category is selected
+        if (selectedCategory && selectedCategory !== "All Recipes") {
+          setupCategoryListener(selectedCategory);
+        }
+      }).catch(error => {
+        console.error('Error loading recipes:', error);
         setLoading(false);
         setRefreshing(false);
       });
     } else {
-      fetchCategoriesAndRecipes(activeTab === 'archived').then(() => {
-        setLoading(false);
-        setRefreshing(false);
-        
-        // After fetching initial data, set up listener based on selectedCategory
-        if (selectedCategory && selectedCategory !== "All Recipes") {
-          setupCategoryListener(selectedCategory);
-        }
-      }).catch(() => {
-        setLoading(false);
-        setRefreshing(false);
-      });
+      // Archived tab - fetch fresh data
+      setLoading(true);
+
+      if (selectedCategory === "All Recipes") {
+        fetchAllRecipes(true).then(() => {
+          setLoading(false);
+          setRefreshing(false);
+        }).catch(() => {
+          setLoading(false);
+          setRefreshing(false);
+        });
+      } else {
+        fetchCategoriesAndRecipes(true).then(() => {
+          setLoading(false);
+          setRefreshing(false);
+
+          // After fetching initial data, set up listener based on selectedCategory
+          if (selectedCategory && selectedCategory !== "All Recipes") {
+            setupCategoryListener(selectedCategory);
+          }
+        }).catch(() => {
+          setLoading(false);
+          setRefreshing(false);
+        });
+      }
     }
-    
+
     // Cleanup listener on unmount or tab change
     return () => {
       if (currentUnsubscribeRef.current) {
@@ -727,7 +768,7 @@ function RecipesScreen() {
   // Update listener when selectedCategory changes
   useEffect(() => {
     if (!restaurantId) return;
-    
+
     // Cleanup previous listener
     if (currentUnsubscribeRef.current) {
       try {
@@ -737,24 +778,28 @@ function RecipesScreen() {
       }
       currentUnsubscribeRef.current = null;
     }
-    
+
     if (selectedCategory === "All Recipes") {
-      // For "All Recipes", load from cache first, then fetch fresh
+      // For "All Recipes", load from cache first (active tab only), then fetch fresh
       // Reset pagination state
       setAllRecipesLastDoc(null);
       setAllRecipesHasMore(true);
       setAllRecipes([]); // Clear previous recipes
       allFetchedRecipesRef.current = []; // Clear stored recipes
       setTotalRecipesCount(0); // Reset total count
-      
-      // Load from cache first for instant display
-      getCachedAllRecipesPage1().then(cachedPage1 => {
-        if (cachedPage1.length > 0) {
+
+      // Load from cache first for instant display - ONLY for active tab
+      if (activeTab === 'active') {
+        const { recipesByCategory } = getCachedRecipes(restaurantId);
+        if (recipesByCategory["All Recipes"]?.length > 0) {
+          // Show first 30 from cache
+          const cachedPage1 = recipesByCategory["All Recipes"].slice(0, 30);
           setAllRecipes(cachedPage1);
         }
-        // Always fetch fresh data
-        fetchAllRecipes(true); // Reset pagination
-      });
+      }
+      // Always fetch fresh data for pagination
+      fetchAllRecipes(true); // Reset pagination
+
       // Ensure no category listener is running
       if (currentUnsubscribeRef.current) {
         try {
@@ -788,8 +833,41 @@ function RecipesScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!restaurantId) return;
-      
-      // Refresh based on current selection
+
+      // For archived tab, skip cache entirely - just fetch fresh data
+      if (activeTab === 'archived') {
+        console.log('📱 Archived tab: fetching fresh data (no cache)');
+        if (selectedCategory === "All Recipes") {
+          allFetchedRecipesRef.current = [];
+          setTotalRecipesCount(0);
+          fetchAllRecipes(true).catch(error => {
+            console.error('Error refreshing all recipes:', error);
+          });
+        } else {
+          fetchCategoriesAndRecipes(true).then(() => {
+            if (selectedCategory && selectedCategory !== "All Recipes") {
+              setupCategoryListener(selectedCategory);
+            }
+          }).catch(error => {
+            console.error('Error refreshing category recipes:', error);
+          });
+        }
+        return;
+      }
+
+      // For active tab, check cache validity before fetching
+      const cacheStats = getRecipeCacheStats(restaurantId);
+
+      // If cache is valid (< 24 hours old), use cached data
+      if (cacheStats.isValid) {
+        console.log('📱 Using cached recipes on focus (cache still valid)');
+        loadRecipesWithCaching(false).catch(error => {
+          console.error('Error loading from cache:', error);
+        });
+        return;
+      }
+
+      // Cache is stale, refresh based on current selection
       if (selectedCategory === "All Recipes") {
         // Refresh "All Recipes" view
         allFetchedRecipesRef.current = []; // Clear stored recipes
@@ -798,8 +876,8 @@ function RecipesScreen() {
           console.error('Error refreshing all recipes:', error);
         });
       } else {
-        // Refresh specific category
-        fetchCategoriesAndRecipes(activeTab === 'archived').then(() => {
+        // Refresh specific category (active only)
+        fetchCategoriesAndRecipes(false).then(() => {
           // Re-setup listener for current category
           if (selectedCategory && selectedCategory !== "All Recipes") {
             setupCategoryListener(selectedCategory);

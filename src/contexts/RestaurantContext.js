@@ -5,8 +5,7 @@ import { doc, getDoc, enableNetwork } from 'firebase/firestore';
 import { db } from '../../firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { normalizeRestaurantName, RESTAURANT_NAMES, getRestaurantDisplayName } from '../utils/restaurantUtils';
-import { preloadRecipesForRestaurant } from '../utils/offlineSync';
-import { clearRecipeCache } from '../utils/recipeCache';
+import { fetchAndCacheRecipes, loadRecipeCache } from '../utils/recipeCache';
 
 const CURRENT_RESTAURANT_ID_KEY = 'currentRestaurantId';
 
@@ -154,14 +153,22 @@ export const RestaurantProvider = ({ children }) => {
               console.warn('Error saving active restaurant to AsyncStorage:', error);
             }
             
-            // Start background recipe preloading
+            // Start background recipe preloading with new cache system
             console.log('📚 Starting background recipe preload...');
-            preloadRecipesForRestaurant(selectedRestaurantId)
+            // First load from cache for instant availability
+            loadRecipeCache(selectedRestaurantId)
+              .then((loaded) => {
+                if (loaded) {
+                  console.log('📚 Recipe cache loaded from storage');
+                }
+                // Then fetch and cache fresh data in background
+                return fetchAndCacheRecipes(selectedRestaurantId, false);
+              })
               .then((result) => {
-                if (result?.success) {
-                  console.log(`📚 Recipe preload completed: ${result.totalRecipes} recipes in ${result.categories} categories`);
+                if (result?.fromCache) {
+                  console.log(`📚 Recipe preload using cache: ${result.recipesByCategory?.["All Recipes"]?.length || 0} recipes`);
                 } else {
-                  console.log('📚 Recipe preload skipped or failed:', result?.error || 'Unknown reason');
+                  console.log(`📚 Recipe preload completed: ${result.recipesByCategory?.["All Recipes"]?.length || 0} recipes in ${result.categories?.length || 0} categories`);
                 }
               })
               .catch((error) => {
@@ -196,21 +203,28 @@ export const RestaurantProvider = ({ children }) => {
     }
 
     try {
-      // Clear recipe cache when switching (since cache is now restaurant-aware)
-      await clearRecipeCache();
-      
       // Update state
       setActiveRestaurantId(newRestaurantId);
-      
+
       // Persist to AsyncStorage
       await AsyncStorage.setItem(CURRENT_RESTAURANT_ID_KEY, newRestaurantId);
       console.log(`Switched to restaurant: ${newRestaurantId}`);
-      
-      // Preload recipes for new restaurant
-      preloadRecipesForRestaurant(newRestaurantId)
+
+      // Preload recipes for new restaurant (cache is restaurant-aware, no need to clear)
+      // First load from cache for instant availability
+      loadRecipeCache(newRestaurantId)
+        .then((loaded) => {
+          if (loaded) {
+            console.log(`📚 Recipe cache loaded for ${newRestaurantId}`);
+          }
+          // Then fetch and cache fresh data in background
+          return fetchAndCacheRecipes(newRestaurantId, false);
+        })
         .then((result) => {
-          if (result?.success) {
-            console.log(`📚 Recipe preload completed for ${newRestaurantId}: ${result.totalRecipes} recipes`);
+          if (result?.fromCache) {
+            console.log(`📚 Using cached recipes for ${newRestaurantId}`);
+          } else {
+            console.log(`📚 Recipe preload completed for ${newRestaurantId}: ${result.recipesByCategory?.["All Recipes"]?.length || 0} recipes`);
           }
         })
         .catch((error) => {

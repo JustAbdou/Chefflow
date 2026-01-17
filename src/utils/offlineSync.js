@@ -2,6 +2,21 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { addDoc, updateDoc, deleteDoc, getDocs, query, orderBy, doc, getDoc } from 'firebase/firestore';
 import { getRestaurantCollection, getRestaurantDoc, getRestaurantSubCollection } from './firestoreHelpers';
 
+/**
+ * MIGRATION NOTE (2026-01):
+ * Recipe caching has been migrated to src/utils/recipeCache.js for restaurant-aware caching.
+ * The following recipe-related functions are DEPRECATED and kept for backwards compatibility:
+ * - cacheRecipesOffline → Use saveRecipeCache from recipeCache.js
+ * - getCachedRecipes → Use getCachedRecipes from recipeCache.js
+ * - isRecipesCacheValid → Use getRecipeCacheStats from recipeCache.js
+ * - updateRecipesCacheTimestamp → Handled automatically by recipeCache.js
+ * - cacheAllRecipesPage1 → Handled by saveRecipeCache in recipeCache.js
+ * - getCachedAllRecipesPage1 → Use getCachedRecipes("All Recipes") from recipeCache.js
+ * - preloadRecipesForRestaurant → Use fetchAndCacheRecipes from recipeCache.js
+ *
+ * Please update any remaining usage to the new cache system.
+ */
+
 // Keys for storing offline data
 const OFFLINE_PREP_ITEMS_KEY = 'offline_prep_items';
 const OFFLINE_PREP_SECTIONS_KEY = 'offline_prep_sections';
@@ -109,7 +124,10 @@ export const getCachedFridgeLogs = async () => {
   }
 };
 
-// Store recipes offline
+/**
+ * @deprecated Use saveRecipeCache from recipeCache.js instead.
+ * This function uses global cache keys and doesn't support multi-restaurant.
+ */
 export const cacheRecipesOffline = async (recipesByCategory, categories) => {
   try {
     await AsyncStorage.setItem(OFFLINE_RECIPES_KEY, JSON.stringify(recipesByCategory));
@@ -123,7 +141,10 @@ export const cacheRecipesOffline = async (recipesByCategory, categories) => {
   }
 };
 
-// Get cached recipes
+/**
+ * @deprecated Use getCachedRecipes(restaurantId) from recipeCache.js instead.
+ * This function uses global cache keys and doesn't support multi-restaurant.
+ */
 export const getCachedRecipes = async () => {
   try {
     const cachedRecipes = await AsyncStorage.getItem(OFFLINE_RECIPES_KEY);
@@ -142,7 +163,10 @@ export const getCachedRecipes = async () => {
   }
 };
 
-// Check if recipes cache exists and is recent
+/**
+ * @deprecated Use getRecipeCacheStats(restaurantId).isValid from recipeCache.js instead.
+ * This function uses global cache keys and doesn't support multi-restaurant.
+ */
 export const isRecipesCacheValid = async (maxAgeHours = 24) => {
   try {
     const cacheTimestamp = await AsyncStorage.getItem('recipes_cache_timestamp');
@@ -158,7 +182,10 @@ export const isRecipesCacheValid = async (maxAgeHours = 24) => {
   }
 };
 
-// Update recipes cache timestamp
+/**
+ * @deprecated Cache timestamps are handled automatically by recipeCache.js.
+ * This function is no longer needed with the new cache system.
+ */
 export const updateRecipesCacheTimestamp = async () => {
   try {
     await AsyncStorage.setItem('recipes_cache_timestamp', Date.now().toString());
@@ -167,7 +194,10 @@ export const updateRecipesCacheTimestamp = async () => {
   }
 };
 
-// Cache only page 1 of All Recipes (for offline support)
+/**
+ * @deprecated Use saveRecipeCache from recipeCache.js instead.
+ * The new cache system handles "All Recipes" automatically.
+ */
 export const cacheAllRecipesPage1 = async (recipes) => {
   try {
     // Only cache first 30 recipes (page 1)
@@ -179,7 +209,10 @@ export const cacheAllRecipesPage1 = async (recipes) => {
   }
 };
 
-// Get cached All Recipes page 1
+/**
+ * @deprecated Use getCachedRecipes(restaurantId).recipesByCategory["All Recipes"] from recipeCache.js instead.
+ * The new cache system handles "All Recipes" automatically.
+ */
 export const getCachedAllRecipesPage1 = async () => {
   try {
     const cached = await AsyncStorage.getItem(OFFLINE_ALL_RECIPES_PAGE1_KEY);
@@ -190,7 +223,10 @@ export const getCachedAllRecipesPage1 = async () => {
   }
 };
 
-// Check if recipes are already cached for a restaurant
+/**
+ * @deprecated Use getRecipeCacheStats(restaurantId) from recipeCache.js instead.
+ * This function uses global cache keys and doesn't support multi-restaurant.
+ */
 export const hasRecipesCache = async () => {
   try {
     const { recipesByCategory } = await getCachedRecipes();
@@ -201,7 +237,10 @@ export const hasRecipesCache = async () => {
   }
 };
 
-// Pre-load and cache all recipes for a restaurant (background task)
+/**
+ * @deprecated Use fetchAndCacheRecipes(restaurantId) from recipeCache.js instead.
+ * The new cache system is restaurant-aware and handles preloading automatically.
+ */
 export const preloadRecipesForRestaurant = async (restaurantId) => {
   if (!restaurantId) {
     console.log('📚 No restaurant ID provided for recipe preloading');

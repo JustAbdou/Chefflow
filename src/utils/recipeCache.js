@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getDocs } from 'firebase/firestore';
-import { getRestaurantCollection } from './firestoreHelpers';
+import { getRestaurantSubCollection } from './firestoreHelpers';
+import { fetchActiveCategories, fetchArchivedCategories } from './categoryHelpers';
 
 const CACHE_KEY_PREFIX = 'RECIPES_CACHE';
 const CACHE_TIMESTAMP_PREFIX = 'RECIPES_CACHE_TIMESTAMP';
@@ -106,7 +107,7 @@ export const getRecipeCacheStats = (restaurantId) => {
   };
 };
 
-export const fetchAndCacheRecipes = async (restaurantId, forceRefresh = false) => {
+export const fetchAndCacheRecipes = async (restaurantId, forceRefresh = false, includeArchived = false) => {
   if (!restaurantId) {
     throw new Error('restaurantId is required for fetchAndCacheRecipes');
   }
@@ -125,59 +126,78 @@ export const fetchAndCacheRecipes = async (restaurantId, forceRefresh = false) =
 
   try {
     console.log(`🌐 Fetching fresh recipe data from Firestore for restaurant: ${restaurantId}...`);
-    
-    // Fetch all recipe categories
-    const categoriesSnapshot = await getDocs(getRestaurantCollection(restaurantId, "recipes"));
-    const categories = [];
+
+    // Fetch active and archived categories separately
+    const activeCategories = await fetchActiveCategories(restaurantId);
+    const archivedCategories = includeArchived ? await fetchArchivedCategories(restaurantId) : [];
+
+    // Combine all categories for fetching recipes
+    const allCategories = [...activeCategories, ...archivedCategories];
     const recipesByCategory = { "All Recipes": [] };
 
     // Process each category
-    for (const categoryDoc of categoriesSnapshot.docs) {
-      const categoryData = categoryDoc.data();
-      const categoryInfo = {
-        id: categoryDoc.id,
-        name: categoryData.name || categoryDoc.id,
-        ...categoryData
-      };
-      
-      categories.push(categoryInfo);
-      
-      // Initialize category in recipes object
-      recipesByCategory[categoryDoc.id] = [];
-      
-      // Fetch recipes for this category
+    for (const categoryInfo of allCategories) {
+      const categoryName = categoryInfo.name;
+      const isCategoryArchived = categoryInfo.archived === true;
+
       try {
-        const recipesSnapshot = await getDocs(getRestaurantCollection(restaurantId, `recipes/${categoryDoc.id}/items`));
-        
-        recipesSnapshot.docs.forEach(recipeDoc => {
+        // Fetch recipes from: restaurants/{restaurantId}/recipes/categories/{categoryName}/
+        const categoryCollectionRef = getRestaurantSubCollection(
+          restaurantId,
+          "recipes",
+          "categories",
+          categoryName
+        );
+        const categoryRecipesSnapshot = await getDocs(categoryCollectionRef);
+
+        const categoryRecipes = [];
+        categoryRecipesSnapshot.forEach(recipeDoc => {
           const recipeData = recipeDoc.data();
+          const recipeArchived = recipeData.archived === true;
+
+          // Only include active recipes unless includeArchived is true
+          if (!includeArchived && (recipeArchived || isCategoryArchived)) {
+            return; // Skip archived recipes/categories
+          }
+
           const recipe = {
             id: recipeDoc.id,
-            category: categoryInfo.name,
-            categoryId: categoryDoc.id,
+            category: categoryName,
             ...recipeData
           };
-          
-          recipesByCategory[categoryDoc.id].push(recipe);
-          recipesByCategory["All Recipes"].push(recipe);
+
+          categoryRecipes.push(recipe);
+
+          // Add to "All Recipes" only if not archived (or if we're including archived)
+          if (!recipeArchived && !isCategoryArchived) {
+            recipesByCategory["All Recipes"].push(recipe);
+          }
         });
-        
-        console.log(`📝 Loaded ${recipesSnapshot.docs.length} recipes from category: ${categoryInfo.name}`);
+
+        // Only add category if it has recipes
+        if (categoryRecipes.length > 0) {
+          recipesByCategory[categoryName] = categoryRecipes;
+        }
+
+        console.log(`📝 Loaded ${categoryRecipes.length} recipes from category: ${categoryName}`);
       } catch (error) {
-        console.warn(`Failed to fetch recipes for category ${categoryDoc.id}:`, error);
+        console.warn(`Failed to fetch recipes for category ${categoryName}:`, error);
       }
     }
 
     // Save to cache
-    const result = { categories, recipesByCategory };
+    const result = {
+      categories: activeCategories, // Only cache active categories
+      recipesByCategory
+    };
     await saveRecipeCache(restaurantId, result);
-    
-    console.log(`✅ Fetched and cached ${categories.length} categories with ${recipesByCategory["All Recipes"].length} total recipes for restaurant: ${restaurantId}`);
-    
+
+    console.log(`✅ Fetched and cached ${activeCategories.length} categories with ${recipesByCategory["All Recipes"].length} total recipes for restaurant: ${restaurantId}`);
+
     return { ...result, fromCache: false };
   } catch (error) {
     console.error(`❌ Error fetching recipes for restaurant ${restaurantId}:`, error);
-    
+
     // Return cached data if available
     if (cachedData.categories?.length > 0) {
       console.log('🔄 Returning stale cached data due to fetch error');
@@ -187,7 +207,7 @@ export const fetchAndCacheRecipes = async (restaurantId, forceRefresh = false) =
         fromCache: true
       };
     }
-    
+
     throw error;
   }
 };

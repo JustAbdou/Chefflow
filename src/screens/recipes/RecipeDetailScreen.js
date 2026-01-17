@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Image, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Image } from "expo-image";
 import { Colors } from "../../constants/Colors";
 import { Typography } from "../../constants/Typography";
 import { Spacing } from "../../constants/Spacing";
@@ -11,6 +12,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import * as Print from "expo-print";
 import { Ionicons } from "@expo/vector-icons";
 import FullscreenImageViewer from "../../components/FullscreenImageViewer";
+import { getCachedRecipes, saveRecipeCache } from "../../utils/recipeCache";
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -101,7 +103,32 @@ function RecipeDetailScreen({ route, navigation }) {
                 archived: !isArchived,
                 updatedAt: serverTimestamp()
               });
-              
+
+              // Update the recipe in cache instead of clearing entire cache
+              try {
+                const { recipesByCategory, categories } = getCachedRecipes(restaurantId);
+
+                // Update recipe in its category
+                if (recipesByCategory[category]) {
+                  recipesByCategory[category] = recipesByCategory[category].map(r =>
+                    r.id === recipeId ? { ...r, archived: !isArchived } : r
+                  );
+                }
+
+                // Update recipe in "All Recipes"
+                if (recipesByCategory["All Recipes"]) {
+                  recipesByCategory["All Recipes"] = recipesByCategory["All Recipes"].map(r =>
+                    r.id === recipeId ? { ...r, archived: !isArchived } : r
+                  );
+                }
+
+                // Save updated cache
+                await saveRecipeCache(restaurantId, { categories, recipesByCategory });
+                console.log(`📝 Updated recipe ${recipeId} in cache (archived: ${!isArchived})`);
+              } catch (cacheError) {
+                console.warn('Failed to update cache, will refresh on next load:', cacheError);
+              }
+
               // Show success message
               Alert.alert(
                 "Success",
@@ -447,7 +474,10 @@ function RecipeDetailScreen({ route, navigation }) {
               <Image
                 source={{ uri: imageUri }}
                 style={styles.image}
-                resizeMode="cover"
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                transition={{ duration: 200 }}
+                priority="high"
               />
             </TouchableOpacity>
           ))}
