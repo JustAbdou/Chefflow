@@ -12,6 +12,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Dimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
@@ -27,6 +28,8 @@ import { Spacing } from "../../constants/Spacing";
 import { getAndroidTitleMargin } from "../../utils/responsive";
 import useNavigationBar from "../../hooks/useNavigationBar";
 
+const SCREEN_HEIGHT = Dimensions.get('window').height;
+
 export default function CoolingAndReheatingScreen({ navigation }) {
   const { restaurantId } = useRestaurant();
   const [logs, setLogs] = useState([]);
@@ -40,6 +43,11 @@ export default function CoolingAndReheatingScreen({ navigation }) {
   const [foodItem, setFoodItem] = useState("");
   const [temperature, setTemperature] = useState("");
   const [selectedType, setSelectedType] = useState("cooking");
+  
+  // Scrollbar state
+  const [scrollPosition, setScrollPosition] = useState(0);
+  const [scrollContentHeight, setScrollContentHeight] = useState(0);
+  const [scrollViewHeight, setScrollViewHeight] = useState(0);
 
   // Hide Android navigation bar
   const navigationBar = useNavigationBar();
@@ -123,7 +131,7 @@ export default function CoolingAndReheatingScreen({ navigation }) {
         item: foodItem.trim(),
         temperature: temperature.trim(),
         type: selectedType,
-        createdAt: serverTimestamp(),
+        createdAt: Timestamp.fromDate(selectedDate), // Use selected date as Timestamp
       });
 
       console.log('✅ Cooking & reheating log saved successfully');
@@ -281,109 +289,142 @@ export default function CoolingAndReheatingScreen({ navigation }) {
         animationType="slide"
         onRequestClose={() => setShowAddModal(false)}
       >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{ flex: 1 }}
-        >
-          <View style={styles.overlay}>
-            <TouchableOpacity style={styles.backdrop} onPress={() => setShowAddModal(false)} activeOpacity={1} />
-            <View style={styles.modal}>
-              {/* Header */}
-              <View style={styles.header}>
-                <View style={styles.titleContainer}>
-                  <Text style={styles.title}>Add Temperature Log</Text>
-                  <Text style={styles.date}>{formatSelectedDate(selectedDate)}</Text>
-                </View>
-                <TouchableOpacity style={styles.closeButton} onPress={() => setShowAddModal(false)} activeOpacity={0.7}>
-                  <Text style={styles.closeText}>×</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Form */}
-              <View style={styles.form}>
-                <Text style={styles.label}>Food Item</Text>
-                <TextInput
-                  style={styles.input}
-                  value={foodItem}
-                  onChangeText={setFoodItem}
-                  placeholder="Enter food item name"
-                  placeholderTextColor={Colors.gray200}
-                  autoFocus
-                />
-                
-                {/* Type Selection */}
-                <Text style={[styles.label, { marginTop: Spacing.lg }]}>Type</Text>
-                <View style={styles.typeSelector}>
-                  <TouchableOpacity
-                    style={[
-                      styles.typeChip,
-                      selectedType === 'cooking' && styles.activeTypeChip,
-                    ]}
-                    onPress={() => setSelectedType('cooking')}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="restaurant" size={16} color={selectedType === 'cooking' ? '#fff' : '#22c55e'} />
-                    <Text
-                      style={[
-                        styles.typeText,
-                        selectedType === 'cooking' && styles.activeTypeText,
-                      ]}
-                    >
-                      Cooking
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.typeChip,
-                      selectedType === 'reheating' && styles.activeTypeChip,
-                    ]}
-                    onPress={() => setSelectedType('reheating')}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="flame" size={16} color={selectedType === 'reheating' ? '#fff' : '#f97316'} />
-                    <Text
-                      style={[
-                        styles.typeText,
-                        selectedType === 'reheating' && styles.activeTypeText,
-                      ]}
-                    >
-                      Reheating
-                    </Text>
+        <SafeAreaView style={styles.modalSafeArea} edges={['bottom']}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ flex: 1 }}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+          >
+            <View style={styles.overlay}>
+              <TouchableOpacity style={styles.backdrop} onPress={() => setShowAddModal(false)} activeOpacity={1} />
+              <View style={styles.modal}>
+                {/* Header */}
+                <View style={styles.modalHeader}>
+                  <View style={styles.titleContainer}>
+                    <Text style={styles.modalTitle}>Add Temperature Log</Text>
+                    <Text style={styles.modalDate}>{formatSelectedDate(selectedDate)}</Text>
+                  </View>
+                  <TouchableOpacity style={styles.closeButton} onPress={() => setShowAddModal(false)} activeOpacity={0.7}>
+                    <Text style={styles.closeText}>×</Text>
                   </TouchableOpacity>
                 </View>
 
-                <Text style={[styles.label, { marginTop: Spacing.lg }]}>Temperature (°C)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={temperature}
-                  onChangeText={setTemperature}
-                  placeholder="Enter temperature"
-                  placeholderTextColor={Colors.gray200}
-                  keyboardType="numeric"
-                />
-              </View>
+                {/* Form - Scrollable */}
+                <View style={styles.scrollContainer}>
+                  <ScrollView
+                    style={styles.modalScrollView}
+                    keyboardShouldPersistTaps="handled"
+                    contentContainerStyle={styles.modalScrollContent}
+                    showsVerticalScrollIndicator={false}
+                    onScroll={(event) => {
+                      const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+                      setScrollPosition(contentOffset.y);
+                      setScrollContentHeight(contentSize.height);
+                      setScrollViewHeight(layoutMeasurement.height);
+                    }}
+                    scrollEventThrottle={16}
+                  >
+                  <Text style={styles.label}>Food Item</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={foodItem}
+                    onChangeText={setFoodItem}
+                    placeholder="Enter food item name"
+                    placeholderTextColor={Colors.gray200}
+                    autoFocus
+                  />
+                  
+                  {/* Type Selection */}
+                  <Text style={[styles.label, { marginTop: Spacing.lg }]}>Type</Text>
+                  <View style={styles.typeSelector}>
+                    <TouchableOpacity
+                      style={[
+                        styles.typeChip,
+                        selectedType === 'cooking' && styles.activeTypeChip,
+                      ]}
+                      onPress={() => setSelectedType('cooking')}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="restaurant" size={16} color={selectedType === 'cooking' ? '#fff' : '#22c55e'} />
+                      <Text
+                        style={[
+                          styles.typeText,
+                          selectedType === 'cooking' && styles.activeTypeText,
+                        ]}
+                      >
+                        Cooking
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.typeChip,
+                        selectedType === 'reheating' && styles.activeTypeChip,
+                      ]}
+                      onPress={() => setSelectedType('reheating')}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="flame" size={16} color={selectedType === 'reheating' ? '#fff' : '#f97316'} />
+                      <Text
+                        style={[
+                          styles.typeText,
+                          selectedType === 'reheating' && styles.activeTypeText,
+                        ]}
+                      >
+                        Reheating
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
 
-              {/* Save Button */}
-              <View style={styles.buttonContainer}>
-                <Button onPress={handleSaveLog} disabled={!foodItem.trim() || !temperature.trim()} fullWidth size="lg">
-                  Save Log
-                </Button>
+                  <Text style={[styles.label, { marginTop: Spacing.lg }]}>Temperature (°C)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={temperature}
+                    onChangeText={setTemperature}
+                    placeholder="Enter temperature"
+                    placeholderTextColor={Colors.gray200}
+                    keyboardType="numeric"
+                  />
+                  </ScrollView>
+                  {/* Custom Scrollbar */}
+                  {scrollContentHeight > scrollViewHeight && (
+                    <View style={styles.scrollbarTrack} pointerEvents="none">
+                      <View 
+                        style={[
+                          styles.scrollbarThumb,
+                          {
+                            height: Math.max(30, (scrollViewHeight / scrollContentHeight) * scrollViewHeight),
+                            top: (scrollPosition / (scrollContentHeight - scrollViewHeight)) * (scrollViewHeight - Math.max(30, (scrollViewHeight / scrollContentHeight) * scrollViewHeight)) || 0,
+                          }
+                        ]} 
+                      />
+                    </View>
+                  )}
+                </View>
+
+                {/* Footer - Save Button */}
+                <View style={styles.modalFooter}>
+                  <Button onPress={handleSaveLog} disabled={!foodItem.trim() || !temperature.trim()} fullWidth size="lg">
+                    Save Log
+                  </Button>
+                </View>
               </View>
             </View>
-          </View>
-        </KeyboardAvoidingView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
       </Modal>
 
       {/* Date Picker Modal */}
       <DateTimePickerModal
         isVisible={showDatePicker}
         mode="date"
+        date={selectedDate}
         onConfirm={(date) => {
           setSelectedDate(date);
           setShowDatePicker(false);
         }}
         onCancel={() => setShowDatePicker(false)}
         maximumDate={new Date()}
+        themeVariant="light"
       />
     </SafeAreaView>
   );
@@ -577,6 +618,10 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 20,
   },
+  modalSafeArea: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
   overlay: {
     flex: 1,
     justifyContent: "flex-end",
@@ -593,27 +638,79 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
+    width: "100%",
+    maxHeight: SCREEN_HEIGHT * 0.85,
+    minHeight: 400,
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.lg,
-    paddingBottom: Spacing.xl,
-    minHeight: 300,
+    paddingBottom: 0,
+    flexDirection: "column",
   },
-  header: {
+  scrollContainer: {
+    flex: 1,
+    position: "relative",
+  },
+  modalScrollView: {
+    flex: 1,
+    minHeight: 200,
+  },
+  modalScrollContent: {
+    paddingBottom: Spacing.lg,
+  },
+  scrollFade: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 40,
+    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(0, 0, 0, 0.15)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  scrollIndicator: {
+    marginTop: 4,
+  },
+  scrollbarTrack: {
+    position: "absolute",
+    right: 4,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    backgroundColor: "rgba(0, 0, 0, 0.1)",
+    borderRadius: 2,
+    zIndex: 10,
+  },
+  scrollbarThumb: {
+    position: "absolute",
+    right: 0,
+    width: 4,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    borderRadius: 2,
+    minHeight: 30,
+  },
+  modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: Spacing.xl,
+    marginBottom: Spacing.lg,
   },
   titleContainer: {
     flex: 1,
   },
-  title: {
+  modalTitle: {
     fontSize: Typography.xl,
     fontWeight: "bold",
     color: Colors.textPrimary,
     marginBottom: Spacing.xs,
   },
-  date: {
+  modalDate: {
     fontSize: Typography.base,
     color: Colors.textSecondary,
   },
@@ -624,9 +721,6 @@ const styles = StyleSheet.create({
     fontSize: 24,
     color: Colors.textSecondary,
     fontWeight: "300",
-  },
-  form: {
-    marginBottom: Spacing.xl,
   },
   label: {
     fontSize: Typography.base,
@@ -642,8 +736,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.borderLight,
   },
-  buttonContainer: {
-    marginTop: "auto",
+  modalFooter: {
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xl,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLight,
+    backgroundColor: Colors.background,
   },
   typeSelector: {
     flexDirection: "row",

@@ -44,6 +44,11 @@ export default function CoolingScreen({ navigation }) {
   const [startTemp, setStartTemp] = useState("");
   const [coolingTime, setCoolingTime] = useState("");
   const [endTemp, setEndTemp] = useState("");
+  
+  // Scrollbar state
+  const [scrollPosition, setScrollPosition] = useState(0);
+  const [scrollContentHeight, setScrollContentHeight] = useState(0);
+  const [scrollViewHeight, setScrollViewHeight] = useState(0);
 
   // Hide Android navigation bar
   const navigationBar = useNavigationBar();
@@ -294,15 +299,17 @@ export default function CoolingScreen({ navigation }) {
         presentationStyle={Platform.OS === "ios" ? "overFullScreen" : undefined}
         onRequestClose={() => setShowAddModal(false)}
       >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{ flex: 1 }}
-        >
-          <View style={styles.overlay}>
-            <TouchableOpacity style={styles.backdrop} onPress={() => setShowAddModal(false)} activeOpacity={1} />
-            <View style={styles.modal}>
-              {/* Header */}
-              <View style={styles.modalHeader}>
+        <SafeAreaView style={styles.modalSafeArea} edges={['bottom']}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ flex: 1 }}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+          >
+            <View style={styles.overlay}>
+              <TouchableOpacity style={styles.backdrop} onPress={() => setShowAddModal(false)} activeOpacity={1} />
+              <View style={styles.modal}>
+                {/* Header */}
+                <View style={styles.modalHeader}>
                 <View style={styles.titleContainer}>
                   <Text style={styles.modalTitle}>Add Cooling Log</Text>
                   <Text style={styles.date}>{formatSelectedDate(selectedDate)}</Text>
@@ -310,15 +317,23 @@ export default function CoolingScreen({ navigation }) {
                 <TouchableOpacity style={styles.closeButton} onPress={() => setShowAddModal(false)} activeOpacity={0.7}>
                   <Text style={styles.closeText}>×</Text>
                 </TouchableOpacity>
-              </View>
+                </View>
 
               {/* Form - Scrollable */}
-              <ScrollView
-                style={styles.modalScrollView}
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={styles.modalScrollContent}
-                showsVerticalScrollIndicator={true}
-              >
+              <View style={styles.scrollContainer}>
+                <ScrollView
+                  style={styles.modalScrollView}
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={styles.modalScrollContent}
+                  showsVerticalScrollIndicator={false}
+                  onScroll={(event) => {
+                    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+                    setScrollPosition(contentOffset.y);
+                    setScrollContentHeight(contentSize.height);
+                    setScrollViewHeight(layoutMeasurement.height);
+                  }}
+                  scrollEventThrottle={16}
+                >
                 <Text style={styles.label}>Food Item</Text>
                 <TextInput
                   style={styles.input}
@@ -355,12 +370,27 @@ export default function CoolingScreen({ navigation }) {
                   onChangeText={setEndTemp}
                   placeholder="Enter end temperature"
                   placeholderTextColor={Colors.gray200}
-                  keyboardType="numeric"
-                />
-              </ScrollView>
+                    keyboardType="numeric"
+                  />
+                  </ScrollView>
+                  {/* Custom Scrollbar */}
+                  {scrollContentHeight > scrollViewHeight && (
+                    <View style={styles.scrollbarTrack} pointerEvents="none">
+                      <View 
+                        style={[
+                          styles.scrollbarThumb,
+                          {
+                            height: Math.max(30, (scrollViewHeight / scrollContentHeight) * scrollViewHeight),
+                            top: (scrollPosition / (scrollContentHeight - scrollViewHeight)) * (scrollViewHeight - Math.max(30, (scrollViewHeight / scrollContentHeight) * scrollViewHeight)) || 0,
+                          }
+                        ]} 
+                      />
+                    </View>
+                  )}
+                </View>
 
               {/* Footer - Save Button */}
-              <View style={styles.modalFooter}>
+                <View style={styles.modalFooter}>
                 <Button 
                   onPress={handleSaveLog} 
                   disabled={!foodItem.trim() || !startTemp.trim() || !coolingTime.trim() || !endTemp.trim()} 
@@ -369,22 +399,25 @@ export default function CoolingScreen({ navigation }) {
                 >
                   Save Log
                 </Button>
+                </View>
               </View>
             </View>
-          </View>
-        </KeyboardAvoidingView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
       </Modal>
 
       {/* Date Picker Modal */}
       <DateTimePickerModal
         isVisible={showDatePicker}
         mode="date"
+        date={selectedDate}
         onConfirm={(date) => {
           setSelectedDate(date);
           setShowDatePicker(false);
         }}
         onCancel={() => setShowDatePicker(false)}
         maximumDate={new Date()}
+        themeVariant="light"
       />
     </SafeAreaView>
   );
@@ -578,6 +611,10 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 20,
   },
+  modalSafeArea: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
   overlay: {
     flex: 1,
     justifyContent: "flex-end",
@@ -595,10 +632,12 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     width: "100%",
-    maxHeight: SCREEN_HEIGHT * 0.75,
+    maxHeight: SCREEN_HEIGHT * 0.85,
+    minHeight: 400,
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.lg,
-    paddingBottom: Spacing.xl,
+    paddingBottom: 0,
+    flexDirection: "column",
   },
   modalHeader: {
     flexDirection: "row",
@@ -627,11 +666,54 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontWeight: "300",
   },
+  scrollContainer: {
+    flex: 1,
+    position: "relative",
+  },
   modalScrollView: {
-    maxHeight: SCREEN_HEIGHT * 0.75 - 200,
+    flex: 1,
+    minHeight: 200,
   },
   modalScrollContent: {
     paddingBottom: Spacing.lg,
+  },
+  scrollFade: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 40,
+    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(0, 0, 0, 0.15)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  scrollIndicator: {
+    marginTop: 4,
+  },
+  scrollbarTrack: {
+    position: "absolute",
+    right: 4,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    backgroundColor: "rgba(0, 0, 0, 0.1)",
+    borderRadius: 2,
+    zIndex: 10,
+  },
+  scrollbarThumb: {
+    position: "absolute",
+    right: 0,
+    width: 4,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    borderRadius: 2,
+    minHeight: 30,
   },
   label: {
     fontSize: Typography.base,
@@ -652,6 +734,7 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.xl,
     borderTopWidth: 1,
     borderTopColor: Colors.borderLight,
+    backgroundColor: Colors.background,
   },
 });
 
