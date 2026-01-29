@@ -70,6 +70,9 @@ async function resetRestaurantData(restaurantId) {
     // 5. Reset Closing Checklist (set done: false)
     await resetClosingChecklist(restaurantId);
     
+    // 6. Reset Opening Checklist (set done: false)
+    await resetOpeningChecklist(restaurantId);
+    
     console.log(`✅ Restaurant ${restaurantId} reset completed`);
     
   } catch (error) {
@@ -230,6 +233,41 @@ async function resetClosingChecklist(restaurantId) {
     
   } catch (error) {
     console.error('❌ Error resetting closing checklist:', error);
+    throw error;
+  }
+}
+
+/**
+ * Reset opening checklist (set done: false for all items)
+ * @param {string} restaurantId - Restaurant ID
+ */
+async function resetOpeningChecklist(restaurantId) {
+  try {
+    console.log(`🌅 Resetting opening checklist for restaurant ${restaurantId}`);
+    
+    const collectionRef = db.collection('restaurants').doc(restaurantId).collection('openinglist');
+    const snapshot = await collectionRef.get();
+    
+    if (snapshot.empty) {
+      console.log('No opening checklist items to reset');
+      return;
+    }
+    
+    console.log(`Found ${snapshot.size} opening checklist items to reset`);
+    
+    const batch = db.batch();
+    
+    snapshot.forEach(doc => {
+      batch.update(doc.ref, {
+        done: false
+      });
+    });
+    
+    await batch.commit();
+    console.log(`🌅 Reset ${snapshot.size} opening checklist items`);
+    
+  } catch (error) {
+    console.error('❌ Error resetting opening checklist:', error);
     throw error;
   }
 }
