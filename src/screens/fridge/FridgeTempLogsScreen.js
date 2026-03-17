@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
-import { getDocs, addDoc, serverTimestamp, doc, getDoc, updateDoc, query, where, Timestamp, orderBy } from "firebase/firestore";
+import { getDocs, addDoc, serverTimestamp, doc, updateDoc, Timestamp } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
 import { auth } from "../../../firebase";
@@ -19,7 +19,8 @@ import DateTimePickerModal from "react-native-modal-datetime-picker";
 import { 
   getCachedFridgeLogs, 
   cacheFridgeLogsOffline,
-  addFridgeLogOffline
+  addFridgeLogOffline,
+  offlineCapableUpdate,
 } from "../../utils/offlineSync";
 import { addNetworkListener, getNetworkStatus } from '../../utils/networkMonitor';
 
@@ -44,6 +45,7 @@ export default function FridgeTempLogsScreen({ navigation }) {
   const navigationBar = useNavigationBar();
   navigationBar.useHidden(); // Use hidden mode for complete immersion
   const [refreshing, setRefreshing] = useState(false);
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   // Monitor network status
   useEffect(() => {
@@ -375,152 +377,216 @@ export default function FridgeTempLogsScreen({ navigation }) {
     }));
   };
 
-  // Save temperature for a specific period
-  const saveCompleteLog = async (logId) => {
-    if (!restaurantId || !auth.currentUser) {
-      console.error('❌ Missing restaurant ID or user authentication');
-      return;
-    }
+  /** Calendar bounds for the selected logging day */
+  const getSelectedDayBounds = () => {
+    const startOfDay = new Date(selectedDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(selectedDate);
+    endOfDay.setHours(23, 59, 59, 999);
+    return { startOfDay, endOfDay };
+  };
 
-    const amTempValue = tempInputs[`${logId}_AM`];
-    const pmTempValue = tempInputs[`${logId}_PM`];
-
-    // Validate that at least one temperature is provided
-    if ((!amTempValue || amTempValue.trim() === '') && (!pmTempValue || pmTempValue.trim() === '')) {
-      console.error('❌ At least one temperature value must be provided');
-      return;
-    }
-
-    // Validate temperature values if they are provided
-    if (amTempValue && amTempValue.trim() !== '') {
-      const amTempNumber = parseFloat(amTempValue);
-      if (isNaN(amTempNumber)) {
-        console.error('❌ Invalid AM temperature value:', amTempValue);
-        return;
-      }
-    }
-
-    if (pmTempValue && pmTempValue.trim() !== '') {
-      const pmTempNumber = parseFloat(pmTempValue);
-      if (isNaN(pmTempNumber)) {
-        console.error('❌ Invalid PM temperature value:', pmTempValue);
-        return;
-      }
-    }
-
-    try {
-      console.log(`📝 Saving complete log for ${logId}:`, { AM: amTempValue, PM: pmTempValue });
-      
-      const fridgeDoc = logs.find(log => log.id === logId);
-      if (!fridgeDoc) {
-        console.error('❌ Fridge document not found:', logId);
-        return;
-      }
-
-      // Check if this log already has saved data that we need to preserve
-      const existingAM = fridgeDoc.temperatureAM || '';
-      const existingPM = fridgeDoc.temperaturePM || '';
-
-      // Prepare data for saving - preserve existing values if not updating
-      const saveData = {
-        fridgeName: fridgeDoc.fridgeName,
-        fridgeId: fridgeDoc.fridgeId,
-        fridgeType: fridgeDoc.fridgeType || 'fridge',
-        done: true,
-        createdAt: Timestamp.fromDate(selectedDate), // Use selected date
-        loggedBy: {
-          userId: auth.currentUser.uid,
-          email: auth.currentUser.email
+  /**
+   * Find a fridgelogs document for the same fridge name on the selected calendar day.
+   * Matches existing single-save behavior (same fridge + same day => update).
+   */
+  const findExistingLogForFridgeAndDate = (allDocs, fridgeName, startOfDay, endOfDay) => {
+    for (const docSnap of allDocs) {
+      const data = docSnap.data();
+      const logDate = data.createdAt;
+      if (data.fridgeName !== fridgeName || !logDate) continue;
+      try {
+        let logDateTime;
+        if (typeof logDate.toDate === "function") logDateTime = logDate.toDate();
+        else if (logDate instanceof Date) logDateTime = logDate;
+        else if (logDate && typeof logDate.seconds === "number")
+          logDateTime = new Date(logDate.seconds * 1000);
+        else logDateTime = new Date(logDate);
+        if (
+          !isNaN(logDateTime.getTime()) &&
+          logDateTime >= startOfDay &&
+          logDateTime <= endOfDay
+        ) {
+          return { docSnap, data };
         }
-      };
+      } catch (e) {
+        console.warn("Error parsing date for existing log:", docSnap.id, e);
+      }
+    }
+    return null;
+  };
 
-      // Preserve existing values and only update what's being changed
-      saveData.temperatureAM = (amTempValue && amTempValue.trim() !== '') ? amTempValue.trim() : existingAM;
-      saveData.temperaturePM = (pmTempValue && pmTempValue.trim() !== '') ? pmTempValue.trim() : existingPM;
+  /** Merge inputs with stored row values; skip row if nothing to persist */
+  const mergeFridgeTemps = (fridgeDoc, amRaw, pmRaw) => {
+    const existingAM = (fridgeDoc.temperatureAM || "").toString().trim();
+    const existingPM = (fridgeDoc.temperaturePM || "").toString().trim();
+    const am = (amRaw || "").toString().trim();
+    const pm = (pmRaw || "").toString().trim();
+    const finalAM = am !== "" ? am : existingAM;
+    const finalPM = pm !== "" ? pm : existingPM;
+    if (finalAM === "" && finalPM === "") return null;
+    return { finalAM, finalPM, existingAM, existingPM };
+  };
 
-      console.log(`📝 Preserving existing temps - AM: "${existingAM}" → "${saveData.temperatureAM}", PM: "${existingPM}" → "${saveData.temperaturePM}"`);
+  const validateTempField = (label, value) => {
+    if (!value || value.trim() === "") return null;
+    const n = parseFloat(value);
+    if (isNaN(n)) return `${label} (“${value}”) is not a valid number`;
+    return null;
+  };
 
-      // Use offline-capable function
+  /** Build Firestore payload for one fridge (shared shape with previous saveCompleteLog) */
+  const buildSavePayload = (fridgeDoc, finalAM, finalPM) => ({
+    fridgeName: fridgeDoc.fridgeName,
+    fridgeId: fridgeDoc.fridgeId,
+    fridgeType: fridgeDoc.fridgeType || "fridge",
+    done: true,
+    createdAt: Timestamp.fromDate(selectedDate),
+    temperatureAM: finalAM,
+    temperaturePM: finalPM,
+    loggedBy: {
+      userId: auth.currentUser.uid,
+      email: auth.currentUser.email,
+    },
+  });
+
+  /**
+   * Save all visible fridge rows in one action. Skips rows with no AM/PM to save.
+   * Invalid numeric fields are reported without failing the whole batch for other fridges—
+   * we collect errors and only persist valid rows; if any errors, user is alerted.
+   */
+  const saveAllFridgeLogs = async () => {
+    if (!restaurantId || !auth.currentUser) {
+      console.warn("Cannot save: missing restaurant or sign-in.");
+      return;
+    }
+    if (filteredLogs.length === 0) return;
+
+    const { startOfDay, endOfDay } = getSelectedDayBounds();
+    const validationErrors = [];
+    const pending = [];
+
+    for (const fridgeDoc of filteredLogs) {
+      const amRaw = tempInputs[`${fridgeDoc.id}_AM`];
+      const pmRaw = tempInputs[`${fridgeDoc.id}_PM`];
+      const merged = mergeFridgeTemps(fridgeDoc, amRaw, pmRaw);
+      if (!merged) continue;
+
+      const errAM = validateTempField(`${fridgeDoc.fridgeName} AM`, merged.finalAM);
+      const errPM = validateTempField(`${fridgeDoc.fridgeName} PM`, merged.finalPM);
+      if (errAM) validationErrors.push(errAM);
+      if (errPM) validationErrors.push(errPM);
+      if (errAM || errPM) continue;
+
+      pending.push({
+        fridgeDoc,
+        finalAM: merged.finalAM,
+        finalPM: merged.finalPM,
+      });
+    }
+
+    if (validationErrors.length > 0) {
+      console.warn("Save all: fix temperature values:", validationErrors);
+      return;
+    }
+
+    if (pending.length === 0) {
+      return;
+    }
+
+    setBulkSaving(true);
+    try {
       if (isOffline) {
-        console.log('📱 Offline mode: adding fridge log to pending queue');
-        await addFridgeLogOffline(restaurantId, saveData);
+        const fridgeLogsCollection = getRestaurantCollection(restaurantId, "fridgelogs");
+        let allDocs = [];
+        try {
+          const snap = await getDocs(fridgeLogsCollection);
+          allDocs = snap.docs;
+        } catch (_) {
+          allDocs = [];
+        }
 
-        // Update local state immediately for instant feedback
-        const updatedLogs = logs.map(log =>
-          log.id === logId
-            ? { ...log, temperatureAM: saveData.temperatureAM, temperaturePM: saveData.temperaturePM, done: true, isOffline: true }
-            : log
-        );
-        setLogs(updatedLogs);
-        await cacheFridgeLogsOffline(updatedLogs);
-      } else {
-        // Online: Check if a log already exists for this fridge and date
-        const fridgeLogsCollection = getRestaurantCollection(restaurantId, 'fridgelogs');
+        const cachedAsDocs = (await getCachedFridgeLogs()).map((row) => ({
+          id: row.id,
+          data: () => row,
+        }));
 
-        // Simple approach: get all logs and filter in JavaScript to avoid Firestore query limitations
-        const allLogsSnapshot = await getDocs(fridgeLogsCollection);
+        const docList = allDocs.length ? allDocs : cachedAsDocs;
+        let updatedLogs = logs.map((log) => ({ ...log }));
 
-        // Look for existing log for this fridge on this date
-        const startOfDay = new Date(selectedDate);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(selectedDate);
-        endOfDay.setHours(23, 59, 59, 999);
+        for (const { fridgeDoc, finalAM, finalPM } of pending) {
+          const base = buildSavePayload(fridgeDoc, finalAM, finalPM);
+          const payload = { ...base, recordedAt: serverTimestamp() };
+          const match = findExistingLogForFridgeAndDate(
+            docList,
+            fridgeDoc.fridgeName,
+            startOfDay,
+            endOfDay
+          );
 
-        let existingLogDoc = null;
-        let existingData = null;
+          if (match && !String(match.docSnap.id).startsWith("offline_")) {
+            await offlineCapableUpdate(
+              restaurantId,
+              "fridgelogs",
+              match.docSnap.id,
+              payload,
+              false
+            );
+          } else {
+            await addFridgeLogOffline(restaurantId, payload);
+          }
 
-        // Find matching log by filtering in JavaScript
-        for (const docSnap of allLogsSnapshot.docs) {
-          const data = docSnap.data();
-          const logDate = data.createdAt;
-
-          // Check if this is the same fridge
-          if (data.fridgeName === fridgeDoc.fridgeName && logDate) {
-            try {
-              let logDateTime;
-              if (typeof logDate.toDate === 'function') {
-                logDateTime = logDate.toDate();
-              } else if (logDate instanceof Date) {
-                logDateTime = logDate;
-              } else {
-                logDateTime = new Date(logDate);
-              }
-
-              // Check if it's the same date
-              if (!isNaN(logDateTime.getTime()) && logDateTime >= startOfDay && logDateTime <= endOfDay) {
-                existingLogDoc = docSnap;
-                existingData = data;
-                break;
-              }
-            } catch (error) {
-              console.warn('Error parsing date for existing log:', docSnap.id, error);
-            }
+          const idx = updatedLogs.findIndex(
+            (l) =>
+              l.fridgeName === fridgeDoc.fridgeName ||
+              l.id === fridgeDoc.id
+          );
+          if (idx >= 0) {
+            updatedLogs[idx] = {
+              ...updatedLogs[idx],
+              temperatureAM: finalAM,
+              temperaturePM: finalPM,
+              done: true,
+              isOffline: true,
+            };
           }
         }
 
-        if (existingLogDoc && existingData) {
-          // Update existing log
-          const updateData = {
-            ...saveData,
-            temperatureAM: (amTempValue && amTempValue.trim() !== '') ? amTempValue.trim() : (existingData.temperatureAM || ''),
-            temperaturePM: (pmTempValue && pmTempValue.trim() !== '') ? pmTempValue.trim() : (existingData.temperaturePM || ''),
-            recordedAt: serverTimestamp()
-          };
+        setLogs(updatedLogs);
+        await cacheFridgeLogsOffline(updatedLogs);
+      } else {
+        const fridgeLogsCollection = getRestaurantCollection(restaurantId, "fridgelogs");
+        const allLogsSnapshot = await getDocs(fridgeLogsCollection);
 
-          await updateDoc(doc(fridgeLogsCollection, existingLogDoc.id), updateData);
-          console.log('✅ Updated existing fridge log successfully');
-        } else {
-          // Create new log
-          saveData.recordedAt = serverTimestamp();
-          await addDoc(fridgeLogsCollection, saveData);
-          console.log('✅ New fridge log created successfully');
+        for (const { fridgeDoc, finalAM, finalPM } of pending) {
+          const base = buildSavePayload(fridgeDoc, finalAM, finalPM);
+          const match = findExistingLogForFridgeAndDate(
+            allLogsSnapshot.docs,
+            fridgeDoc.fridgeName,
+            startOfDay,
+            endOfDay
+          );
+
+          if (match) {
+            await updateDoc(doc(fridgeLogsCollection, match.docSnap.id), {
+              ...base,
+              temperatureAM: finalAM,
+              temperaturePM: finalPM,
+              recordedAt: serverTimestamp(),
+            });
+          } else {
+            await addDoc(fridgeLogsCollection, {
+              ...base,
+              recordedAt: serverTimestamp(),
+            });
+          }
         }
-
-        // Refresh logs
         await fetchLogs();
       }
     } catch (error) {
-      console.error('❌ Error saving complete log:', error);
+      console.error("❌ Bulk save error:", error);
+    } finally {
+      setBulkSaving(false);
     }
   };
 
@@ -700,15 +766,6 @@ export default function FridgeTempLogsScreen({ navigation }) {
                           </View>
                         </View>
 
-                        {/* Save Log Button */}
-                        <TouchableOpacity
-                          style={styles.saveLogButton}
-                          onPress={() => saveCompleteLog(log.id)}
-                          activeOpacity={0.7}
-                        >
-                          <Ionicons name="save-outline" size={20} color="#fff" />
-                          <Text style={styles.saveLogButtonText}>Save Log</Text>
-                        </TouchableOpacity>
                       </View>
                     )}
                   </View>
@@ -717,6 +774,29 @@ export default function FridgeTempLogsScreen({ navigation }) {
             )
           )}
         </View>
+
+        {!loading && filteredLogs.length > 0 && (
+          <View style={styles.saveAllSection}>
+            <TouchableOpacity
+              style={[
+                styles.saveAllButton,
+                bulkSaving && styles.saveAllButtonDisabled,
+              ]}
+              onPress={saveAllFridgeLogs}
+              disabled={bulkSaving}
+              activeOpacity={0.85}
+            >
+              {bulkSaving ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="save-outline" size={22} color="#fff" />
+                  <Text style={styles.saveAllButtonText}>Save all</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
 
       {/* Date Picker Modal */}
@@ -941,21 +1021,33 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginLeft: 4,
   },
-  saveLogButton: {
+  saveAllSection: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xl,
+    marginTop: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: "#e2e8f0",
+    backgroundColor: "#f8fafc",
+  },
+  saveAllButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: Colors.primary,
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginTop: Spacing.md,
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    minHeight: 52,
   },
-  saveLogButtonText: {
-    fontSize: 16,
+  saveAllButtonDisabled: {
+    opacity: 0.7,
+  },
+  saveAllButtonText: {
+    fontSize: 17,
     fontFamily: Typography.fontSemiBold,
     color: "#fff",
-    marginLeft: 8,
+    marginLeft: 10,
   },
   emptyState: {
     alignItems: "center",

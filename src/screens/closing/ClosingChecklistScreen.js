@@ -1,3 +1,7 @@
+/**
+ * Closing checklist: one-off tasks in closinglist (unchanged behavior).
+ * Cleaning Checklist (recurring) lives in CleaningChecklistScreen.
+ */
 import React, { useState, useEffect, useMemo } from "react";
 import {
   View,
@@ -35,31 +39,28 @@ import { getFormattedTodayDate } from "../../utils/dateUtils";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 import { getLocalDateKey } from "../../utils/cleaningHelpers";
 
-export default function OpeningChecklistScreen({ navigation }) {
+export default function ClosingChecklistScreen({ navigation }) {
   const { restaurantId } = useRestaurant();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [taskName, setTaskName] = useState("");
   const [currentDate, setCurrentDate] = useState("");
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [logsForDate, setLogsForDate] = useState({});
-  const [modalVisible, setModalVisible] = useState(false);
-  const [taskName, setTaskName] = useState("");
 
-  // Hide Android navigation bar
   const navigationBar = useNavigationBar();
-  navigationBar.useHidden(); // Use hidden mode for complete immersion
+  navigationBar.useHidden();
 
   useEffect(() => {
     setCurrentDate(getFormattedTodayDate());
-    console.log("🏪 Restaurant ID from context:", restaurantId);
-    console.log("👤 Current user:", auth.currentUser?.uid);
   }, []);
 
   const dateKey = useMemo(() => getLocalDateKey(selectedDate), [selectedDate]);
 
-  // Subscribe to opening tasks (definitions) in real time
+  // Subscribe to closing tasks (definitions) in real time
   useEffect(() => {
     if (!restaurantId) {
       setTasks([]);
@@ -69,7 +70,7 @@ export default function OpeningChecklistScreen({ navigation }) {
     }
     setLoading(true);
     const unsub = onSnapshot(
-      getRestaurantCollection(restaurantId, "openinglist"),
+      getRestaurantCollection(restaurantId, "closinglist"),
       (snapshot) => {
         const fetched = snapshot.docs.map((docSnap) => {
           const data = docSnap.data();
@@ -98,7 +99,7 @@ export default function OpeningChecklistScreen({ navigation }) {
       return;
     }
     const logsQuery = query(
-      getRestaurantCollection(restaurantId, "openingChecklistLogs"),
+      getRestaurantCollection(restaurantId, "closingChecklistLogs"),
       where("date", "==", dateKey)
     );
     const unsub = onSnapshot(
@@ -116,33 +117,19 @@ export default function OpeningChecklistScreen({ navigation }) {
     return () => unsub();
   }, [restaurantId, dateKey]);
 
-  // Pull to refresh handler
   const onRefresh = async () => {
     setRefreshing(true);
-    // data will be refreshed automatically by onSnapshot; we just flip the spinner off shortly
+    // data is driven by onSnapshot; just stop spinner after a short delay
     setTimeout(() => setRefreshing(false), 300);
   };
 
-  const handleAddTask = async () => {
-    if (!restaurantId || !auth.currentUser || !taskName.trim()) return;
-    try {
-      await addDoc(getRestaurantCollection(restaurantId, "openinglist"), {
-        createdAt: serverTimestamp(),
-        createdBy: auth.currentUser.uid,
-        name: taskName.trim(),
-        done: false,
-        restaurantId,
-        completedAt: null,
-      });
-      setTaskName("");
-      setModalVisible(false);
-      await fetchTasks();
-    } catch (e) {
-      console.error("Error adding opening task:", e);
-    }
+  const formatSelectedDate = (date) => {
+    const dayName = date.toLocaleDateString("en-US", { weekday: "long" });
+    const monthName = date.toLocaleDateString("en-US", { month: "long" });
+    const dayNum = date.getDate();
+    return `${dayName}, ${monthName} ${dayNum}`;
   };
 
-  // Toggle completion for a task on the selected date
   const toggleTaskDone = async (task) => {
     if (!restaurantId || !auth.currentUser) return;
     const existing = logsForDate[task.id];
@@ -150,7 +137,7 @@ export default function OpeningChecklistScreen({ navigation }) {
     try {
       const logRef = getRestaurantDoc(
         restaurantId,
-        "openingChecklistLogs",
+        "closingChecklistLogs",
         `${dateKey}_${task.id}`
       );
       await setDoc(
@@ -166,34 +153,43 @@ export default function OpeningChecklistScreen({ navigation }) {
         { merge: true }
       );
     } catch (e) {
-      console.error("Error updating opening task log:", e);
+      console.error(e);
     }
   };
 
-  const formatSelectedDate = (date) => {
-    const dayName = date.toLocaleDateString("en-US", { weekday: "long" });
-    const monthName = date.toLocaleDateString("en-US", { month: "long" });
-    const dayNum = date.getDate();
-    return `${dayName}, ${monthName} ${dayNum}`;
+  const handleAddTask = async () => {
+    if (!restaurantId || !auth.currentUser || !taskName.trim()) return;
+    try {
+      await addDoc(getRestaurantCollection(restaurantId, "closinglist"), {
+        createdAt: serverTimestamp(),
+        createdBy: auth.currentUser.uid,
+        name: taskName.trim(),
+        done: false,
+        restaurantId,
+        completedAt: null,
+      });
+      setTaskName("");
+      setModalVisible(false);
+      await fetchTasks();
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: 40 }}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        contentContainerStyle={{ paddingBottom: 100 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        {/* Header */}
         <View style={styles.header}>
           <View style={styles.backHeader}>
-            <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()} activeOpacity={0.7}>
+            <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
               <Text style={styles.backArrow}>‹</Text>
             </TouchableOpacity>
             <View style={styles.titleContainer}>
-              <Text style={styles.title}>Opening Checklist</Text>
+              <Text style={styles.title}>Closing Checklist</Text>
               <Text style={styles.date}>{currentDate}</Text>
             </View>
           </View>
@@ -216,7 +212,7 @@ export default function OpeningChecklistScreen({ navigation }) {
 
         <TouchableOpacity
           style={styles.manageBtn}
-          onPress={() => navigation.navigate("OpeningChecklistManageTasks")}
+          onPress={() => navigation.navigate("ClosingChecklistManageTasks")}
           activeOpacity={0.85}
         >
           <Ionicons name="settings-outline" size={22} color={Colors.primary} />
@@ -229,68 +225,41 @@ export default function OpeningChecklistScreen({ navigation }) {
           />
         </TouchableOpacity>
 
-        {/* Tasks List */}
         <View style={styles.section}>
           {loading ? (
             <ActivityIndicator size="large" style={{ marginTop: 40 }} />
+          ) : tasks.length === 0 ? (
+            <Text style={styles.emptyState}>No closing tasks yet. Add one to get started.</Text>
           ) : (
-            <>
-              {/* All Tasks */}
-              {tasks.length > 0 && (
-                <>
-                  <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Opening Tasks ({tasks.length})</Text>
+            <View style={styles.tasksContainer}>
+              {tasks.map((task) => (
+                <TouchableOpacity
+                  key={task.id}
+                  style={styles.taskCard}
+                  onPress={() => toggleTaskDone(task)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.taskLeft}>
+                    {logsForDate[task.id]?.completed === true ? (
+                      <Ionicons name="checkmark-circle" size={24} color={Colors.primary} style={styles.checkCircle} />
+                    ) : (
+                      <Ionicons name="ellipse-outline" size={24} color="#A0A7B3" style={styles.checkCircle} />
+                    )}
+                    <Text
+                      style={[
+                        styles.taskTitle,
+                        logsForDate[task.id]?.completed === true && {
+                          textDecorationLine: "line-through",
+                          opacity: 0.6,
+                        },
+                      ]}
+                    >
+                      {task.title}
+                    </Text>
                   </View>
-                  <View style={styles.tasksContainer}>
-                    {tasks.map((task) => (
-                      <TouchableOpacity
-                        key={task.id}
-                        style={styles.taskCard}
-                        onPress={() => toggleTaskDone(task)}
-                        activeOpacity={0.7}
-                      >
-                        <View style={styles.taskLeft}>
-                          {logsForDate[task.id]?.completed === true ? (
-                            <Ionicons name="checkmark-circle" size={24} color="#2563eb" style={styles.checkCircle} />
-                          ) : (
-                            <Ionicons name="ellipse-outline" size={24} color="#A0A7B3" style={styles.checkCircle} />
-                          )}
-                          <View style={styles.taskContent}>
-                            <Text
-                              style={[
-                                styles.taskTitle,
-                                logsForDate[task.id]?.completed === true && {
-                                  textDecorationLine: "line-through",
-                                  opacity: 0.6,
-                                },
-                              ]}
-                            >
-                              {task.title}
-                            </Text>
-                          </View>
-                        </View>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </>
-              )}
-
-              {/* Empty state */}
-              {tasks.length === 0 && (
-                <>
-                  <Text style={styles.emptyState}>No opening tasks found.</Text>
-                  <Text style={[styles.emptyState, {marginTop: 10, fontSize: 14}]}>
-                    Restaurant ID: {restaurantId || 'Not found'}
-                  </Text>
-                  <Text style={[styles.emptyState, {marginTop: 5, fontSize: 14}]}>
-                    Total tasks in state: {tasks.length}
-                  </Text>
-                  <Text style={[styles.emptyState, {marginTop: 5, fontSize: 14}]}>
-                    User authenticated: {auth.currentUser ? 'Yes' : 'No'}
-                  </Text>
-                </>
-              )}
-            </>
+                </TouchableOpacity>
+              ))}
+            </View>
           )}
         </View>
       </ScrollView>
@@ -306,60 +275,27 @@ export default function OpeningChecklistScreen({ navigation }) {
         maximumDate={new Date()}
         themeVariant="light"
       />
+
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
-  appTitle: {
-    fontFamily: Typography.fontBold,
-    fontSize: 28,
-    color: "#2563eb",
-    textAlign: "center",
-    marginTop: 12,
-    marginBottom: 8,
-  },
+  safeArea: { flex: 1, backgroundColor: "#fff" },
   header: {
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.lg + getAndroidTitleMargin(),
     paddingBottom: Spacing.md,
   },
-  backHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "flex-start",
-    width: "100%",
-  },
-  backButton: {
-    marginRight: Spacing.md,
-    padding: Spacing.xs,
-  },
-  backArrow: {
-    fontSize: 35,
-    color: Colors.textPrimary,
-    fontWeight: "300",
-  },
-  titleContainer: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 26,
-    fontFamily: Typography.fontBold,
-    color: Colors.textPrimary,
-  },
-  date: {
-    fontSize: Typography.md,
-    color: Colors.textSecondary,
-    marginTop: Spacing.xs,
-  },
-  section: {
-    paddingHorizontal: Spacing.lg,
-    marginTop: Spacing.md,
-  },
+  backHeader: { flexDirection: "row", alignItems: "center", width: "100%" },
+  backButton: { marginRight: Spacing.md, padding: Spacing.xs },
+  backArrow: { fontSize: 35, color: Colors.textPrimary, fontWeight: "300" },
+  titleContainer: { flex: 1 },
+  title: { fontSize: 26, fontFamily: Typography.fontBold, color: Colors.textPrimary },
+  date: { fontSize: Typography.md, color: Colors.textSecondary, marginTop: Spacing.xs },
+  section: { paddingHorizontal: Spacing.lg, marginTop: Spacing.md },
+  emptyState: { textAlign: "center", marginTop: 40, color: Colors.textSecondary, fontSize: Typography.md },
+  tasksContainer: { gap: Spacing.md },
   dateSelector: {
     flexDirection: "row",
     alignItems: "center",
@@ -372,14 +308,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e2e8f0",
   },
-  dateLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-  dateInfo: {
-    marginLeft: Spacing.md,
-  },
+  dateLeft: { flexDirection: "row", alignItems: "center", flex: 1 },
+  dateInfo: { marginLeft: Spacing.md },
   dateLabel: {
     fontSize: 13,
     fontFamily: Typography.fontRegular,
@@ -391,53 +321,17 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontSemiBold,
     color: Colors.textPrimary,
   },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginVertical: Spacing.md,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontFamily: Typography.fontBold,
-    color: Colors.textPrimary,
-  },
-  emptyState: {
-    textAlign: "center",
-    marginTop: 40,
-    fontSize: Typography.md,
-    color: Colors.textSecondary,
-    fontStyle: 'italic',
-  },
-  tasksContainer: {
-    gap: Spacing.md,
-  },
   taskCard: {
-    backgroundColor: "#f8fafc",
+    backgroundColor: "#F9FAFB",
     borderRadius: 16,
-    flexDirection: "row",
-    alignItems: "center",
     paddingVertical: 18,
     paddingHorizontal: 16,
-    justifyContent: "space-between",
-  },
-  taskLeft: {
     flexDirection: "row",
     alignItems: "center",
-    flex: 1,
   },
-  checkCircle: {
-    marginRight: 14,
-  },
-  taskContent: {
-    flex: 1,
-  },
-  taskTitle: {
-    fontFamily: Typography.fontBold,
-    fontSize: 18,
-    color: "#111",
-    marginBottom: 2,
-  },
+  taskLeft: { flexDirection: "row", alignItems: "center", flex: 1 },
+  checkCircle: { marginRight: 14 },
+  taskTitle: { fontFamily: Typography.fontBold, fontSize: 18, color: "#111", flex: 1 },
   manageBtn: {
     flexDirection: "row",
     alignItems: "center",

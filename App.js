@@ -17,6 +17,7 @@ import { setupFirestoreErrorHandling } from './src/utils/firestoreConnectionMana
 import { clearFirestoreCache, resetFirestoreConnection } from './firebase';
 import navigationBarUtils from './src/utils/navigationBar';
 import { initializeNetworkMonitor } from './src/utils/networkMonitor';
+import { scheduleDailyEHOReminders } from './src/utils/notifications';
 import InvoicesScreen from './src/screens/invoices/InvoicesScreen';
 import InvoiceDetailScreen from './src/screens/invoices/InvoiceDetailScreen';
 import RecipeDetailScreen from './src/screens/recipes/RecipeDetailScreen';
@@ -26,6 +27,10 @@ import AddRecipeScreen from './src/screens/recipes/AddRecipeScreen';
 import EditRecipeScreen from './src/screens/recipes/EditRecipeScreen';
 import FridgeTempLogsScreen from './src/screens/fridge/FridgeTempLogsScreen';
 import CleaningChecklistScreen from './src/screens/cleaning/CleaningChecklistScreen';
+import CleaningManageTasksScreen from './src/screens/cleaning/CleaningManageTasksScreen';
+import OpeningChecklistManageTasksScreen from './src/screens/opening/OpeningChecklistManageTasksScreen';
+import ClosingChecklistManageTasksScreen from './src/screens/closing/ClosingChecklistManageTasksScreen';
+import ClosingChecklistScreen from './src/screens/closing/ClosingChecklistScreen';
 import OpeningChecklistScreen from './src/screens/opening/OpeningChecklistScreen';
 import DeliveryTempLogsScreen from "./src/screens/delivery/DeliveryTempLogsScreen";
 import CoolingAndReheatingScreen from './src/screens/temperature/CoolingAndReheatingScreen';
@@ -34,6 +39,7 @@ import SousVideScreen from './src/screens/temperature/SousVideScreen';
 import HotHoldingScreen from './src/screens/temperature/HotHoldingScreen';
 import FoodSafetyMonitoringScreen from './src/screens/foodsafety/FoodSafetyMonitoringScreen';
 import ShellfishRecordingScreen from './src/screens/foodsafety/ShellfishRecordingScreen';
+import ThermometerCalibrationScreen from './src/screens/foodsafety/ThermometerCalibrationScreen';
 import MaintenanceIssuesScreen from './src/screens/maintenance/MaintenanceIssuesScreen';
 import HandoverScreen from './src/screens/handover/HandoverScreen';
 import HandoverCompletionScreen from './src/screens/handover/HandoverCompletionScreen';
@@ -108,6 +114,13 @@ export default function App() {
     initializeApp();
   }, []);
 
+  // Schedule daily EHO reminder notifications once the user is logged in.
+  React.useEffect(() => {
+    if (isUserLoggedIn) {
+      scheduleDailyEHOReminders();
+    }
+  }, [isUserLoggedIn]);
+
   // Show loading screen while checking auth or loading fonts
   if (!fontsLoaded || isUserLoggedIn === null || !servicesInitialized) {
     return (
@@ -146,6 +159,10 @@ export default function App() {
           <Stack.Screen name="FridgeTempLogs" component={FridgeTempLogsScreen} />
           <Stack.Screen name="OpeningChecklist" component={OpeningChecklistScreen} />
           <Stack.Screen name="CleaningChecklist" component={CleaningChecklistScreen} />
+          <Stack.Screen name="CleaningManageTasks" component={CleaningManageTasksScreen} />
+          <Stack.Screen name="ClosingChecklist" component={ClosingChecklistScreen} />
+          <Stack.Screen name="OpeningChecklistManageTasks" component={OpeningChecklistManageTasksScreen} />
+          <Stack.Screen name="ClosingChecklistManageTasks" component={ClosingChecklistManageTasksScreen} />
           <Stack.Screen name="DeliveryTempLogs" component={DeliveryTempLogsScreen} />
           <Stack.Screen name="CoolingAndReheating" component={CoolingAndReheatingScreen} />
           <Stack.Screen name="Cooling" component={CoolingScreen} />
@@ -153,6 +170,7 @@ export default function App() {
           <Stack.Screen name="HotHolding" component={HotHoldingScreen} />
           <Stack.Screen name="FoodSafetyMonitoring" component={FoodSafetyMonitoringScreen} />
           <Stack.Screen name="ShellfishRecording" component={ShellfishRecordingScreen} />
+          <Stack.Screen name="ThermometerCalibration" component={ThermometerCalibrationScreen} />
           <Stack.Screen name="MaintenanceIssues" component={MaintenanceIssuesScreen} />
           <Stack.Screen name="Handover" component={HandoverScreen} />
           <Stack.Screen name="HandoverCompletion" component={HandoverCompletionScreen} />

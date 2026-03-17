@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { getFormattedTodayDate } from '../../utils/dateUtils';
 import {
   View,
@@ -9,6 +9,7 @@ import {
   Image,
   RefreshControl,
   Linking,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, Feather, MaterialIcons } from '@expo/vector-icons';
@@ -20,6 +21,7 @@ import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection } from "../../utils/firestoreHelpers";
 import { auth, db } from "../../../firebase";
 import { groupPrepItemsByDay } from '../../utils/dateUtils';
+import { getTodayWeekdayName, getLocalDateKey, filterTasksForWeekday } from '../../utils/cleaningHelpers';
 import RestaurantSwitcherModal from '../../components/RestaurantSwitcherModal';
 
 const DashboardScreen = ({ navigation }) => {
@@ -31,10 +33,18 @@ const DashboardScreen = ({ navigation }) => {
   const [orderCount, setOrderCount] = useState(0);
   const [recipeCount, setRecipeCount] = useState(0);
   const [invoiceCount, setInvoiceCount] = useState(0);
-  const [taskCount, setTaskCount] = useState(0);
-  const [openingTaskCount, setOpeningTaskCount] = useState(0);
+  const [taskCount, setTaskCount] = useState(0); // closing checklist pending today
+  const [openingTaskCount, setOpeningTaskCount] = useState(0); // opening checklist pending today
   const [latestFridgeTemp, setLatestFridgeTemp] = useState('--°C');
   const [refreshing, setRefreshing] = useState(false);
+  const [cleaningTodayTotal, setCleaningTodayTotal] = useState(0);
+  const [cleaningTodayDone, setCleaningTodayDone] = useState(0);
+  const cleaningScheduledIdsRef = useRef(new Set());
+  const cleaningLogsRef = useRef([]);
+  const openingTaskIdsRef = useRef(new Set());
+  const openingLogsRef = useRef([]);
+  const closingTaskIdsRef = useRef(new Set());
+  const closingLogsRef = useRef([]);
 
   // Hide Android navigation bar
   const navigationBar = useNavigationBar();
@@ -168,39 +178,144 @@ const DashboardScreen = ({ navigation }) => {
       }
     );
 
-    // Real-time listener for tasks (closing checklist) with error handling - show all tasks
-    const unsubTasks = onSnapshot(
-      getRestaurantCollection(restaurantId, "closinglist"),
+    const dateKey = getLocalDateKey();
+    const weekday = getTodayWeekdayName();
+    const recountCleaningDone = () => {
+      const ids = cleaningScheduledIdsRef.current;
+      let done = 0;
+      cleaningLogsRef.current.forEach((row) => {
+        if (row.completed === true && ids.has(row.taskId)) done += 1;
+      });
+      setCleaningTodayDone(done);
+    };
+    const recountOpeningClosing = () => {
+      // Opening: pending = total definitions - completed logs for today
+      const openingIds = openingTaskIdsRef.current;
+      const openingDoneIds = new Set(
+        openingLogsRef.current
+          .filter((r) => r.completed === true)
+          .map((r) => r.taskId)
+      );
+      let openingDone = 0;
+      openingIds.forEach((id) => {
+        if (openingDoneIds.has(id)) openingDone += 1;
+      });
+      const openingPending = Math.max(0, openingIds.size - openingDone);
+      setOpeningTaskCount(openingPending);
+
+      // Closing
+      const closingIds = closingTaskIdsRef.current;
+      const closingDoneIds = new Set(
+        closingLogsRef.current
+          .filter((r) => r.completed === true)
+          .map((r) => r.taskId)
+      );
+      let closingDone = 0;
+      closingIds.forEach((id) => {
+        if (closingDoneIds.has(id)) closingDone += 1;
+      });
+      const closingPending = Math.max(0, closingIds.size - closingDone);
+      setTaskCount(closingPending);
+    };
+
+    const unsubCleaningTasks = onSnapshot(
+      getRestaurantCollection(restaurantId, 'cleaningTasks'),
       (snapshot) => {
-        console.log('📊 Dashboard: Found', snapshot.size, 'closing tasks');
-        snapshot.docs.forEach((doc, index) => {
-          console.log(`📋 Dashboard Task ${index + 1}:`, doc.data());
-        });
-        // set the pending tasks that marks not done
-        const pendingTasks = snapshot.docs.filter(doc => !doc.data().done);
-        setTaskCount(pendingTasks.length);
+        const tasks = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const scheduled = filterTasksForWeekday(tasks, weekday);
+        cleaningScheduledIdsRef.current = new Set(scheduled.map((t) => t.id));
+        setCleaningTodayTotal(scheduled.length);
+        recountCleaningDone();
       },
-      (error) => {
-        console.warn('Closing checklist listener error:', error);
-        setTaskCount(0);
+      () => {
+        setCleaningTodayTotal(0);
+        cleaningScheduledIdsRef.current = new Set();
+        setCleaningTodayDone(0);
+      }
+    );
+    const unsubCleaningLogs = onSnapshot(
+      query(
+        getRestaurantCollection(restaurantId, 'cleaningTaskLogs'),
+        where('date', '==', dateKey)
+      ),
+      (snapshot) => {
+        cleaningLogsRef.current = snapshot.docs.map((d) => {
+          const data = d.data();
+          return { taskId: data.taskId, completed: data.completed === true };
+        });
+        recountCleaningDone();
+      },
+      () => {
+        cleaningLogsRef.current = [];
+        setCleaningTodayDone(0);
       }
     );
 
-    // Real-time listener for opening checklist with error handling
+    // Opening checklist: definitions
     const unsubOpeningTasks = onSnapshot(
       getRestaurantCollection(restaurantId, "openinglist"),
       (snapshot) => {
-        console.log('📊 Dashboard: Found', snapshot.size, 'opening tasks');
-        snapshot.docs.forEach((doc, index) => {
-          console.log(`📋 Dashboard Opening Task ${index + 1}:`, doc.data());
-        });
-        // set the pending tasks that marks not done
-        const pendingOpeningTasks = snapshot.docs.filter(doc => !doc.data().done);
-        setOpeningTaskCount(pendingOpeningTasks.length);
+        const ids = new Set(snapshot.docs.map((d) => d.id));
+        openingTaskIdsRef.current = ids;
+        recountOpeningClosing();
       },
       (error) => {
         console.warn('Opening checklist listener error:', error);
-        setOpeningTaskCount(0);
+        openingTaskIdsRef.current = new Set();
+        recountOpeningClosing();
+      }
+    );
+
+    // Opening checklist: today's logs
+    const unsubOpeningLogs = onSnapshot(
+      query(
+        getRestaurantCollection(restaurantId, "openingChecklistLogs"),
+        where("date", "==", dateKey)
+      ),
+      (snapshot) => {
+        openingLogsRef.current = snapshot.docs.map((d) => {
+          const data = d.data();
+          return { taskId: data.taskId, completed: data.completed === true };
+        });
+        recountOpeningClosing();
+      },
+      () => {
+        openingLogsRef.current = [];
+        recountOpeningClosing();
+      }
+    );
+
+    // Closing checklist: definitions
+    const unsubClosingTasks = onSnapshot(
+      getRestaurantCollection(restaurantId, "closinglist"),
+      (snapshot) => {
+        const ids = new Set(snapshot.docs.map((d) => d.id));
+        closingTaskIdsRef.current = ids;
+        recountOpeningClosing();
+      },
+      (error) => {
+        console.warn('Closing checklist listener error:', error);
+        closingTaskIdsRef.current = new Set();
+        recountOpeningClosing();
+      }
+    );
+
+    // Closing checklist: today's logs
+    const unsubClosingLogs = onSnapshot(
+      query(
+        getRestaurantCollection(restaurantId, "closingChecklistLogs"),
+        where("date", "==", dateKey)
+      ),
+      (snapshot) => {
+        closingLogsRef.current = snapshot.docs.map((d) => {
+          const data = d.data();
+          return { taskId: data.taskId, completed: data.completed === true };
+        });
+        recountOpeningClosing();
+      },
+      () => {
+        closingLogsRef.current = [];
+        recountOpeningClosing();
       }
     );
 
@@ -210,8 +325,12 @@ const DashboardScreen = ({ navigation }) => {
       unsubRecipes();
       unsubFridgeTemp();
       unsubInvoices();
-      unsubTasks();
       unsubOpeningTasks();
+      unsubOpeningLogs();
+      unsubClosingTasks();
+      unsubClosingLogs();
+      unsubCleaningTasks();
+      unsubCleaningLogs();
     };
   }, [restaurantId]);
 
@@ -255,6 +374,17 @@ const DashboardScreen = ({ navigation }) => {
       iconColor: Colors.primary,
       iconType: 'ionicon',
       screen: 'FoodSafetyMonitoring',
+    },
+    {
+      title: 'Cleaning Checklist',
+      subtitle:
+        cleaningTodayTotal === 0
+          ? 'Recurring tasks by day of week'
+          : `${cleaningTodayDone}/${cleaningTodayTotal} done today`,
+      icon: 'brush-outline',
+      iconColor: Colors.primary,
+      iconType: 'ionicon',
+      screen: 'CleaningChecklist',
     },
   ];
 
@@ -364,7 +494,7 @@ const DashboardScreen = ({ navigation }) => {
                 } else if (stat.title === 'Opening Checklist') {
                   navigation.navigate('OpeningChecklist');
                 } else if (stat.title === 'Closing Checklist') {
-                  navigation.navigate('CleaningChecklist');
+                  navigation.navigate('ClosingChecklist');
                 }
               }}
             >
@@ -383,18 +513,14 @@ const DashboardScreen = ({ navigation }) => {
           ))}
         </View>
 
-        {/* Kitchen Management */}
-        <View style={styles.section}>
+        {/* All primary (blue) cards in one stack — vertical gap matches stats grid (Spacing.md) */}
+        <View style={styles.highlightStack}>
           <View style={styles.menuContainer}>
             {kitchenManagement.map((item, index) => (
               <TouchableOpacity
-                key={index}
+                key={`kitchen-${index}`}
                 style={styles.highlightedMenuItem}
-                onPress={() => {
-                  if (item.screen) {
-                    navigation.navigate(item.screen);
-                  }
-                }}
+                onPress={() => item.screen && navigation.navigate(item.screen)}
               >
                 <View style={styles.menuItemLeft}>
                   <View style={styles.highlightedMenuItemIcon}>
@@ -408,21 +534,11 @@ const DashboardScreen = ({ navigation }) => {
                 <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
               </TouchableOpacity>
             ))}
-          </View>
-        </View>
-
-        {/* Maintenance and Incidents */}
-        <View style={styles.section}>
-          <View style={styles.menuContainer}>
             {maintenanceManagement.map((item, index) => (
               <TouchableOpacity
-                key={index}
+                key={`maint-${index}`}
                 style={styles.highlightedMenuItem}
-                onPress={() => {
-                  if (item.screen) {
-                    navigation.navigate(item.screen);
-                  }
-                }}
+                onPress={() => item.screen && navigation.navigate(item.screen)}
               >
                 <View style={styles.menuItemLeft}>
                   <View style={styles.highlightedMenuItemIcon}>
@@ -436,12 +552,6 @@ const DashboardScreen = ({ navigation }) => {
                 <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
               </TouchableOpacity>
             ))}
-          </View>
-        </View>
-
-        {/* Admin Panel Button - placed just below with matching style */}
-        <View style={styles.section}>
-          <View style={styles.menuContainer}>
             <TouchableOpacity
               style={styles.highlightedMenuItem}
               onPress={() => Linking.openURL('https://admin.chefflowapp.net/signin')}
@@ -457,21 +567,11 @@ const DashboardScreen = ({ navigation }) => {
               </View>
               <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
             </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Shift Submission - Highlighted Section */}
-        <View style={styles.section}>
-          <View style={styles.menuContainer}>
             {shiftManagement.map((item, index) => (
               <TouchableOpacity
-                key={index}
+                key={`shift-${index}`}
                 style={styles.highlightedMenuItem}
-                onPress={() => {
-                  if (item.screen) {
-                    navigation.navigate(item.screen);
-                  }
-                }}
+                onPress={() => item.screen && navigation.navigate(item.screen)}
               >
                 <View style={styles.menuItemLeft}>
                   <View style={styles.highlightedMenuItemIcon}>
@@ -485,12 +585,6 @@ const DashboardScreen = ({ navigation }) => {
                 <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
               </TouchableOpacity>
             ))}
-          </View>
-        </View>
-
-        {/* Invoices Section */}
-        <View style={styles.section}>
-          <View style={styles.menuContainer}>
             <TouchableOpacity
               style={styles.highlightedMenuItem}
               onPress={() => navigation.navigate('Invoices')}
@@ -609,6 +703,10 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: Spacing.md,
   },
+  /** Single column of blue cards; same vertical rhythm as statCard rows (marginBottom md) */
+  highlightStack: {
+    marginBottom: Spacing.xl,
+  },
   sectionTitle: {
     fontSize: Typography.lg,
     fontFamily: Typography.fontBold,
@@ -660,7 +758,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: Spacing.md,
     marginHorizontal: '2%',
-    marginBottom: Spacing.xs,
+    marginBottom: Spacing.md,
     elevation: 4,
     shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 4 },

@@ -37,6 +37,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
   const [sousVideLogs, setSousVideLogs] = useState([]);
   const [hotHoldingLogs, setHotHoldingLogs] = useState([]);
   const [shellfishLogs, setShellfishLogs] = useState([]);
+  const [thermometerCalibrationLogs, setThermometerCalibrationLogs] = useState([]);
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
   const [recentDownloads, setRecentDownloads] = useState([]);
@@ -147,6 +148,20 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         ...doc.data(),
         createdAt: doc.data().createdAt?.toDate?.() || null,
         type: 'shellfish'
+      })));
+
+      // Fetch thermometer calibration logs
+      const thermometerCalibrationQuery = query(
+        getRestaurantCollection(restaurantId, "thermometerCalibrationLogs"),
+        where("createdAt", ">=", start),
+        where("createdAt", "<=", end),
+        orderBy("createdAt", "desc")
+      );
+      const thermometerCalibrationSnapshot = await getDocs(thermometerCalibrationQuery);
+      setThermometerCalibrationLogs(thermometerCalibrationSnapshot.docs.map(doc => ({
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate?.() || null,
+        type: 'thermometerCalibration'
       })));
     };
 
@@ -290,7 +305,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
   };
 
   const exportToPDF = async () => {
-    if (!fridgeLogs.length && !deliveryLogs.length && !coolingReheatingLogs.length && !coolingLogs.length && !sousVideLogs.length && !hotHoldingLogs.length && !shellfishLogs.length) {
+    if (!fridgeLogs.length && !deliveryLogs.length && !coolingReheatingLogs.length && !coolingLogs.length && !sousVideLogs.length && !hotHoldingLogs.length && !shellfishLogs.length && !thermometerCalibrationLogs.length) {
       Alert.alert('No Data', 'No food safety records found for the selected date range.');
       return;
     }
@@ -302,6 +317,17 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
 
       // Generate unique filename
       const fileName = generatePdfFileName('temperature', startDate, endDate);
+
+      console.log('📊 Exporting PDF with logs:', {
+        fridge: fridgeLogs.length,
+        delivery: deliveryLogs.length,
+        coolingReheating: coolingReheatingLogs.length,
+        cooling: coolingLogs.length,
+        sousVide: sousVideLogs.length,
+        hotHolding: hotHoldingLogs.length,
+        shellfish: shellfishLogs.length,
+        thermometerCalibration: thermometerCalibrationLogs.length
+      });
 
       let html = `
         <h1>Temperature Records</h1>
@@ -470,6 +496,28 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
               }) : '--'}</td>
             </tr>
           `).join('')}
+        </table>
+        
+        <h2>Thermometer Calibration</h2>
+        <table border="1" cellspacing="0" cellpadding="8" style="width: 100%; border-collapse: collapse;">
+          <tr style="background-color: #f5f5f5;">
+            <th>Thermometer ID</th>
+            <th>Temperature</th>
+            <th>Corrective Action</th>
+            <th>Date</th>
+          </tr>
+          ${thermometerCalibrationLogs && thermometerCalibrationLogs.length > 0 ? thermometerCalibrationLogs.map(log => `
+            <tr>
+              <td>${log.thermometerId || '--'}</td>
+              <td>${log.temperature !== undefined && log.temperature !== null ? `${log.temperature}°C` : '--'}</td>
+              <td>${log.correctiveAction || '--'}</td>
+              <td>${log.createdAt ? log.createdAt.toLocaleDateString('en-GB', { 
+                day: '2-digit', 
+                month: '2-digit', 
+                year: 'numeric' 
+              }) : '--'}</td>
+            </tr>
+          `).join('') : '<tr><td colspan="4" style="text-align: center;">No records</td></tr>'}
         </table>
       `;
 

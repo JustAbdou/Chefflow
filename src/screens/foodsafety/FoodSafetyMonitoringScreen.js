@@ -67,6 +67,13 @@ const FoodSafetyMonitoringScreen = ({ navigation }) => {
       iconColor: Colors.primary,
       screen: 'ShellfishRecording',
     },
+    {
+      title: 'Thermometer Calibration',
+      subtitle: 'Log thermometer calibration',
+      icon: 'thermometer-outline',
+      iconColor: Colors.primary,
+      screen: 'ThermometerCalibration',
+    },
   ];
 
   return (
