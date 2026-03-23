@@ -20,6 +20,11 @@ import DateTimePickerModal from "react-native-modal-datetime-picker";
 import { query, where, getDocs, Timestamp, orderBy, addDoc, serverTimestamp } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantSubCollection } from "../../utils/firestoreHelpers";
+import {
+  DELIVERY_DAY_STATUS_COLLECTION,
+  buildDeliveryTemperaturePdfRows,
+  toLocalDateKey,
+} from "../../utils/deliveryDayStatus";
 import { uploadPdfToStorage, uploadPdfToStorageTemporary, generatePdfFileName } from "../../utils/pdfUpload";
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -32,6 +37,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
   const [endDate, setEndDate] = useState(null);
   const [fridgeLogs, setFridgeLogs] = useState([]);
   const [deliveryLogs, setDeliveryLogs] = useState([]);
+  const [deliveryNoDeliveryByDateKey, setDeliveryNoDeliveryByDateKey] = useState({});
   const [coolingReheatingLogs, setCoolingReheatingLogs] = useState([]);
   const [coolingLogs, setCoolingLogs] = useState([]);
   const [sousVideLogs, setSousVideLogs] = useState([]);
@@ -79,6 +85,27 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
         createdAt: doc.data().createdAt?.toDate?.() || null,
         type: 'delivery'
       })));
+
+      const startKey = toLocalDateKey(
+        new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())
+      );
+      const endKey = toLocalDateKey(
+        new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate())
+      );
+      const deliveryStatusQuery = query(
+        getRestaurantCollection(restaurantId, DELIVERY_DAY_STATUS_COLLECTION),
+        where("dateKey", ">=", startKey),
+        where("dateKey", "<=", endKey)
+      );
+      const deliveryStatusSnap = await getDocs(deliveryStatusQuery);
+      const noDeliveryMap = {};
+      deliveryStatusSnap.docs.forEach((d) => {
+        const data = d.data();
+        if (data.noDelivery) {
+          noDeliveryMap[data.dateKey || d.id] = true;
+        }
+      });
+      setDeliveryNoDeliveryByDateKey(noDeliveryMap);
 
       // Fetch cooling and reheating logs
       const coolingReheatingQuery = query(
@@ -305,7 +332,47 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
   };
 
   const exportToPDF = async () => {
-    if (!fridgeLogs.length && !deliveryLogs.length && !coolingReheatingLogs.length && !coolingLogs.length && !sousVideLogs.length && !hotHoldingLogs.length && !shellfishLogs.length && !thermometerCalibrationLogs.length) {
+    if (!startDate || !endDate) {
+      Alert.alert('Select dates', 'Please choose a start and end date for the export.');
+      return;
+    }
+
+    const rangeStart = new Date(
+      startDate.getFullYear(),
+      startDate.getMonth(),
+      startDate.getDate()
+    );
+    const rangeEnd = new Date(
+      endDate.getFullYear(),
+      endDate.getMonth(),
+      endDate.getDate()
+    );
+    const formatCellDate = (d) => {
+      const date = d instanceof Date ? d : new Date(d);
+      return date.toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      });
+    };
+    const deliveryPdfRows = buildDeliveryTemperaturePdfRows(
+      rangeStart,
+      rangeEnd,
+      deliveryNoDeliveryByDateKey,
+      deliveryLogs,
+      formatCellDate
+    );
+
+    if (
+      !fridgeLogs.length &&
+      !deliveryPdfRows.length &&
+      !coolingReheatingLogs.length &&
+      !coolingLogs.length &&
+      !sousVideLogs.length &&
+      !hotHoldingLogs.length &&
+      !shellfishLogs.length &&
+      !thermometerCalibrationLogs.length
+    ) {
       Alert.alert('No Data', 'No food safety records found for the selected date range.');
       return;
     }
@@ -320,7 +387,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
 
       console.log('📊 Exporting PDF with logs:', {
         fridge: fridgeLogs.length,
-        delivery: deliveryLogs.length,
+        delivery: deliveryPdfRows.length,
         coolingReheating: coolingReheatingLogs.length,
         cooling: coolingLogs.length,
         sousVide: sousVideLogs.length,
@@ -367,16 +434,12 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
             <th>Chilled Temp</th>
             <th>Date</th>
           </tr>
-          ${deliveryLogs.map(log => `
+          ${deliveryPdfRows.map(row => `
             <tr>
-              <td>${log.supplierName || 'Unknown'}</td>
-              <td>${log.frozen || '--'}°C</td>
-              <td>${log.chilled || '--'}°C</td>
-              <td>${log.date || (log.createdAt ? log.createdAt.toLocaleDateString('en-GB', { 
-                day: '2-digit', 
-                month: '2-digit', 
-                year: 'numeric' 
-              }) : '--')}</td>
+              <td>${row.supplier}</td>
+              <td>${row.frozen}</td>
+              <td>${row.chilled}</td>
+              <td>${row.dateLabel}</td>
             </tr>
           `).join('')}
         </table>
@@ -412,6 +475,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
             <th>Food Item</th>
             <th>Start Temp</th>
             <th>Cooling Time</th>
+            <th>Method</th>
             <th>End Temp</th>
             <th>Date</th>
           </tr>
@@ -420,6 +484,7 @@ const TemperatureDownloadsScreen = ({ navigation }) => {
               <td>${log.item || 'Unknown'}</td>
               <td>${log.start_temp || '--'}°C</td>
               <td>${log.cooling_time || '--'}</td>
+              <td>${(log.method && String(log.method).trim()) || '--'}</td>
               <td>${log.end_temp || '--'}°C</td>
               <td>${log.createdAt ? log.createdAt.toLocaleDateString('en-GB', { 
                 day: '2-digit', 

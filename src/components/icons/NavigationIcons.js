@@ -51,6 +51,18 @@ export const SettingsIcon = ({ color = "#6B7A90", size = 24 }) => (
   </Svg>
 )
 
+export const ReportingIcon = ({ color = "#6B7A90", size = 24 }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M4 19V5M4 19H20M8 17V11M12 17V7M16 17V13"
+      stroke={color}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
+)
+
 export const DownloadsIcon = ({ color = "#6B7A90", size = 24 }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <Path

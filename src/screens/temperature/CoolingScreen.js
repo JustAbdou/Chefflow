@@ -43,6 +43,7 @@ export default function CoolingScreen({ navigation }) {
   const [foodItem, setFoodItem] = useState("");
   const [startTemp, setStartTemp] = useState("");
   const [coolingTime, setCoolingTime] = useState("");
+  const [method, setMethod] = useState("");
   const [endTemp, setEndTemp] = useState("");
   
   // Scrollbar state
@@ -140,6 +141,7 @@ export default function CoolingScreen({ navigation }) {
         item: foodItem.trim(),
         start_temp: startTemp.trim(),
         cooling_time: coolingTime.trim(),
+        method: method.trim(),
         end_temp: endTemp.trim(),
         createdAt: Timestamp.fromDate(selectedDate), // Use selected date as Timestamp
       });
@@ -150,6 +152,7 @@ export default function CoolingScreen({ navigation }) {
       setFoodItem("");
       setStartTemp("");
       setCoolingTime("");
+      setMethod("");
       setEndTemp("");
       setShowAddModal(false);
       
@@ -281,6 +284,7 @@ export default function CoolingScreen({ navigation }) {
                     <View style={styles.coolingDetails}>
                       <Text style={styles.coolingLabel}>Start: <Text style={styles.temperatureValue}>{log.start_temp}°C</Text></Text>
                       <Text style={styles.coolingLabel}>Time: <Text style={styles.temperatureValue}>{log.cooling_time}</Text></Text>
+                      <Text style={styles.coolingLabel}>Method: <Text style={styles.temperatureValue}>{log.method?.trim() ? log.method : '--'}</Text></Text>
                       <Text style={styles.coolingLabel}>End: <Text style={styles.temperatureValue}>{log.end_temp}°C</Text></Text>
                     </View>
                   </View>
@@ -360,6 +364,15 @@ export default function CoolingScreen({ navigation }) {
                   value={coolingTime}
                   onChangeText={setCoolingTime}
                   placeholder="e.g., 2 hours"
+                  placeholderTextColor={Colors.gray200}
+                />
+                
+                <Text style={[styles.label, { marginTop: Spacing.lg }]}>Method</Text>
+                <TextInput
+                  style={styles.input}
+                  value={method}
+                  onChangeText={setMethod}
+                  placeholder="e.g., blast chiller, ice bath"
                   placeholderTextColor={Colors.gray200}
                 />
                 

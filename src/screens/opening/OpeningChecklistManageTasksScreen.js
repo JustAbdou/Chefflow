@@ -125,16 +125,16 @@ export default function OpeningChecklistManageTasksScreen({ navigation }) {
           <Text style={styles.emptyText}>No opening tasks yet.</Text>
         ) : (
           tasks.map((task) => (
-            <View key={task.id} style={styles.taskRow}>
-              <View style={styles.taskRowLeft}>
-                <Ionicons
-                  name="sunny-outline"
-                  size={20}
-                  color={Colors.primary}
-                  style={{ marginRight: 10 }}
-                />
-                <Text style={styles.taskRowText} numberOfLines={2}>
+            <View key={task.id} style={styles.card}>
+              <View style={styles.cardIcon}>
+                <Ionicons name="sunny-outline" size={22} color={Colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle} numberOfLines={2}>
                   {task.name}
+                </Text>
+                <Text style={styles.cardSub} numberOfLines={1}>
+                  Opening task
                 </Text>
               </View>
               <TouchableOpacity
@@ -155,7 +155,7 @@ export default function OpeningChecklistManageTasksScreen({ navigation }) {
                 style={styles.deleteBtn}
                 activeOpacity={0.7}
               >
-                <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                <Ionicons name="trash-outline" size={20} color="#ef4444" />
               </TouchableOpacity>
             </View>
           ))
@@ -233,26 +233,30 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     marginTop: 6,
   },
-  taskRow: {
+  card: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
+    backgroundColor: "#F9FAFB",
+    borderRadius: 16,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
   },
-  taskRowLeft: {
-    flexDirection: "row",
+  cardIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "#eff6ff",
     alignItems: "center",
-    flex: 1,
-    paddingRight: 8,
+    justifyContent: "center",
+    marginRight: Spacing.md,
   },
-  taskRowText: {
-    fontSize: 15,
-    fontFamily: Typography.fontRegular,
-    color: Colors.textPrimary,
-  },
+  cardTitle: { fontFamily: Typography.fontBold, fontSize: 17, color: Colors.textPrimary },
+  cardSub: { fontSize: 13, color: Colors.textSecondary, marginTop: 4 },
   deleteBtn: {
-    padding: 4,
+    padding: Spacing.xs,
+    marginLeft: Spacing.sm,
   },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)" },
   modalSheet: {

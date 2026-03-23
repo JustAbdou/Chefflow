@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { Ionicons, Feather } from "@expo/vector-icons";
 import { getDocs, addDoc, serverTimestamp, doc, updateDoc, Timestamp } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
+import { fetchFridgeListFromFridgelogs } from "../../utils/fridgeHelpers";
 import { auth } from "../../../firebase";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 import { 
@@ -29,6 +30,7 @@ import { Typography } from "../../constants/Typography";
 import { Spacing } from "../../constants/Spacing";
 import { getAndroidTitleMargin } from "../../utils/responsive";
 import useNavigationBar from "../../hooks/useNavigationBar";
+import { useFocusEffect } from "@react-navigation/native";
 
 export default function FridgeTempLogsScreen({ navigation }) {
   const { restaurantId } = useRestaurant();
@@ -46,6 +48,7 @@ export default function FridgeTempLogsScreen({ navigation }) {
   navigationBar.useHidden(); // Use hidden mode for complete immersion
   const [refreshing, setRefreshing] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
+  const isInitialFocus = useRef(true);
 
   // Monitor network status
   useEffect(() => {
@@ -95,130 +98,80 @@ export default function FridgeTempLogsScreen({ navigation }) {
       
       console.log('�🔍 Fetching fridge logs for restaurant:', restaurantId);
       
-      // Create date range for the selected date (start and end of day)
       const startOfDay = new Date(selectedDate);
       startOfDay.setHours(0, 0, 0, 0);
       const endOfDay = new Date(selectedDate);
       endOfDay.setHours(23, 59, 59, 999);
       
-      // Get existing logs from fridgelogs collection
-      const fridgeLogsCollection = getRestaurantCollection(restaurantId, 'fridgelogs');
-      const allLogsSnapshot = await getDocs(fridgeLogsCollection);
+      const [masterFridges, allLogsSnapshot] = await Promise.all([
+        fetchFridgeListFromFridgelogs(restaurantId, null),
+        getDocs(getRestaurantCollection(restaurantId, 'fridgelogs')),
+      ]);
       
-      let logsForDate = [];
-      
-      allLogsSnapshot.forEach(docSnap => {
+      const logsByFridgeName = new Map();
+      allLogsSnapshot.docs.forEach(docSnap => {
         const data = docSnap.data();
         const logDate = data.createdAt;
-        
-        // Include logs for the selected date OR legacy logs without createdAt
+        const fridgeName = data.fridgeName || data.name || 'Unknown Fridge';
+        const fridgeKey = fridgeName.toLowerCase();
+        let include = false;
         if (!logDate) {
-          // Legacy log without createdAt - include for all dates
-          logsForDate.push({
-            id: docSnap.id,
-            fridgeName: data.fridgeName || data.name || 'Unknown Fridge',
-            fridgeId: data.fridgeId || docSnap.id,
-            temperatureAM: data.temperatureAM || '',
-            temperaturePM: data.temperaturePM || '',
-            createdAt: data.createdAt,
-            done: data.done || false,
-            isNew: false,
-            fridgeType: data.fridgeType || 'fridge'
-          });
+          include = true;
         } else {
-          // Safely handle date conversion
           try {
             let logDateTime;
-            if (typeof logDate.toDate === 'function') {
-              logDateTime = logDate.toDate();
-            } else if (logDate instanceof Date) {
-              logDateTime = logDate;
-            } else {
-              logDateTime = new Date(logDate);
-            }
-            
-            // Validate the date and check if it's in range
-            if (!isNaN(logDateTime.getTime()) && logDateTime >= startOfDay && logDateTime <= endOfDay) {
-              // Log within the selected date range
-              logsForDate.push({
-                id: docSnap.id,
-                fridgeName: data.fridgeName || data.name || 'Unknown Fridge',
-                fridgeId: data.fridgeId || docSnap.id,
-                temperatureAM: data.temperatureAM || '',
-                temperaturePM: data.temperaturePM || '',
-                createdAt: data.createdAt,
-                done: data.done || false,
-                isNew: false,
-                fridgeType: data.fridgeType || 'fridge'
-              });
-            }
-          } catch (error) {
-            console.warn('Error parsing date for fridge log:', docSnap.id, error);
-            // Include log anyway for backward compatibility
-            logsForDate.push({
+            if (typeof logDate.toDate === 'function') logDateTime = logDate.toDate();
+            else if (logDate instanceof Date) logDateTime = logDate;
+            else logDateTime = new Date(logDate);
+            include = !isNaN(logDateTime.getTime()) && logDateTime >= startOfDay && logDateTime <= endOfDay;
+          } catch {
+            include = true;
+          }
+        }
+        if (include) {
+          const hasData = (data.temperatureAM && String(data.temperatureAM).trim() !== '') || 
+                         (data.temperaturePM && String(data.temperaturePM).trim() !== '') || data.done === true;
+          const existing = logsByFridgeName.get(fridgeKey);
+          if (!existing || (hasData && !existing.hasData)) {
+            logsByFridgeName.set(fridgeKey, {
               id: docSnap.id,
-              fridgeName: data.fridgeName || data.name || 'Unknown Fridge',
+              fridgeName,
               fridgeId: data.fridgeId || docSnap.id,
+              fridgeType: data.fridgeType || 'fridge',
               temperatureAM: data.temperatureAM || '',
               temperaturePM: data.temperaturePM || '',
               createdAt: data.createdAt,
               done: data.done || false,
               isNew: false,
-              fridgeType: data.fridgeType || 'fridge'
+              hasData,
             });
           }
         }
       });
       
-      // Remove empty/duplicate entries when there are actual temperature logs
-      const filteredLogsForDate = [];
-      const fridgeNameTracker = new Map(); // Track which fridges have actual temperature data
-      
-      // First pass: identify fridges with actual temperature data
-      logsForDate.forEach(log => {
-        const hasActualData = (log.temperatureAM && log.temperatureAM.trim() !== '') || 
-                             (log.temperaturePM && log.temperaturePM.trim() !== '') ||
-                             log.done === true;
-        
-        if (hasActualData) {
-          const fridgeKey = log.fridgeName.toLowerCase();
-          if (!fridgeNameTracker.has(fridgeKey) || 
-              fridgeNameTracker.get(fridgeKey).priority < 2) {
-            fridgeNameTracker.set(fridgeKey, { log, priority: 2 }); // Priority 2 for logs with data
-          }
+      const filteredLogsForDate = masterFridges.map((fridge) => {
+        const key = (fridge.fridgeName || '').toLowerCase();
+        const logForDate = logsByFridgeName.get(key);
+        if (logForDate) {
+          const { hasData, ...log } = logForDate;
+          return log;
         }
+        return {
+          id: fridge.id,
+          fridgeName: fridge.fridgeName,
+          fridgeId: fridge.fridgeId || fridge.id,
+          fridgeType: fridge.fridgeType || 'fridge',
+          temperatureAM: '',
+          temperaturePM: '',
+          createdAt: null,
+          done: false,
+          isNew: true,
+        };
       });
-      
-      // Second pass: add empty logs only if no actual data exists for that fridge
-      logsForDate.forEach(log => {
-        const fridgeKey = log.fridgeName.toLowerCase();
-        const hasActualData = (log.temperatureAM && log.temperatureAM.trim() !== '') || 
-                             (log.temperaturePM && log.temperaturePM.trim() !== '') ||
-                             log.done === true;
-        
-        if (!hasActualData && !fridgeNameTracker.has(fridgeKey)) {
-          fridgeNameTracker.set(fridgeKey, { log, priority: 1 }); // Priority 1 for empty logs
-        }
-      });
-      
-      // Extract the final filtered logs and sort them
-      fridgeNameTracker.forEach(({ log }) => {
-        filteredLogsForDate.push(log);
-      });
-      
-      // Sort logs by fridgeName for consistent display
-      filteredLogsForDate.sort((a, b) => {
-        const nameA = a.fridgeName.toLowerCase();
-        const nameB = b.fridgeName.toLowerCase();
-        return nameA.localeCompare(nameB);
-      });
-      
-      console.log(`✅ Fetched ${logsForDate.length} raw fridge logs, filtered to ${filteredLogsForDate.length} for ${selectedDate.toDateString()}`);
-      console.log('📋 Logs to display:', filteredLogsForDate.map(log => ({ name: log.fridgeName, id: log.id, hasData: (log.temperatureAM || log.temperaturePM || log.done) })));
+      filteredLogsForDate.sort((a, b) => (a.fridgeName || '').toLowerCase().localeCompare((b.fridgeName || '').toLowerCase()));
+
       setLogs(filteredLogsForDate);
-      
-      // Cache the fetched logs
-      await cacheFridgeLogsOffline(logsForDate);
+      await cacheFridgeLogsOffline(filteredLogsForDate);
       
       // Initialize temp inputs with current values
       const initialInputs = {};
@@ -242,6 +195,7 @@ export default function FridgeTempLogsScreen({ navigation }) {
   };
 
   useEffect(() => {
+    isInitialFocus.current = true;
     const loadInitialData = async () => {
       setLoading(true);
       await fetchLogs();
@@ -249,7 +203,18 @@ export default function FridgeTempLogsScreen({ navigation }) {
     };
     
     loadInitialData();
-  }, [restaurantId, selectedDate]); // Add selectedDate as dependency
+  }, [restaurantId, selectedDate]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!restaurantId) return;
+      if (isInitialFocus.current) {
+        isInitialFocus.current = false;
+        return;
+      }
+      fetchLogs();
+    }, [restaurantId, selectedDate])
+  );
 
   // Handle pull-to-refresh
   const handleRefresh = async () => {
@@ -648,6 +613,16 @@ export default function FridgeTempLogsScreen({ navigation }) {
           <Ionicons name="chevron-forward" size={20} color="#6B7280" />
         </TouchableOpacity>
 
+        <TouchableOpacity
+          style={styles.manageBtn}
+          onPress={() => navigation.navigate("ManageFridges")}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="settings-outline" size={22} color={Colors.primary} />
+          <Text style={styles.manageBtnText}>Manage Fridges</Text>
+          <Ionicons name="chevron-forward" size={20} color={Colors.gray400} style={{ marginLeft: "auto" }} />
+        </TouchableOpacity>
+
         {/* Section Header */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Fridge Temperature Logs ({filteredLogs.length})</Text>
@@ -902,6 +877,20 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontSemiBold,
     color: Colors.textPrimary,
   },
+  manageBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: Spacing.lg,
+    paddingVertical: 14,
+    paddingHorizontal: Spacing.md,
+    backgroundColor: "#f8fafc",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    marginBottom: Spacing.lg,
+    gap: 10,
+  },
+  manageBtnText: { fontFamily: Typography.fontBold, fontSize: 16, color: Colors.textPrimary },
   sectionHeader: {
     paddingHorizontal: Spacing.lg,
     marginTop: Spacing.md,

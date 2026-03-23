@@ -8,13 +8,15 @@ import {
   ActivityIndicator,
   RefreshControl,
   TextInput,
+  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
-import { getDocs, addDoc, serverTimestamp, doc, getDoc, updateDoc, query, where, Timestamp, orderBy } from "firebase/firestore";
+import { getDocs, addDoc, serverTimestamp, doc, getDoc, updateDoc, setDoc, deleteDoc, Timestamp } from "firebase/firestore";
 import { useRestaurant } from "../../contexts/RestaurantContext";
 import { getRestaurantCollection, getRestaurantDoc } from "../../utils/firestoreHelpers";
+import { DELIVERY_DAY_STATUS_COLLECTION, toLocalDateKey } from "../../utils/deliveryDayStatus";
 import { auth } from "../../../firebase";
 
 import { Colors } from "../../constants/Colors";
@@ -36,12 +38,21 @@ export default function DeliveryTempLogsScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [noDeliverySelected, setNoDeliverySelected] = useState(false);
+  const [savingNoDelivery, setSavingNoDelivery] = useState(false);
 
   // Fetch logs from deliverylogs collection
   const fetchLogs = async () => {
     if (!restaurantId) return;
     
     try {
+      const dateKey = toLocalDateKey(selectedDate);
+      const statusRef = getRestaurantDoc(restaurantId, DELIVERY_DAY_STATUS_COLLECTION, dateKey);
+      const statusSnap = await getDoc(statusRef);
+      const markedNoDelivery =
+        statusSnap.exists() && statusSnap.data()?.noDelivery === true;
+      setNoDeliverySelected(markedNoDelivery);
+
       console.log('🔍 Fetching delivery logs for restaurant:', restaurantId, 'for date:', selectedDate.toDateString());
       
       // Create date range for the selected date (start and end of day)
@@ -406,6 +417,35 @@ export default function DeliveryTempLogsScreen({ navigation }) {
   // Filter logs - show all logs for now
   const filteredLogs = logs;
 
+  const handleNoDeliveryToggle = async (value) => {
+    if (!restaurantId || !auth.currentUser || savingNoDelivery) return;
+    const dateKey = toLocalDateKey(selectedDate);
+    if (!dateKey) return;
+
+    setSavingNoDelivery(true);
+    try {
+      const ref = getRestaurantDoc(restaurantId, DELIVERY_DAY_STATUS_COLLECTION, dateKey);
+      if (value) {
+        await setDoc(ref, {
+          noDelivery: true,
+          dateKey,
+          updatedAt: serverTimestamp(),
+          markedBy: {
+            userId: auth.currentUser.uid,
+            email: auth.currentUser.email || null,
+          },
+        });
+      } else {
+        await deleteDoc(ref);
+      }
+      setNoDeliverySelected(value);
+    } catch (e) {
+      console.error('❌ Error saving no-delivery status:', e);
+    } finally {
+      setSavingNoDelivery(false);
+    }
+  };
+
   // Format the selected date
   const formatSelectedDate = (date) => {
     const dayName = date.toLocaleDateString(undefined, { weekday: "long" });
@@ -452,15 +492,47 @@ export default function DeliveryTempLogsScreen({ navigation }) {
           <Ionicons name="chevron-forward" size={20} color="#6B7280" />
         </TouchableOpacity>
 
+        {/* No delivery (per selected date) */}
+        <View style={styles.noDeliveryCard}>
+          <View style={styles.noDeliveryTextWrap}>
+            <Ionicons name="ban-outline" size={22} color="#64748b" style={{ marginRight: Spacing.sm }} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.noDeliveryTitle}>No delivery this day</Text>
+              <Text style={styles.noDeliveryHint}>
+                Turn on if no supplier delivery arrived on {formatSelectedDate(selectedDate)}. Temperature logs are not required.
+              </Text>
+            </View>
+            <Switch
+              value={noDeliverySelected}
+              onValueChange={handleNoDeliveryToggle}
+              disabled={savingNoDelivery || loading}
+              trackColor={{ false: '#e2e8f0', true: '#bfdbfe' }}
+              thumbColor={noDeliverySelected ? Colors.primary : '#f4f4f5'}
+            />
+          </View>
+        </View>
+
         {/* Section Header */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Delivery Temperature Logs ({filteredLogs.length})</Text>
+          <Text style={styles.sectionTitle}>
+            {noDeliverySelected
+              ? 'Delivery Temperature Logs'
+              : `Delivery Temperature Logs (${filteredLogs.length})`}
+          </Text>
         </View>
 
         {/* Logs */}
         <View style={styles.logsContainer}>
           {loading ? (
             <ActivityIndicator size="large" style={{ marginTop: 40 }} />
+          ) : noDeliverySelected ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="ban-outline" size={48} color="#94a3b8" />
+              <Text style={styles.emptyText}>No delivery</Text>
+              <Text style={styles.emptySubtext}>
+                This date is marked as having no delivery. Turn off the switch above if you need to log supplier temperatures.
+              </Text>
+            </View>
           ) : (
             filteredLogs.length === 0 ? (
               <View style={styles.emptyState}>
@@ -642,6 +714,32 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: Typography.fontSemiBold,
     color: Colors.textPrimary,
+  },
+  noDeliveryCard: {
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+    padding: Spacing.md,
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  noDeliveryTextWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  noDeliveryTitle: {
+    fontSize: 16,
+    fontFamily: Typography.fontSemiBold,
+    color: Colors.textPrimary,
+    marginBottom: 4,
+  },
+  noDeliveryHint: {
+    fontSize: 13,
+    fontFamily: Typography.fontRegular,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+    paddingRight: Spacing.sm,
   },
   sectionHeader: {
     paddingHorizontal: Spacing.lg,

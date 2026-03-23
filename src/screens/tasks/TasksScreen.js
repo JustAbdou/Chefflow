@@ -1,5 +1,6 @@
 "use client"
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ScrollView } from "react-native"
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Colors } from "../../constants/Colors"
 import { Typography } from "../../constants/Typography"
 import { Spacing } from "../../constants/Spacing"

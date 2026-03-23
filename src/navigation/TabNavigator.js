@@ -5,7 +5,8 @@ import DashboardScreen from '../screens/dashboard/DashboardScreen';
 import ProfileScreen from '../screens/settings/ProfileScreen';
 import RecipesScreen from '../screens/recipes/RecipesScreen'; 
 import DownloadsScreen from '../screens/downloads/DownloadsScreen';
-import { HomeIcon, RecipesIcon, SettingsIcon, DownloadsIcon } from '../components/icons/NavigationIcons'; // <-- Import icons
+import { HomeIcon, RecipesIcon, SettingsIcon, DownloadsIcon, ReportingIcon } from '../components/icons/NavigationIcons';
+import ReportingScreen from '../screens/reporting/ReportingScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -54,6 +55,14 @@ export default function TabNavigator() {
         options={{
           tabBarIcon: ({ color, size }) => <DownloadsIcon color={color} size={size} />,
           tabBarLabel: 'Downloads',
+        }}
+      />
+      <Tab.Screen
+        name="Reporting"
+        component={ReportingScreen}
+        options={{
+          tabBarIcon: ({ color, size }) => <ReportingIcon color={color} size={size} />,
+          tabBarLabel: 'Reporting',
         }}
       />
       <Tab.Screen
