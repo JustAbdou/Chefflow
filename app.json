@@ -2,7 +2,7 @@
   "expo": {
     "name": "ChefFlow",
     "slug": "chefflow",
-    "version": "1.9.3",
+    "version": "1.9.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -55,7 +55,16 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "expo-build-properties"
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
+            "buildToolsVersion": "36.0.0"
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {
