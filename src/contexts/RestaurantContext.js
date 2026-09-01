@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { auth } from '../../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, enableNetwork } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, arrayRemove, deleteField, enableNetwork } from 'firebase/firestore';
 import { db } from '../../firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { normalizeRestaurantName, RESTAURANT_NAMES, getRestaurantDisplayName } from '../utils/restaurantUtils';
@@ -195,6 +195,106 @@ export const RestaurantProvider = ({ children }) => {
     return unsubscribe;
   }, []);
 
+  const applyRestaurantListUpdate = (remainingIds, newPrimaryId) => {
+    setAllowedRestaurantIds(remainingIds);
+    setPrimaryRestaurantId(newPrimaryId);
+    setAvailableRestaurants((prev) => prev.filter((r) => remainingIds.includes(r.id)));
+    setRestaurantMetadata((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((id) => {
+        if (!remainingIds.includes(id)) {
+          delete next[id];
+        }
+      });
+      return next;
+    });
+  };
+
+  const activateRestaurant = async (newRestaurantId) => {
+    setActiveRestaurantId(newRestaurantId);
+
+    try {
+      await AsyncStorage.setItem(CURRENT_RESTAURANT_ID_KEY, newRestaurantId);
+      console.log(`Switched to restaurant: ${newRestaurantId}`);
+    } catch (error) {
+      console.warn('Error saving active restaurant to AsyncStorage:', error);
+    }
+
+    loadRecipeCache(newRestaurantId)
+      .then((loaded) => {
+        if (loaded) {
+          console.log(`📚 Recipe cache loaded for ${newRestaurantId}`);
+        }
+        return fetchAndCacheRecipes(newRestaurantId, false);
+      })
+      .then((result) => {
+        if (result?.fromCache) {
+          console.log(`📚 Using cached recipes for ${newRestaurantId}`);
+        } else {
+          console.log(`📚 Recipe preload completed for ${newRestaurantId}: ${result.recipesByCategory?.["All Recipes"]?.length || 0} recipes`);
+        }
+      })
+      .catch((error) => {
+        console.error('📚 Recipe preload error:', error);
+      });
+  };
+
+  const deleteRestaurant = async (restaurantIdToDelete) => {
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+
+    if (!allowedRestaurantIds.includes(restaurantIdToDelete)) {
+      throw new Error('Restaurant is not in your account');
+    }
+
+    const userDocRef = doc(db, 'users', user.uid);
+    const userDoc = await getDoc(userDocRef);
+
+    if (!userDoc.exists()) {
+      throw new Error('User document not found');
+    }
+
+    const userData = userDoc.data();
+    const remainingIds = allowedRestaurantIds.filter((id) => id !== restaurantIdToDelete);
+    const wasActiveRestaurant = activeRestaurantId === restaurantIdToDelete;
+
+    // User-specific removal only — never deletes the restaurant document or its data.
+    const updates = {
+      restaurantIds: arrayRemove(restaurantIdToDelete),
+    };
+
+    let newPrimaryId = userData.restaurantId ?? null;
+    if (newPrimaryId === restaurantIdToDelete) {
+      newPrimaryId = remainingIds.length > 0 ? remainingIds[0] : null;
+      updates.restaurantId = newPrimaryId ?? deleteField();
+    }
+
+    await updateDoc(userDocRef, updates);
+    applyRestaurantListUpdate(remainingIds, newPrimaryId);
+
+    let switchedToRestaurantId = null;
+    if (wasActiveRestaurant) {
+      if (remainingIds.length > 0) {
+        switchedToRestaurantId = remainingIds[0];
+        await activateRestaurant(switchedToRestaurantId);
+      } else {
+        setActiveRestaurantId(null);
+        try {
+          await AsyncStorage.removeItem(CURRENT_RESTAURANT_ID_KEY);
+        } catch (error) {
+          console.warn('Error clearing active restaurant from AsyncStorage:', error);
+        }
+      }
+    }
+
+    return {
+      remainingRestaurantIds: remainingIds,
+      switchedToRestaurantId,
+      hasNoRestaurantsLeft: remainingIds.length === 0,
+    };
+  };
+
   // Function to switch restaurants
   const switchRestaurant = async (newRestaurantId) => {
     if (!allowedRestaurantIds.includes(newRestaurantId)) {
@@ -203,35 +303,10 @@ export const RestaurantProvider = ({ children }) => {
     }
 
     try {
-      // Update state
-      setActiveRestaurantId(newRestaurantId);
-
-      // Persist to AsyncStorage
-      await AsyncStorage.setItem(CURRENT_RESTAURANT_ID_KEY, newRestaurantId);
-      console.log(`Switched to restaurant: ${newRestaurantId}`);
-
-      // Preload recipes for new restaurant (cache is restaurant-aware, no need to clear)
-      // First load from cache for instant availability
-      loadRecipeCache(newRestaurantId)
-        .then((loaded) => {
-          if (loaded) {
-            console.log(`📚 Recipe cache loaded for ${newRestaurantId}`);
-          }
-          // Then fetch and cache fresh data in background
-          return fetchAndCacheRecipes(newRestaurantId, false);
-        })
-        .then((result) => {
-          if (result?.fromCache) {
-            console.log(`📚 Using cached recipes for ${newRestaurantId}`);
-          } else {
-            console.log(`📚 Recipe preload completed for ${newRestaurantId}: ${result.recipesByCategory?.["All Recipes"]?.length || 0} recipes`);
-          }
-        })
-        .catch((error) => {
-          console.error('📚 Recipe preload error:', error);
-        });
+      await activateRestaurant(newRestaurantId);
     } catch (error) {
       console.error('Error switching restaurant:', error);
+      throw error;
     }
   };
 
@@ -246,6 +321,7 @@ export const RestaurantProvider = ({ children }) => {
     availableRestaurants, // [{ id, name }]
     restaurantMetadata,
     switchRestaurant,
+    deleteRestaurant,
     
     // Backwards compatibility
     restaurantId, // Alias for activeRestaurantId

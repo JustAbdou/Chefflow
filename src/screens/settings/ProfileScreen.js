@@ -23,7 +23,8 @@ function ProfileScreen() {
     restaurantId, 
     activeRestaurantId, 
     availableRestaurants, 
-    switchRestaurant 
+    switchRestaurant,
+    deleteRestaurant,
   } = useRestaurant()
   const [userProfile, setUserProfile] = useState({
     name: "Chef",
@@ -32,6 +33,7 @@ function ProfileScreen() {
   })
   const [restaurantName, setRestaurantName] = useState("Restaurant")
   const [showRestaurantModal, setShowRestaurantModal] = useState(false)
+  const [deletingRestaurantId, setDeletingRestaurantId] = useState(null)
 
   // Hide Android navigation bar
   const navigationBar = useNavigationBar();
@@ -61,7 +63,7 @@ function ProfileScreen() {
   const fetchRestaurantName = async () => {
     const currentId = activeRestaurantId || restaurantId
     if (!currentId) {
-      setRestaurantName("Restaurant")
+      setRestaurantName("No restaurant assigned")
       return
     }
 
@@ -201,9 +203,65 @@ function ProfileScreen() {
     }
   }
 
-  const handleSwitchRestaurant = () => {
-    if (availableRestaurants.length <= 1) {
-      return // Don't show if only one restaurant
+  const handleDeleteRestaurant = (restaurant) => {
+    if (!restaurant?.id || deletingRestaurantId) {
+      return
+    }
+
+    const isActive = restaurant.id === activeRestaurantId
+    const message = isActive && availableRestaurants.length > 1
+      ? `Remove "${restaurant.name}" from your account? You'll be switched to another restaurant.`
+      : isActive && availableRestaurants.length === 1
+        ? `Remove "${restaurant.name}" from your account? You'll stay signed in, but won't have access to any restaurants until an administrator re-adds you.`
+        : `Remove "${restaurant.name}" from your account? This only affects your access — the restaurant stays in the system and you can be re-added later.`
+
+    Alert.alert(
+      "Delete Restaurant",
+      message,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setDeletingRestaurantId(restaurant.id)
+            try {
+              const { hasNoRestaurantsLeft, switchedToRestaurantId } = await deleteRestaurant(restaurant.id)
+
+              if (hasNoRestaurantsLeft) {
+                setRestaurantName("No restaurant assigned")
+              } else if (switchedToRestaurantId) {
+                await fetchRestaurantName()
+              }
+
+              if (hasNoRestaurantsLeft) {
+                Alert.alert(
+                  "Restaurant Removed",
+                  "You no longer have any restaurants on your account. Contact your administrator to be re-added."
+                )
+              }
+            } catch (error) {
+              console.error("Error deleting restaurant:", error)
+              Alert.alert("Error", "Failed to remove restaurant from your account. Please try again.")
+            } finally {
+              setDeletingRestaurantId(null)
+            }
+          },
+        },
+      ]
+    )
+  }
+
+  const handleOpenRestaurants = () => {
+    if (availableRestaurants.length === 0) {
+      Alert.alert(
+        "No Restaurants",
+        "You don't have any restaurants on your account. Contact your administrator to be assigned to one."
+      )
+      return
     }
     setShowRestaurantModal(true)
   }
@@ -226,11 +284,11 @@ function ProfileScreen() {
   }
 
   const menuItems = [
-    ...(availableRestaurants.length > 1 ? [{
-      title: "Switch Restaurant",
-      onPress: handleSwitchRestaurant,
+    {
+      title: "My Restaurants",
+      onPress: handleOpenRestaurants,
       icon: "store",
-    }] : []),
+    },
     {
       title: "Privacy & Security",
       onPress: handlePrivacyPolicy,
@@ -300,6 +358,8 @@ function ProfileScreen() {
         availableRestaurants={availableRestaurants}
         activeRestaurantId={activeRestaurantId}
         onSelectRestaurant={handleSelectRestaurant}
+        onDeleteRestaurant={handleDeleteRestaurant}
+        deletingRestaurantId={deletingRestaurantId}
       />
     </SafeAreaView>
   )
